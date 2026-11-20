@@ -304,6 +304,33 @@ function Engine.chain(profile, s, max)
 end
 
 ---------------------------------------------------------------------------
+-- The action bar a profile suggests
+---------------------------------------------------------------------------
+
+-- profile.bar = up to 12 entries, one per button of the main bar. Each entry
+-- is a list of candidates, best first: a spell key, "macro:CC Pull", or
+-- "book:Ghost Wolf" for a spell that is not part of the rotation.
+-- Returns { { slot, label, macro = name } | { slot, label, spell = id } }.
+function Engine.bar(profile, s, has)
+  local out = {}
+  for slot, candidates in ipairs(profile.bar or {}) do
+    for _, c in ipairs(type(candidates) == "table" and candidates or { candidates }) do
+      local macro, book = c:match("^macro:(.+)$"), c:match("^book:(.+)$")
+      if macro then
+        if has.macro(macro) then out[#out + 1] = { slot = slot, label = macro, macro = macro } break end
+      elseif book then
+        local id = has.book(book)
+        if id then out[#out + 1] = { slot = slot, label = book, spell = id } break end
+      elseif s.spells[c] then
+        out[#out + 1] = { slot = slot, label = s.spells[c].name, spell = s.spells[c].id }
+        break
+      end
+    end
+  end
+  return out
+end
+
+---------------------------------------------------------------------------
 -- Macros a profile offers (built from the spells you know)
 ---------------------------------------------------------------------------
 
@@ -384,6 +411,9 @@ local ICON = {
   rest = "Interface\\Icons\\Spell_Nature_Sleep", sleep = "Interface\\Icons\\INV_Misc_Bag_10",
   repair = "Interface\\Icons\\Trade_BlackSmithing", bags = "Interface\\Icons\\INV_Misc_Bag_08",
   trainer = "Interface\\Icons\\INV_Misc_Book_09", drink = "Interface\\Icons\\INV_Drink_07",
+  skull = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull", elite = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
+  grey = "Interface\\Icons\\INV_Misc_Bone_HumanSkull_01", map = "Interface\\Icons\\INV_Misc_Map_01",
+  dungeon = "Interface\\Icons\\INV_Misc_Key_03", quest = "Interface\\Icons\\INV_Misc_Note_01",
 }
 
 -- The spell that fixes a checklist entry: `fix` on the entry (a key, or a
@@ -436,6 +466,40 @@ local function evaluate(entry, s)
   end
 end
 
+-- The highest enemy level that gives you no XP ("grey").
+local function greyLevel(level)
+  if level <= 5 then return 0 end
+  if level <= 39 then return level - math.floor(level / 10) - 5 end
+  if level <= 59 then return level - math.floor(level / 5) - 1 end
+  return 51
+end
+Engine.greyLevel = greyLevel
+
+-- "Should I fight this?": the targeted enemy against your level.
+-- Returns one checklist item, or nil when it is a fair fight (or unknown).
+function Engine.threat(s)
+  local t = s.target
+  if not t or not t.exists or not t.hostile or t.dead or type(t.level) ~= "number" then return nil end
+  local diff = t.level - s.level
+  if t.level < 0 or diff >= 5 then
+    return { kind = "danger", text = t.level < 0 and "Far above your level" or (diff .. " levels above you"),
+      badge = t.level < 0 and "??" or ("+" .. diff), icon = ICON.skull,
+      hint = "Red: most of your attacks will miss or be resisted. Walk away." }
+  end
+  if t.elite and not s.inGroup and diff >= -3 then
+    return { kind = "danger", text = "Elite enemy", badge = diff > 0 and ("+" .. diff) or nil, icon = ICON.elite,
+      hint = "Elites are far tougher than a normal enemy of the same level. Skip it or bring a friend." }
+  end
+  if diff >= 3 then
+    return { text = diff .. " levels above you", badge = "+" .. diff, icon = ICON.skull,
+      hint = "Orange: you will miss more and it hits harder. Go in at full health and mana, or pick something closer to your level." }
+  end
+  if t.level <= greyLevel(s.level) then
+    return { kind = "info", text = "Grey to you: no XP", icon = ICON.grey,
+      hint = "Too low to give any XP. Only worth it for a quest or for its skin." }
+  end
+end
+
 -- Before the pull: only what matters for the next fight. Entries marked
 -- `tip = true` are advice for the journey panel instead (Engine.journey).
 -- Returns a list of { text = "...", hint = "..." }.
@@ -443,6 +507,10 @@ function Engine.checklist(profile, s, options)
   options = options or {}
   local missing = {}
   if s.inCombat then return missing end
+  if options.threat ~= false then
+    local threat = Engine.threat(s)
+    if threat then missing[#missing + 1] = threat end
+  end
   for _, entry in ipairs(profile.checklist) do
     if not entry.tip then
       local item = evaluate(entry, s)
@@ -547,6 +615,74 @@ function Engine.journey(profile, s, options)
   end
   if gear and j.freeSlots and j.freeSlots <= 2 then
     add("do", j.freeSlots == 0 and "Bags full" or ("Bags nearly full (%d free)"):format(j.freeSlots), "Sell grey items at a vendor.", ICON.bags)
+  end
+
+  -- Supplies: shout at a vendor, stay quiet elsewhere unless you are out.
+  local sup = options.supplies ~= false and j.supplies
+  if sup and s.level >= 5 then
+    local function stock(count, what, icon, low)
+      if count == nil then return end
+      if j.atVendor and count < low then
+        add("do", ("Buy %s: %d left"):format(what, count), "You are at a vendor. If this one doesn't sell it, an innkeeper does.", icon)
+      elseif count == 0 then
+        add("do", "Out of " .. what, "Buy some at the next innkeeper or general goods vendor.", icon)
+      end
+    end
+    if s.usesMana then stock(sup.drink, "water", ICON.drink, 5) end
+    stock(sup.food, "food", ICON.food, 5)
+    for _, want in ipairs(profile.supplies or {}) do
+      if (not want.needs or s:known(want.needs)) and s.itemCount then
+        local count = s.itemCount(want.item)
+        if type(count) == "number" then stock(count, want.name, want.icon, want.low or 2) end
+      end
+    end
+    if j.atVendor and j.canRepair and j.durability and j.durability < 90 then
+      add("do", ("Repair here (gear at %d%%)"):format(math.floor(j.durability)), "This vendor repairs: click the anvil button.", ICON.repair)
+    end
+  end
+
+  -- The roadmap: milestones due now, the next one coming, and where to be.
+  if options.roadmap ~= false then
+    local data = options.data or {}
+    local due, upcoming = 0, nil
+    local function consider(m)
+      if s.level >= m.level then
+        local show
+        if m.done then
+          local fine, finished = pcall(m.done, s)
+          show = fine and not finished and s.level - m.level <= 10
+        else
+          show = s.level - m.level <= 1
+        end
+        if show and due < 2 then
+          due = due + 1
+          add(m.done and "do" or "info", text(m.text, s), text(m.hint, s), m.icon or ICON.quest)
+        end
+      elseif not upcoming or m.level < upcoming.level then
+        upcoming = m
+      end
+    end
+    for _, m in ipairs(data.milestones or {}) do consider(m) end
+    for _, m in ipairs(profile.milestones or {}) do consider(m) end
+    if upcoming then
+      add("info", ("At level %d: %s"):format(upcoming.level, text(upcoming.text, s)), text(upcoming.hint, s), upcoming.icon or ICON.quest)
+    end
+    local function fitting(list)
+      local names = {}
+      for _, row in ipairs(list or {}) do
+        if s.level >= row[1] and s.level <= row[2] then names[#names + 1] = row[3] end
+      end
+      return names
+    end
+    local faction = s.faction or "none"
+    local zones = fitting(data.zones and data.zones[faction])
+    if #zones > 0 then
+      add("info", "Quest in: " .. zones[#zones], #zones > 1 and ("Also fine at your level: " .. table.concat(zones, "; ", 1, #zones - 1) .. ".") or nil, ICON.map)
+    end
+    local dungeons = fitting(data.dungeons and data.dungeons[faction])
+    if #dungeons > 0 then
+      add("info", "Dungeon: " .. dungeons[1], #dungeons > 1 and ("Also in range: " .. table.concat(dungeons, ", ", 2) .. ".") or "In range for your level. Bring friends.", ICON.dungeon)
+    end
   end
 
   local nextLevel = Engine.nextTraining(profile, s.level)

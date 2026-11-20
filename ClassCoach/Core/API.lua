@@ -442,6 +442,68 @@ function API.freeBagSlots()
   return free
 end
 
+-- "Alliance" / "Horde"
+function API.faction()
+  local f = plain(try(UnitFactionGroup, "player"))
+  return type(f) == "string" and f or nil
+end
+
+-- Food and drink in your bags: { food = n, drink = n }. The game marks both
+-- as "Food & Drink"; the item's use ("Food" / "Drink") tells them apart on
+-- English clients, otherwise an item counts as both.
+function API.supplies()
+  if not C_Container or not C_Container.GetContainerNumSlots then return nil end
+  local food, drink, any = 0, 0, false
+  for bag = 0, 4 do
+    local slots = plain(try(C_Container.GetContainerNumSlots, bag))
+    for slot = 1, type(slots) == "number" and slots or 0 do
+      local info = try(C_Container.GetContainerItemInfo, bag, slot)
+      local id, count = plain(field(info, "itemID")), plain(field(info, "stackCount")) or 1
+      if id then
+        any = true
+        local _, _, _, _, _, classID, subID = try(C_Item.GetItemInfoInstant, id)
+        if plain(classID) == 0 and plain(subID) == 5 then
+          local use = plain(try(C_Item.GetItemSpell, id)) or plain(try(GetItemSpell, id))
+          if use == "Food" then food = food + count
+          elseif use == "Drink" then drink = drink + count
+          else food = food + count; drink = drink + count end
+        end
+      end
+    end
+  end
+  if not any then return nil end
+  return { food = food, drink = drink }
+end
+
+function API.canRepair()
+  return plain(try(CanMerchantRepair)) == true
+end
+
+---------------------------------------------------------------------------
+-- Action bar (out of combat only)
+---------------------------------------------------------------------------
+
+function API.slotEmpty(slot)
+  return plain((try(GetActionInfo, slot))) == nil
+end
+
+-- Puts a spell (by id) or a macro (by name) on an action button.
+-- Whatever was there is removed. Returns true when the button now holds something.
+function API.placeAction(slot, what)
+  if API.inCombat() then return false end
+  try(ClearCursor)
+  if what.macro then
+    try(PickupMacro, what.macro)
+  elseif C_Spell and C_Spell.PickupSpell then
+    try(C_Spell.PickupSpell, what.spell)
+  else
+    try(PickupSpell, what.spell)
+  end
+  try(PlaceAction, slot)
+  try(ClearCursor)
+  return not API.slotEmpty(slot)
+end
+
 -- Do you carry an item with this name? (true / false)
 function API.hasItem(name)
   local count = API.itemCount(name)

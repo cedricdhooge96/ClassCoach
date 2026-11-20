@@ -153,7 +153,7 @@ function Panel.create(charDB, db)
 
   -- Before a pull: what is missing, shown as the icon of the spell that fixes it
   local missingLabel = font(f, "GameFontNormalSmall", unpack(COLORS.warn))
-  missingLabel:SetText("Missing")
+  missingLabel:SetText("Before\npull")
   f.missingLabel = missingLabel
   f.missing = {}
   for i = 1, MISSING_SLOTS do
@@ -162,6 +162,7 @@ function Panel.create(charDB, db)
     edge:SetPoint("TOPLEFT", -2, 2)
     edge:SetPoint("BOTTOMRIGHT", 2, -2)
     edge:SetColorTexture(COLORS.warn[1], COLORS.warn[2], COLORS.warn[3], 0.9)
+    s.edge = edge
     s:EnableMouse(true)
     s:SetScript("OnEnter", function(self)
       if not self.title or not GameTooltip then return end
@@ -343,7 +344,7 @@ function Panel.render(view)
   local missing = view.missing or {}
   f.missingLabel:ClearAllPoints()
   if #missing > 0 then
-    f.missingLabel:SetPoint("TOPLEFT", 10, y - 7)
+    f.missingLabel:SetPoint("TOPLEFT", 10, y - 2)
     f.missingLabel:Show()
   else
     f.missingLabel:Hide()
@@ -356,6 +357,9 @@ function Panel.render(view)
       s.key:SetText(item.keybind or "")
       s.timer:SetText(item.badge or "")
       s.title, s.hint, s.spell, s.bind = item.text, item.hint, item.spell, item.keybind
+      -- red: don't fight this; amber: fix before pulling; grey: good to know
+      local c = item.kind == "danger" and COLORS.low or item.kind == "info" and COLORS.dim or COLORS.warn
+      s.edge:SetColorTexture(c[1], c[2], c[3], 0.9)
       s:SetPoint("TOPLEFT", 64 + (i - 1) * (MISSING_SIZE + 8), y - 2)
       s:Show()
     else

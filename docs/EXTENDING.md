@@ -128,6 +128,24 @@ spell names for a `/castsequence`. Bodies are limited to 255 characters and use 
 After-fight tips also get `f.demon`, `f.precast` (you cast before combat started),
 `f.targets` and `f.elite`.
 
+### bar, supplies, milestones
+
+```lua
+bar = {                                   -- one entry per button 1-12, best candidate first
+  { "macro:CC Pull", "Frostbolt" },       -- a CC macro, else a spell key
+  { "book:Blink" },                       -- "book:" = a spell that is not in `spells`
+},
+supplies = { { item = 17020, name = "Arcane Powder", needs = "Arcane Brilliance", low = 5 } },
+milestones = {
+  { level = 20, text = "Blink", hint = "Your escape: put it on an easy key." },
+  { level = 5, text = "Get a wand", done = function(s) return s.hasWand end },
+},
+```
+
+A milestone with `done` stays on the journey panel until it is done; without it,
+it shows for that level and the next. Milestones for every class, and the zones
+and dungeons per level, are in `Data/Journey.lua`.
+
 ### checklist
 
 ```lua

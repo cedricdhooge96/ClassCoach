@@ -49,6 +49,16 @@ local function missing(ns)
   for _, s in ipairs(ns.Panel.frame.missing) do if s.shown and rawget(s, "title") then parts[#parts + 1] = rawget(s, "title") end end
   return table.concat(parts, " | ")
 end
+-- The same without lines about later levels ("At level 25: ..."), which name things on purpose.
+local function journeyNow(ns)
+  local f, parts = ns.Journey.frame, {}
+  if not f.shown then return "" end
+  for _, r in ipairs(f.rows) do
+    if r.shown and r.label.text ~= "" and not r.label.text:find("^At level ") then parts[#parts + 1] = r.label.text end
+  end
+  parts[#parts + 1] = f.hint.text
+  return table.concat(parts, " | ")
+end
 -- Everything the journey panel is showing, as one string.
 local function journey(ns)
   local f, parts = ns.Journey.frame, {}
@@ -167,13 +177,76 @@ if SCENARIO == "shaman" then
   check("level-up trainer tip", flashed:find("Cure Poison") ~= nil, flashed)
   check("level-up talent tip", flashed:find("Mental Dexterity") ~= nil, flashed)
 
+  -- Should I fight this?
+  local function facing(level, elite)
+    target({ name = "Ogre", level = level, hostile = true, elite = elite, guid = "Creature-30-" .. level .. tostring(elite) })
+    M.advance(1); return tick(ns)
+  end
+  M.P.mana = 300; M.P.buffs = { ["Lightning Shield"] = true, ["Well Fed"] = true }; M.P.mainHandBuff = true
+  M.fire("UNIT_AURA", "player")
+  M.P.level = 12; M.fire("PLAYER_LEVEL_UP", 12); M.advance(1)
+  f = facing(13)
+  check("fair fight: no warning", missing(ns) == "", missing(ns))
+  f = facing(15)
+  check("3 levels above: warned, with the gap on the icon", missing(ns) == "3 levels above you" and f.missing[1].timer.text == "+3", missing(ns))
+  f = facing(17)
+  check("5 levels above: walk away", missing(ns) == "5 levels above you" and f.missing[1].hint:find("Walk away") ~= nil, missing(ns))
+  f = facing(-1)
+  check("skull enemy", missing(ns) == "Far above your level" and f.missing[1].timer.text == "??", missing(ns))
+  f = facing(12, true)
+  check("elite when alone", missing(ns) == "Elite enemy", missing(ns))
+  f = facing(6)
+  check("grey enemy gives no XP", missing(ns) == "Grey to you: no XP", missing(ns))
+  f = facing(7)
+  check("green enemy is fine", missing(ns) == "", missing(ns))
+  ClassCoachDB.threat = false; f = facing(17)
+  check("enemy warning can be switched off", missing(ns) == "", missing(ns))
+  ClassCoachDB.threat = true
+  target(nil)
+
+  -- The roadmap on the journey panel
+  M.advance(3); tick(ns)
+  check("journey: where to quest", journey(ns):find("Quest in: Loch Modan or Westfall") ~= nil, journey(ns))
+  check("journey: next milestone", journey(ns):find("At level 14: Cozy Sleeping Bag quest chain") ~= nil, journey(ns))
+  M.P.level = 20; M.fire("PLAYER_LEVEL_UP", 20); M.advance(3); tick(ns)
+  check("journey: class milestone due now", journey(ns):find("Water totem quest and Ghost Wolf") ~= nil, journey(ns))
+  check("journey: dungeon in range", journey(ns):find("Dungeon: Hall of Thanes") ~= nil, journey(ns))
+  ClassCoachDB.roadmap = false; M.advance(3); tick(ns)
+  check("roadmap can be switched off", not journey(ns):find("Quest in:"), journey(ns))
+  ClassCoachDB.roadmap = true
+  M.P.level = 12; M.fire("PLAYER_LEVEL_UP", 12); M.advance(3); tick(ns)
+
+  -- Supplies: quiet on the road unless you are out, loud at a vendor
+  M.P.bag = { { id = 159, count = 2, class = 0, sub = 5, use = "Drink" }, { id = 2318, count = 20, class = 7, sub = 6 } }
+  M.P.durability = 54
+  M.advance(3); tick(ns)
+  check("out of food is always said", journey(ns):find("Out of food") ~= nil and not journey(ns):find("water"), journey(ns))
+  M.P.vendorRepairs = true; M.fire("MERCHANT_SHOW"); tick(ns)
+  check("at a vendor: low water and repairs", journey(ns):find("Buy water: 2 left") ~= nil and journey(ns):find("Repair here %(gear at 54%%%)") ~= nil, journey(ns))
+  M.fire("MERCHANT_CLOSED"); tick(ns)
+  check("away from the vendor it goes quiet again", not journey(ns):find("Buy water"), journey(ns))
+  M.P.bag, M.P.durability = nil, nil
+
+  -- /coach bar
+  M.P.actions = { [1] = 529, [2] = 8044 }
+  M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(1); tick(ns)
+  SlashCmdList.CLASSCOACH("bar")
+  check("bar: a taken button is left alone", M.P.actions[1] == 529 and M.P.actions[2] == 8044)
+  check("bar: empty buttons are filled", M.P.actions[4] == 8050 and M.P.actions[5] == 3599 and M.P.actions[9] == 324,
+    tostring(M.P.actions[4]) .. "/" .. tostring(M.P.actions[5]) .. "/" .. tostring(M.P.actions[9]))
+  check("bar: nothing is put on twice", M.P.actions[3] == nil and M.P.actions[7] == nil, tostring(M.P.actions[3]))
+  SlashCmdList.CLASSCOACH("bar replace")
+  check("bar replace: the pull macro takes button 1", type(M.P.actions[1]) == "table" and M.P.actions[1].macro == "CC Pull", tostring(M.P.actions[1]))
+  check("bar replace: every known entry placed", M.P.actions[3] == 8044 and M.P.actions[7] == 529 and M.P.actions[10] == 8017, tostring(M.P.actions[3]))
+  M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(1); tick(ns)
+
   -- The settings screen
   local S = M.settings
   check("settings page registered with the game", S.category ~= nil and S.category.name == "ClassCoach")
   local count = 0
   for _ in pairs(S.list) do count = count + 1 end
-  check("every option made it onto the page", count == 21 and #ns.Options.registered == 21, count)
-  check("sections and action buttons", #S.headers == 5 and #S.buttons == 2, #S.headers .. "/" .. #S.buttons)
+  check("every option made it onto the page", count == 24 and #ns.Options.registered == 24, count)
+  check("sections and action buttons", #S.headers == 5 and #S.buttons == 3, #S.headers .. "/" .. #S.buttons)
   check("options write to the saved settings", S.list.compact.tbl == ClassCoachDB and S.list.specChoice.tbl == ClassCoachCharDB)
   check("slider shows its unit", S.list.opacity.opts.format(75) == "75%" and S.list.scale.opts.format(1.1) == "1.10x")
   local specs = S.list.specChoice.getOptions()
@@ -466,7 +539,7 @@ elseif SCENARIO == "sweep" then
   local function look(level, opts, spells, where)
     local f = tick(ns)
     local tag = ("%s L%d %s wand=%s pet=%s mana=%d"):format(WANT, level, where, tostring(opts.wand), tostring(opts.pet), opts.mana)
-    local shown = { f.name.text, f.why.text, f.status.text, f.chainText.text, f.dots.text, journey(ns), missing(ns) }
+    local shown = { f.name.text, f.why.text, f.status.text, f.chainText.text, f.dots.text, journeyNow(ns), missing(ns) }
     for _, s in ipairs(f.missing) do if s.shown and rawget(s, "spell") then shown[#shown + 1] = rawget(s, "spell") end end
     for key in pairs(profile.spells) do
       if not spells[idOf[key]] then

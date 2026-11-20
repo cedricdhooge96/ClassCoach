@@ -26,6 +26,9 @@ local function layout()
     { key = "showMana", kind = "check", name = "Show the mana bar", default = true,
       tip = "Your real mana, drawn by the game." },
 
+    { key = "threat", kind = "check", name = "Warn about enemies I shouldn't fight", default = true,
+      tip = "Before a pull: enemies far above your level, elites when you are alone, and grey ones that give no XP." },
+
     { header = "Journey panel (outside the fight)" },
     { key = "journey", kind = "check", name = "Show the journey panel", default = true,
       tip = "XP, rested XP and a short to-do list. It hides itself in combat." },
@@ -39,6 +42,10 @@ local function layout()
       tip = "Spells you can learn now, unspent talent points, and the next level with something new." },
     { key = "remindGear", kind = "check", name = "Remind me: repairs and full bags", default = true,
       tip = "Gear below 25% durability, or two bag slots left." },
+    { key = "remindSupplies", kind = "check", name = "Remind me: food, water and reagents", default = true,
+      tip = "At a vendor when you are running low, and anywhere when you have run out." },
+    { key = "roadmap", kind = "check", name = "Show milestones, zones and dungeons", default = true,
+      tip = "Class quests and other milestones for your level, where to quest, and which dungeon is in range." },
 
     { header = "Look" },
     { key = "opacity", kind = "slider", name = "Background", default = 75, min = 0, max = 100, step = 5, unit = "%",
@@ -125,6 +132,8 @@ function Options.build(db, charDB, actions)
     page:AddInitializer(CreateSettingsListSectionHeaderInitializer("Actions"))
     page:AddInitializer(CreateSettingsButtonInitializer("Helper macros", "Create or refresh", actions.macros,
       "Makes this class's CC macros from the spells you know. Out of combat only.", true))
+    page:AddInitializer(CreateSettingsButtonInitializer("Action bar", "Fill empty buttons", actions.bar,
+      "Puts this class's suggested layout on your main action bar. Buttons that already hold something are left alone.", true))
     page:AddInitializer(CreateSettingsButtonInitializer("Panel positions", "Reset", actions.reset,
       "Puts both panels back where they started.", true))
   end)

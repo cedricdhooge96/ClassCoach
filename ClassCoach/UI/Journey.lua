@@ -7,7 +7,7 @@ local _, ns = ...
 local Journey = {}
 ns.Journey = Journey
 
-local WIDTH, MAX_LINES, ICON_SIZE = 320, 6, 20
+local WIDTH, MAX_LINES, ICON_SIZE = 320, 9, 20
 local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
 local COLORS = {
   act = { 1.00, 0.78, 0.30 }, info = { 0.70, 0.72, 0.78 }, dim = { 0.62, 0.62, 0.66 },

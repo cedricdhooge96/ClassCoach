@@ -147,6 +147,28 @@ ns.RegisterProfile({
 
   trainer = TRAINER,
 
+  -- /coach bar: one entry per button, best candidate first.
+  bar = {
+    { "macro:CC Pull", "Mind Blast", "Shadow Word: Pain", "Smite" },
+    { "macro:CC Wand", "Shoot" },
+    { "Smite" },
+    { "macro:CC Shield", "Power Word: Shield" },
+    { "book:Psychic Scream", "book:Fade" },
+    { "Renew", "Lesser Heal" },
+    { "Mind Blast" },
+    { "Shadow Word: Pain" },
+    { "Flash Heal", "book:Heal", "Lesser Heal" },
+    { "Power Word: Fortitude" },
+    { "Inner Fire" },
+    { "book:Fade" },
+  },
+
+  milestones = {
+    { level = 5, text = "Get a wand", hint = "A Lesser Magic Wand (level 5) from an enchanter or the auction house: your free damage.",
+      icon = "Interface\\Icons\\INV_Wand_01", done = function(s) return s.hasWand end },
+    { level = 30, text = "Penance talent", hint = "A strong, cheap spell for damage and healing: take it as Discipline." },
+  },
+
   -- Suggested leveling path; check your guide (Penance is a Discipline talent).
   talents = {
     { 10, 11, "Wand Specialization" },

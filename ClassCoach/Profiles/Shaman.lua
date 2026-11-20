@@ -169,6 +169,35 @@ ns.RegisterProfile({
 
   trainer = TRAINER,
 
+  -- /coach bar: one entry per button, best candidate first.
+  bar = {
+    { "macro:CC Pull", "Flame Shock", "Lightning Bolt" },
+    { "macro:CC Strike", "Stormstrike", "Earth Shock" },
+    { "Earth Shock" },
+    { "Flame Shock" },
+    { "Searing Totem", "Stoneskin Totem" },
+    { "book:Stoneclaw Totem", "book:Earthbind Totem" },
+    { "Lightning Bolt" },
+    { "Lesser Healing Wave", "Healing Wave" },
+    { "Lightning Shield", "Water Shield" },
+    { "Windfury Weapon", "Rockbiter Weapon" },
+    { "book:Ghost Wolf", "Strength of Earth Totem" },
+    { "book:Purge", "Healing Wave" },
+  },
+
+  supplies = {
+    { item = 17030, name = "Ankhs", needs = "Reincarnation", low = 2, icon = "Interface\\Icons\\INV_Jewelry_Talisman_06" },
+  },
+
+  milestones = {
+    { level = 4, text = "Earth totem quest", hint = "Your trainer starts it. Without the totem you cannot drop Earth totems." },
+    { level = 10, text = "Fire totem quest", hint = "Your trainer starts it; it continues outside your starting zone. Bring a friend for the last part." },
+    { level = 20, text = "Water totem quest and Ghost Wolf", hint = "A long quest chain, but healing totems need it. Ghost Wolf makes the running faster." },
+    { level = 25, text = "Stormstrike talent", hint = "Your main attack from here on. Put it on an easy key." },
+    { level = 30, text = "Air totem quest and Windfury Weapon", hint = "Windfury replaces Rockbiter on your weapon." },
+    { level = 40, text = "Mail armour", hint = "Your trainer teaches it at 40. Replace leather as mail drops." },
+  },
+
   -- Talent order after the 12 November patch (All Things How).
   talents = {
     { 10, 14, "Thundering Strikes" }, { 15, 17, "Mental Dexterity" }, { 18, 19, "Improved Lightning Shield" },

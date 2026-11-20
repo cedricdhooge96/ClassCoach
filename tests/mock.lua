@@ -92,7 +92,15 @@ function GetXPExhaustion() return P.rested end
 function IsResting() return P.resting or false end
 function UnitCharacterPoints() return P.talentPoints or 0 end
 function GetInventoryItemDurability(slot) if slot == 16 and P.durability then return P.durability, 100 end end
-C_Container = { GetContainerNumFreeSlots = function(bag) if bag == 0 then return P.freeSlots or 10 end return 0 end }
+-- P.bag = { { id, count, class, sub, use } }: bag 0 holds everything
+C_Container = {
+  GetContainerNumFreeSlots = function(bag) if bag == 0 then return P.freeSlots or 10 end return 0 end,
+  GetContainerNumSlots = function(bag) if bag == 0 then return #(P.bag or {}) end return 0 end,
+  GetContainerItemInfo = function(bag, slot)
+    local it = bag == 0 and P.bag and P.bag[slot]
+    if it then return { itemID = it.id, stackCount = it.count } end
+  end,
+}
 function UnitCreatureFamily(u) if u == "pet" then return P.pet and P.pet.family end end
 function UnitIsUnit() return SECRET end
 
@@ -122,6 +130,7 @@ C_SpellBook = {
   end,
 }
 C_Spell = {
+  PickupSpell = function(id) M.cursor = { spell = id } end,
   GetSpellDescription = function(id) return P.spells[id] and P.spells[id].text end,
   GetSpellName = function(id) return P.spells[id] and P.spells[id].name or M.names[id] end,
   GetSpellTexture = function(id) return "Interface\\Icons\\spell_" .. id end,
@@ -150,10 +159,33 @@ C_UnitAuras = {
 }
 function GetWeaponEnchantInfo() return hidden(P.mainHand) end
 function GetTotemInfo(slot) return hidden(P.totems[slot] == true) end
-C_Item = { GetItemCount = function(id) return P.items[id] or 0 end }   -- by id or by name
+C_Item = {
+  GetItemCount = function(id) return P.items[id] or 0 end,   -- by id or by name
+  GetItemInfoInstant = function(id)
+    for _, it in ipairs(P.bag or {}) do if it.id == id then return id, "", "", "", 0, it.class, it.sub end end
+  end,
+}
 function GetInventoryItemID(_, slot) return P.equipped[slot] end
 function GetTalentTabInfo(tab) return tab, "Tree" .. tab, "", "icon", P.talents[tab] or 0 end
-function GetActionInfo(slot) local id = P.actions[slot]; if id then return "spell", id end end
+-- An action button holds a spell id, or { macro = name }.
+function GetActionInfo(slot)
+  local a = P.actions[slot]
+  if type(a) == "table" then return "macro", GetMacroIndexByName(a.macro) end
+  if a then return "spell", a end
+end
+function GetActionText(slot) local a = P.actions[slot]; if type(a) == "table" then return a.macro end end
+function ClearCursor() M.cursor = nil end
+function PickupMacro(name) M.cursor = { macro = name } end
+function PlaceAction(slot)
+  assert(not P.combat, "the action bar cannot change in combat")
+  local held = M.cursor
+  M.cursor = P.actions[slot]          -- what was there ends up on the cursor
+  if held then P.actions[slot] = held.spell or held end
+end
+function UnitClassification(u) if u == "target" and P.target then return P.target.elite and "elite" or "normal" end end
+function UnitFactionGroup() return P.faction or "Alliance" end
+function CanMerchantRepair() return P.vendorRepairs == true end
+function GetItemSpell(id) for _, it in ipairs(P.bag or {}) do if it.id == id then return it.use end end end
 function GetBindingKey(b) return P.bindings[b] end
 function GetBuildInfo() return "1.60.1", "99999", "Nov 2026", 16001 end
 Enum = { SpellBookSpellBank = { Player = 0 } }

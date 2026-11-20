@@ -28,6 +28,7 @@ ClassCoach only shows advice. It never presses buttons for you, which keeps it w
 |---|---|
 | `/coach` | Opens the settings screen |
 | `/coach macros` | Creates or refreshes this class's helper macros (out of combat) |
+| `/coach bar` | Puts the suggested layout on empty buttons of your main action bar; `/coach bar replace` overwrites buttons 1–12 |
 | `/coach last` | Repeats the last fight report in chat |
 | `/coach hide` / `show` | Hides or shows the coach panel |
 | `/coach reset` | Puts both panels back where they started |
@@ -61,6 +62,14 @@ Type `/coach`, or go to Esc > Options > AddOns > ClassCoach, or click ClassCoach
 
 - **Coach** (top): only the fight. The carousel, your timers, mana, and before a pull the few things that matter for that fight (shield, weapon buff, demon, low health or mana). Anything missing shows as the icon of the spell that fixes it, with its key; hover it for the details.
 - **Journey** (its own panel, hidden in combat): your XP and rested XP, and a short to-do list with an icon per item (hover one for the full advice). The list covers from the leveling guides: unspent talent points, spells you can train, a missing food buff (+5% XP from kills), no rested XP, your Cozy Sleeping Bag or Camp Tent if you own one, gear that needs repair, full bags, and the level your trainer next has something new. `!` marks something worth doing now; the grey line under the list explains the first one.
+
+What the journey panel adds on top of that:
+
+- **Milestones**: class quests and other things worth doing at your level, and the next one coming ("At level 20: Water totem quest and Ghost Wolf").
+- **Where to be**: zones and dungeons that fit your level (Alliance for now).
+- **Supplies**: at a vendor it tells you what you are low on (water, food, class reagents) and whether to repair. On the road it only speaks up when you have run out.
+
+And on the coach panel, before a pull, a red or amber icon when the enemy is one you shouldn't fight alone: far above your level, elite, or grey (no XP).
 
 The two panels move independently: drag each where you like. `/coach reset` puts both back.
 

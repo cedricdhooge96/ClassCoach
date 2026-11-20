@@ -239,6 +239,33 @@ ns.RegisterProfile({
 
   trainer = TRAINER,
 
+  -- /coach bar: one entry per button, best candidate first.
+  bar = {
+    { "macro:CC Pull", "Bane of Agony", "Corruption", "Shadow Bolt" },
+    { "macro:CC Wand", "Shoot" },
+    { "Shadow Bolt" },
+    { "Life Tap", "Immolate" },
+    { "Fear" },
+    { "Drain Soul" },
+    { "Bane of Agony" },
+    { "Corruption" },
+    { "Immolate" },
+    { "Drain Life" },
+    { "Demon Armor", "Demon Skin" },
+    { "macro:CC Demon", "Summon Voidwalker", "Summon Imp" },
+  },
+
+  milestones = {
+    { level = 20, text = "Succubus or Incubus quest", icon = "Interface\\Icons\\Spell_Shadow_SummonSuccubus",
+      hint = "Your class trainer starts it. The Incubus version is the easier one.",
+      done = function(s) return s:known("Summon Succubus") or s:known("Summon Incubus") end },
+    { level = 30, text = "Felhunter quest", icon = "Interface\\Icons\\Spell_Shadow_SummonFelHunter",
+      hint = "Your class trainer starts it. The Felhunter is the pick against casters.",
+      done = function(s) return s:known("Summon Felhunter") end },
+    { level = 40, text = "Felsteed quest", icon = "Interface\\Icons\\Spell_Nature_Swiftness",
+      hint = "A short class quest for your free mount." },
+  },
+
   -- Warcraft Tavern's Affliction build (41/7/3): no respec needed.
   talents = {
     { 10, 14, "Improved Corruption" }, { 15, 17, "Suppression" }, { 18, 22, "Unholy Power (Demonology)" },

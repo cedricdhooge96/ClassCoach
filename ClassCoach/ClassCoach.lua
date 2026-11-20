@@ -131,6 +131,35 @@ function C.syncMacros(onlyExisting)
   return results
 end
 
+-- Lays out the profile's suggested action bar on buttons 1-12 of the main bar.
+-- Buttons that already hold something are left alone unless `replace`.
+function C.setupBar(replace)
+  local s = C.lastState
+  if not C.profile.bar then say("No bar layout for " .. C.profile.spec .. " yet.") return end
+  if not s then say("Still loading: try again in a moment.") return end
+  if API.inCombat() then say("The action bar can only be changed out of combat.") return end
+  C.syncMacros(false)   -- the layout uses the CC macros: make sure they exist
+  local plan = Engine.bar(C.profile, s, {
+    macro = API.macroExists,
+    book = function(name) local entry = C.book and C.book[name]; return entry and entry.ids[#entry.ids] or nil end,
+  })
+  local placed, kept, already = {}, {}, {}
+  for _, b in ipairs(plan) do
+    local onBar = C.keys and C.keys[b.macro and ("macro:" .. b.macro) or b.label] ~= nil
+    if not replace and onBar then
+      already[#already + 1] = b.label
+    elseif not replace and not API.slotEmpty(b.slot) then
+      kept[#kept + 1] = ("%d (%s)"):format(b.slot, b.label)
+    elseif API.placeAction(b.slot, b) then
+      placed[#placed + 1] = ("%d %s"):format(b.slot, b.label)
+    end
+  end
+  if #placed > 0 then say("Action bar: " .. table.concat(placed, ", ") .. ".") else say("Action bar: nothing to place.") end
+  if #already > 0 then say("Already on your bars: " .. table.concat(already, ", ") .. ".") end
+  if #kept > 0 then say("Buttons left alone because they hold something: " .. table.concat(kept, ", ") .. ". \"/coach bar replace\" overwrites buttons 1-12.") end
+  rescanSoon()
+end
+
 ---------------------------------------------------------------------------
 -- Mana
 ---------------------------------------------------------------------------
@@ -173,7 +202,8 @@ function C.journeyData(now)
   local j = C.journey
   if j and now - j.at < 2 then return j end
   j = { at = now, xp = API.xp(), talentPoints = API.unspentTalents(), durability = API.durability(),
-    freeSlots = API.freeBagSlots(), hasItem = API.hasItem }
+    freeSlots = API.freeBagSlots(), hasItem = API.hasItem, supplies = API.supplies(),
+    atVendor = C.atVendor == true, canRepair = C.atVendor and API.canRepair() or false }
   C.journey = j
   return j
 end
@@ -205,7 +235,7 @@ local function buildState(now)
     target = currentTarget(), hasWand = C.hasWand, buffs = buffs, mainHandBuff = mainHand,
     keys = C.keys, spells = C.spells, bookReady = next(C.spells) ~= nil, tracker = C.tracker, fightTime = C.tracker:fightTime(now),
     check = { ready = API.ready, usable = API.usable },
-    itemCount = API.itemCount, equipped = API.equipped, journey = (not inCombat) and C.journeyData(now) or nil,
+    itemCount = API.itemCount, equipped = API.equipped, faction = C.faction, journey = (not inCombat) and C.journeyData(now) or nil,
   })
 end
 
@@ -246,7 +276,7 @@ local function tick()
     view.status = Engine.advice(profile, s)
     view.statusKind = s.manaLevel == "low" and "warn" or nil
   else
-    local missing = Engine.checklist(profile, s, { drinkAt = ClassCoachDB.drinkAt })
+    local missing = Engine.checklist(profile, s, { drinkAt = ClassCoachDB.drinkAt, threat = ClassCoachDB.threat })
     view.missing = missing
     if #missing > 0 then
       -- the panel shows each as the icon of what fixes it; the line under them explains the first
@@ -257,7 +287,8 @@ local function tick()
       view.statusKind = "ok"
     end
     local db = ClassCoachDB
-    local journey = Engine.journey(profile, s, { food = db.food, rested = db.remindRested, train = db.remindTrain, gear = db.remindGear })
+    local journey = Engine.journey(profile, s, { food = db.food, rested = db.remindRested, train = db.remindTrain, gear = db.remindGear,
+      supplies = db.remindSupplies, roadmap = db.roadmap, data = ns.JourneyData })
     journey.title = ("Journey · level %d"):format(s.level)
     for _, line in ipairs(journey.lines) do
       if type(line.icon) == "table" then   -- { spell = key }: that spell's own icon, learned or not
@@ -378,6 +409,10 @@ function handlers.PLAYER_REGEN_ENABLED()
   end)
 end
 
+-- At a vendor the journey panel checks your supplies.
+function handlers.MERCHANT_SHOW() C.atVendor = true; C.journey = nil end
+function handlers.MERCHANT_CLOSED() C.atVendor = false; C.journey = nil end
+
 function handlers.PLAYER_LEVEL_UP(level)
   level = API.plain(level)
   if type(level) ~= "number" then return end
@@ -416,6 +451,7 @@ local function start()
   for k, v in pairs(ns.Options.defaults()) do if db[k] == nil then db[k] = v end end
   C.tracker = Tracker.new()
   C.level = API.level()
+  C.faction = API.faction()
   chooseProfile()
   local ok, err = pcall(rescan)
   if not ok then log("first scan error: %s", tostring(err)) end
@@ -426,6 +462,7 @@ local function start()
   C.optionsReady = ns.Options.build(ClassCoachDB, ClassCoachCharDB, {
     macros = function() SlashCmdList.CLASSCOACH("macros") end,
     reset = function() SlashCmdList.CLASSCOACH("reset") end,
+    bar = function() SlashCmdList.CLASSCOACH("bar") end,
   })
 end
 
@@ -508,6 +545,7 @@ end
 local HELP = {
   "/coach — open the settings screen (also: Esc > Options > AddOns > ClassCoach)",
   "/coach macros — create or refresh this class's helper macros (out of combat)",
+  "/coach bar — put the suggested layout on empty buttons of your main action bar (\"/coach bar replace\" overwrites)",
   "/coach last — repeat the last fight report",
   "/coach reset — put both panels back where they started",
   "/coach hide | show — the coach panel",
@@ -580,6 +618,7 @@ SlashCmdList.CLASSCOACH = function(msg)
     end
     say("Open /macro, pick your character's tab and drag them onto your action bar. They update themselves when you learn new spells.")
     rescanSoon()
+  elseif cmd == "bar" then C.setupBar(arg:lower() == "replace")
   elseif cmd == "check" then check()
   else
     say("Coach for " .. C.profile.spec .. ". Commands:")
