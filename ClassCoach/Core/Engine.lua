@@ -462,13 +462,14 @@ function Engine.journey(profile, s, options)
   -- icon: a texture path, or { spell = key } for that spell's own icon
   local function add(kind, line, hint, icon) out.lines[#out.lines + 1] = { kind = kind, text = line, hint = hint, icon = icon } end
 
-  if j.talentPoints and j.talentPoints > 0 then
+  local train, restedOn, gear = options.train ~= false, options.rested ~= false, options.gear ~= false
+  if train and j.talentPoints and j.talentPoints > 0 then
     local pick = Engine.talentFor(profile, s.level)
     add("do", j.talentPoints == 1 and "1 talent point to spend" or (j.talentPoints .. " talent points to spend"),
       pick and ("Suggested: " .. pick .. ".") or "Open your talents (N) and spend it.", ICON.talent)
   end
 
-  if s.bookReady then
+  if train and s.bookReady then
     local untrained = {}
     for key, meta in pairs(profile.spells) do
       if meta.learn and s.level >= meta.learn and not s:known(key) then untrained[#untrained + 1] = key end
@@ -495,7 +496,9 @@ function Engine.journey(profile, s, options)
     out.xp = { pct = (xp.cur or 0) / xp.max * 100, resting = xp.resting == true }
     local rested = xp.rested or 0
     out.xp.restedPct = rested / xp.max * 100
-    if xp.resting then
+    if not restedOn then
+      -- the bar still shows it; just no reminders
+    elseif xp.resting then
       add("info", "In a rest area", "Log out here: rested XP builds while you are away, and doubles XP from kills.", ICON.rest)
     elseif rested <= 0 then
       add("do", "No rested XP", j.hasItem and j.hasItem("Camp Tent")
@@ -507,19 +510,19 @@ function Engine.journey(profile, s, options)
     end
   end
 
-  if j.hasItem and j.hasItem("Cozy Sleeping Bag") and buffStarting(s, "Cozy") == false and s.level < 60 then
+  if restedOn and j.hasItem and j.hasItem("Cozy Sleeping Bag") and buffStarting(s, "Cozy") == false and s.level < 60 then
     add("do", "Sleeping bag buff missing", "Lie on your Cozy Sleeping Bag for up to 3 minutes: up to +3% XP.", ICON.sleep)
   end
 
-  if j.durability and j.durability < 25 then
+  if gear and j.durability and j.durability < 25 then
     add("do", ("Gear at %d%% durability"):format(math.floor(j.durability)), "Repair at any vendor with an anvil icon before it breaks.", ICON.repair)
   end
-  if j.freeSlots and j.freeSlots <= 2 then
+  if gear and j.freeSlots and j.freeSlots <= 2 then
     add("do", j.freeSlots == 0 and "Bags full" or ("Bags nearly full (%d free)"):format(j.freeSlots), "Sell grey items at a vendor.", ICON.bags)
   end
 
   local nextLevel = Engine.nextTraining(profile, s.level)
-  if nextLevel then
+  if train and nextLevel then
     add("info", ("New spells at level %d"):format(nextLevel), profile.trainer[nextLevel] and ("Your trainer will teach: " .. profile.trainer[nextLevel] .. ".") or nil, ICON.trainer)
   end
   return out

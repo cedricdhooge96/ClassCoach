@@ -29,7 +29,7 @@ Adding a class is one file: see [docs/EXTENDING.md](docs/EXTENDING.md).
 
 Copy the `ClassCoach` folder into
 `World of Warcraft\_forever_\Interface\AddOns\`, then restart the game or type `/reload`.
-Type `/coach help` in game for the commands.
+Type `/coach` in game for the settings screen.
 
 ## Layout
 

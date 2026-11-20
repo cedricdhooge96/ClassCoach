@@ -50,31 +50,18 @@ end
 
 function Panel.create(charDB, db)
   if Panel.frame then return Panel.frame end
-  local ok, f = pcall(CreateFrame, "Frame", "ClassCoachPanel", UIParent, "BackdropTemplate")
-  if not ok or not f then f = CreateFrame("Frame", "ClassCoachPanel", UIParent) end
+  local f = CreateFrame("Frame", "ClassCoachPanel", UIParent)
   Panel.frame, Panel.charDB, Panel.db = f, charDB, db
   f:SetSize(WIDTH, 120)
   f:SetFrameStrata("MEDIUM")
   f:SetClampedToScreen(true)
-  if f.SetBackdrop then
-    pcall(f.SetBackdrop, f, {
-      bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-      edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12,
-      insets = { left = 3, right = 3, top = 3, bottom = 3 },
-    })
-    pcall(f.SetBackdropColor, f, 0.05, 0.05, 0.07, 0.82)
-    pcall(f.SetBackdropBorderColor, f, 0.35, 0.35, 0.40, 0.9)
-  else
-    local bg = f:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(0.05, 0.05, 0.07, 0.82)
-  end
+  ns.Style.skin(f)
+  ns.Style.apply(f, db, db.scale)
 
   -- Position
   local pos = charDB.pos
   f:ClearAllPoints()
   if pos then f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4]) else f:SetPoint("CENTER", UIParent, "CENTER", 0, -180) end
-  f:SetScale(db.scale or 1)
   f:SetMovable(true)
   f:EnableMouse(true)
   f:RegisterForDrag("LeftButton")
@@ -175,7 +162,7 @@ function Panel.create(charDB, db)
   msg:SetWordWrap(true)
   f.msg = msg
 
-  if db.hidden then f:Hide() end
+  if db.showCoach == false then f:Hide() end
   return f
 end
 
@@ -218,7 +205,16 @@ end
 --          status, statusKind ("warn"|"ok") }
 function Panel.render(view)
   local f = Panel.frame
-  if not f or not f:IsShown() then return end
+  if not f then return end
+  local db = Panel.db
+  local wanted = db.showCoach ~= false
+  if Panel.visible ~= wanted then
+    Panel.visible = wanted
+    if wanted then f:Show() else f:Hide() end
+  end
+  if not wanted then return end
+  ns.Style.apply(f, db, db.scale)
+  local compact = db.compact == true
   f.title:SetText(view.title or "")
   local steps = view.chain or {}
   local now = steps[1]
@@ -239,7 +235,7 @@ function Panel.render(view)
   f.chainLabel:SetText(view.planning and "Pull" or "Then")
 
   -- Left: what you already did here. Damage over time shows its seconds left.
-  local done = view.done or {}
+  local done = db.showDone ~= false and view.done or {}
   for i = 1, 2 do
     local d = done[#done - 2 + i]
     local s = f.done[i]
@@ -274,11 +270,12 @@ function Panel.render(view)
 
   local y = ROW_TOP - MAIN - 6
   y = place(f.name, y, now and now.label or "Ready", 2)
-  y = place(f.why, y, now and now.why, 3)
-  y = place(f.chainText, y, table.concat(names, " > "), 4)
+  y = place(f.why, y, not compact and now and now.why or nil, 3)
+  y = place(f.chainText, y, not compact and table.concat(names, " > ") or nil, 4)
 
   -- What is ticking on this enemy
   local dotLine
+  if db.showDots == false then view.dots, view.otherDotted = nil, nil end
   if view.dots and #view.dots > 0 then
     local parts = {}
     for _, d in ipairs(view.dots) do parts[#parts + 1] = ("%s %ss"):format(d.label, seconds(d.left)) end
@@ -292,7 +289,7 @@ function Panel.render(view)
 
   -- Mana: the game draws the true value. If it ever refuses, show our guess and say so.
   local barShown = false
-  if view.usesMana then
+  if view.usesMana and db.showMana ~= false then
     f.bar:ClearAllPoints()
     f.bar:SetPoint("TOPLEFT", 10, y)
     f.bar:Show()
@@ -335,12 +332,6 @@ function Panel.flash(lines, seconds)
   Panel.msgUntil = GetTime() + (seconds or 15)
 end
 
-function Panel.setScale(scale) if Panel.frame then Panel.frame:SetScale(scale) end end
-function Panel.toggle(show)
-  local f = Panel.frame
-  if not f then return end
-  if show then f:Show() else f:Hide() end
-end
 function Panel.resetPosition()
   local f = Panel.frame
   if not f then return end

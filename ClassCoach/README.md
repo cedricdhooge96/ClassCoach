@@ -26,15 +26,15 @@ ClassCoach only shows advice. It never presses buttons for you, which keeps it w
 
 | Command | What it does |
 |---|---|
-| `/coach` | Help |
-| `/coach lock` / `unlock` | Stop or allow dragging the panel |
-| `/coach scale 1.2` | Panel size (0.5–2) |
-| `/coach spec Enhancement` | Pick a profile by hand; `/coach spec auto` goes back to automatic |
-| `/coach last` | Repeat the last fight report in chat |
-| `/coach chat off` | Stop fight tips in chat (they still show on the panel) |
-| `/coach food off` | Stop the buff-food reminder |
-| `/coach hide` / `show` / `reset` | Hide, show, or re-centre the panel |
+| `/coach` | Opens the settings screen |
+| `/coach macros` | Creates or refreshes this class's helper macros (out of combat) |
+| `/coach last` | Repeats the last fight report in chat |
+| `/coach hide` / `show` | Hides or shows the coach panel |
+| `/coach reset` | Puts both panels back where they started |
+| `/coach spec Enhancement` | Picks a profile by hand; `/coach spec auto` goes back to automatic |
 | `/coach check` | Prints what the addon can read on your client. Useful when something looks wrong |
+
+Everything else is on the settings screen.
 
 ## Profiles included
 
@@ -47,12 +47,22 @@ ClassCoach only shows advice. It never presses buttons for you, which keeps it w
 
 The profile is picked from your talent points (the tree with the most points); before level 10 the class's default spec is used. Adding a class or spec is one file: see `docs/EXTENDING.md` in the project.
 
+## Settings
+
+Type `/coach`, or go to Esc > Options > AddOns > ClassCoach, or click ClassCoach in the minimap's addon menu. Everything is on one page and applies at once:
+
+- **Coach panel**: show or hide, size, compact (icons only), the left "already cast" icons, the timers line, the mana bar.
+- **Journey panel**: show or hide, size, and which reminders you want (food, rested XP, trainer and talents, repairs and bags).
+- **Look**: background darkness, thin border, class-colour line, lock in place.
+- **Coaching**: profile for this character, skipping damage over time on dying enemies, when to suggest drinking, tips in chat, keeping macros up to date.
+- **Actions**: create or refresh macros, reset panel positions.
+
 ## Two panels
 
 - **Coach** (top): only the fight. The carousel, your timers, mana, and before a pull the few things that matter for that fight (shield, weapon buff, demon, low health or mana).
 - **Journey** (its own panel, hidden in combat): your XP and rested XP, and a short to-do list with an icon per item (hover one for the full advice). The list covers from the leveling guides: unspent talent points, spells you can train, a missing food buff (+5% XP from kills), no rested XP, your Cozy Sleeping Bag or Camp Tent if you own one, gear that needs repair, full bags, and the level your trainer next has something new. `!` marks something worth doing now; the grey line under the list explains the first one.
 
-The two panels move independently: drag each where you like. `/coach journey off` hides the second one; `/coach reset` puts both back.
+The two panels move independently: drag each where you like. `/coach reset` puts both back.
 
 ## Macros
 

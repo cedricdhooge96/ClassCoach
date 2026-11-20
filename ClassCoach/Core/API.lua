@@ -167,6 +167,14 @@ function API.targetKey()
   return "t:" .. targetSeq, "count"
 end
 
+-- Your class colour (r, g, b), gold when the game won't say.
+function API.classColor()
+  local token = API.classToken()
+  local c = token and RAID_CLASS_COLORS and RAID_CLASS_COLORS[token]
+  if type(c) == "table" and c.r then return c.r, c.g, c.b end
+  return 1, 0.82, 0.2
+end
+
 -- Your pet's kind ("Imp", "Voidwalker", ...) when the game tells us; English clients.
 function API.petFamily()
   local family = plain(try(UnitCreatureFamily, "pet"))

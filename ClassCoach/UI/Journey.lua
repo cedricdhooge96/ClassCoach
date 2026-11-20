@@ -52,23 +52,14 @@ end
 
 function Journey.create(charDB, db)
   if Journey.frame then return Journey.frame end
-  local ok, f = pcall(CreateFrame, "Frame", "ClassCoachJourney", UIParent, "BackdropTemplate")
-  if not ok or not f then f = CreateFrame("Frame", "ClassCoachJourney", UIParent) end
+  local f = CreateFrame("Frame", "ClassCoachJourney", UIParent)
   Journey.frame, Journey.charDB, Journey.db = f, charDB, db
   f:SetSize(WIDTH, 60)
   f:SetFrameStrata("MEDIUM")
   f:SetClampedToScreen(true)
-  if f.SetBackdrop then
-    pcall(f.SetBackdrop, f, {
-      bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-      edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12,
-      insets = { left = 3, right = 3, top = 3, bottom = 3 },
-    })
-    pcall(f.SetBackdropColor, f, 0.05, 0.05, 0.07, 0.78)
-    pcall(f.SetBackdropBorderColor, f, 0.35, 0.35, 0.40, 0.9)
-  end
+  ns.Style.skin(f)
+  ns.Style.apply(f, db, db.journeyScale)
   Journey.place()
-  f:SetScale(db.scale or 1)
   f:SetMovable(true)
   f:EnableMouse(true)
   f:RegisterForDrag("LeftButton")
@@ -134,6 +125,7 @@ function Journey.render(view)
     return
   end
   if Journey.visible ~= true then f:Show(); Journey.visible = true end
+  ns.Style.apply(f, Journey.db, Journey.db.journeyScale)
 
   f.title:SetText(view.title or "Journey")
   local y = -22
@@ -195,7 +187,6 @@ function Journey.render(view)
   f:SetHeight(-y + 8)
 end
 
-function Journey.setScale(scale) if Journey.frame then Journey.frame:SetScale(scale) end end
 function Journey.reset()
   Journey.charDB.journeyPos = nil
   Journey.place()

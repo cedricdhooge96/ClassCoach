@@ -3,7 +3,7 @@
 local ADDON, ns = ...
 local API, Mana, Tracker, Engine, Profiles = ns.API, ns.Mana, ns.Tracker, ns.Engine, ns.Profiles
 
-local DEFAULTS = { scale = 1, locked = false, hidden = false, chat = true, food = true, drinkAt = 60, journey = true }
+-- Every option and its default lives in UI/Options.lua (the settings screen).
 local KILL_SAMPLES = 3   -- fights needed before the "enemy nearly dead" guess is used
 
 local C = {}            -- runtime state
@@ -28,7 +28,9 @@ API.log = log
 
 local function chooseProfile()
   local class = API.classToken() or "ANY"
-  local profile, why = Profiles.choose(class, API.talentPoints(), ClassCoachCharDB.spec)
+  local choice = ClassCoachCharDB.specChoice
+  C.specSeen = choice
+  local profile, why = Profiles.choose(class, API.talentPoints(), choice ~= "auto" and choice or nil)
   if profile ~= C.profile then C.manaLevel = nil end
   C.profile, C.profileWhy, C.class = profile, why, class
 end
@@ -113,6 +115,7 @@ end
 function C.syncMacros(onlyExisting)
   local s = C.lastState
   if not s or not C.profile.macros or API.inCombat() then return {} end
+  if onlyExisting and ClassCoachDB.autoMacros == false then return {} end
   local results = {}
   for _, m in ipairs(Engine.macros(C.profile, s)) do
     local result = API.saveMacro(m.name, m.body, onlyExisting)
@@ -195,7 +198,7 @@ local function buildState(now)
   local kill = ClassCoachCharDB.kill
   return Engine.newState({
     meta = C.profile.spells, demon = demon,
-    killTime = kill and kill.n >= KILL_SAMPLES and kill.avg or nil,
+    killTime = ClassCoachDB.smartDots ~= false and kill and kill.n >= KILL_SAMPLES and kill.avg or nil,
     now = now, level = C.level or API.level(), inCombat = inCombat, inGroup = API.inGroup(),
     usesMana = C.usesMana, manaPct = manaPct, manaExact = exact, manaLevel = C.manaLevel,
     healthPct = (not inCombat) and API.healthPct() or nil, hasPet = hasPet,
@@ -208,6 +211,11 @@ end
 
 local function tick()
   local now = GetTime()
+  -- the profile was changed on the settings screen
+  if C.specSeen ~= ClassCoachCharDB.specChoice then
+    chooseProfile()
+    rescanSoon()
+  end
   local profile = C.profile
   local s = buildState(now)
   C.lastState = s
@@ -248,7 +256,8 @@ local function tick()
       view.status = "Ready to pull."
       view.statusKind = "ok"
     end
-    local journey = Engine.journey(profile, s, { food = ClassCoachDB.food })
+    local db = ClassCoachDB
+    local journey = Engine.journey(profile, s, { food = db.food, rested = db.remindRested, train = db.remindTrain, gear = db.remindGear })
     journey.title = ("Journey · level %d"):format(s.level)
     for _, line in ipairs(journey.lines) do
       if type(line.icon) == "table" then   -- { spell = key }: that spell's own icon, learned or not
@@ -399,7 +408,12 @@ end
 local function start()
   ClassCoachDB = ClassCoachDB or {}
   ClassCoachCharDB = ClassCoachCharDB or {}
-  for k, v in pairs(DEFAULTS) do if ClassCoachDB[k] == nil then ClassCoachDB[k] = v end end
+  local db = ClassCoachDB
+  -- settings saved by older versions
+  if db.hidden ~= nil then db.showCoach = not db.hidden; db.hidden = nil end
+  if ClassCoachCharDB.spec ~= nil then ClassCoachCharDB.specChoice = ClassCoachCharDB.spec; ClassCoachCharDB.spec = nil end
+  if ClassCoachCharDB.specChoice == nil then ClassCoachCharDB.specChoice = "auto" end
+  for k, v in pairs(ns.Options.defaults()) do if db[k] == nil then db[k] = v end end
   C.tracker = Tracker.new()
   C.level = API.level()
   chooseProfile()
@@ -409,7 +423,10 @@ local function start()
   C.lastMana, C.manaMax = mana, max
   ns.Panel.create(ClassCoachCharDB, ClassCoachDB)
   ns.Journey.create(ClassCoachCharDB, ClassCoachDB)
-  ns.Panel.frame:SetScript("OnUpdate", onUpdate)
+  C.optionsReady = ns.Options.build(ClassCoachDB, ClassCoachCharDB, {
+    macros = function() SlashCmdList.CLASSCOACH("macros") end,
+    reset = function() SlashCmdList.CLASSCOACH("reset") end,
+  })
 end
 
 local frame = CreateFrame("Frame")
@@ -421,6 +438,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
     self:UnregisterEvent("ADDON_LOADED")
     local ok, err = pcall(start)
     if not ok then print("ClassCoach failed to start: " .. tostring(err)) return end
+    -- The update loop runs on this always-shown frame, so hiding a panel never stops the coach.
+    C.driver = self
+    self:SetScript("OnUpdate", onUpdate)
     for e in pairs(handlers) do
       local fine
       if e == "UNIT_SPELLCAST_SUCCEEDED" or e == "UNIT_AURA" then
@@ -486,41 +506,59 @@ local function check()
 end
 
 local HELP = {
-  "/coach lock | unlock — stop or allow dragging the panel",
-  "/coach scale 1.2 — panel size",
-  "/coach spec <name> | auto — pick a profile (e.g. /coach spec Enhancement)",
-  "/coach last — repeat the last fight report",
+  "/coach — open the settings screen (also: Esc > Options > AddOns > ClassCoach)",
   "/coach macros — create or refresh this class's helper macros (out of combat)",
-  "/coach chat on | off — fight tips in chat",
-  "/coach food on | off — remind about buff food",
-  "/coach journey on | off | reset — the second panel: XP, rested XP and to-dos",
-  "/coach hide | show | reset — panel visibility and position",
+  "/coach last — repeat the last fight report",
+  "/coach reset — put both panels back where they started",
+  "/coach hide | show — the coach panel",
   "/coach check — what the addon can read on this client (for bug reports)",
 }
+
+local function openSettings()
+  local opened, why = ns.Options.open()
+  if opened then return end
+  if why == "combat" then say("The settings screen can't open in combat. Try again after the fight.") return end
+  say("Settings: Esc > Options > AddOns > ClassCoach. Commands:")
+  for _, l in ipairs(HELP) do print("  " .. l) end
+end
+
+-- The minimap's addon menu (the client looks these up by name)
+function ClassCoach_OnAddonCompartmentClick() openSettings() end
+function ClassCoach_OnAddonCompartmentEnter(_, button)
+  if not GameTooltip or not button then return end
+  GameTooltip:SetOwner(button, "ANCHOR_LEFT")
+  GameTooltip:SetText("ClassCoach", 1, 0.82, 0.2)
+  GameTooltip:AddLine("Click to open the settings.", 0.9, 0.9, 0.9)
+  GameTooltip:Show()
+end
+function ClassCoach_OnAddonCompartmentLeave() if GameTooltip then GameTooltip:Hide() end end
 
 SLASH_CLASSCOACH1, SLASH_CLASSCOACH2 = "/coach", "/classcoach"
 SlashCmdList.CLASSCOACH = function(msg)
   local cmd, arg = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
   cmd = (cmd or ""):lower()
   local db = ClassCoachDB
-  if cmd == "lock" then db.locked = true; say("Panel locked.")
-  elseif cmd == "unlock" then db.locked = false; say("Panel unlocked: drag it where you like.")
-  elseif cmd == "scale" and tonumber(arg) then db.scale = math.max(0.5, math.min(2, tonumber(arg))); ns.Panel.setScale(db.scale); ns.Journey.setScale(db.scale)
-  elseif cmd == "hide" then db.hidden = true; ns.Panel.toggle(false)
-  elseif cmd == "show" then db.hidden = false; ns.Panel.toggle(true)
-  elseif cmd == "reset" then ns.Panel.resetPosition(); ns.Journey.reset()
-  elseif cmd == "chat" then db.chat = arg ~= "off"; say("Fight tips in chat: " .. (db.chat and "on" or "off"))
+  if cmd == "" or cmd == "options" or cmd == "config" or cmd == "settings" then openSettings()
+  elseif cmd == "lock" then db.locked = true; say("Panels locked.")
+  elseif cmd == "unlock" then db.locked = false; say("Panels unlocked: drag each where you like.")
+  elseif cmd == "scale" and tonumber(arg) then db.scale = math.max(0.6, math.min(1.6, tonumber(arg)))
+  elseif cmd == "hide" then db.showCoach = false
+  elseif cmd == "show" then db.showCoach = true
+  elseif cmd == "reset" then ns.Panel.resetPosition(); ns.Journey.reset(); say("Both panels are back where they started.")
   elseif cmd == "journey" then
-    if arg == "reset" then ns.Journey.reset(); say("Journey panel back at its starting spot.")
-    else db.journey = arg ~= "off"; say("Journey panel: " .. (db.journey and "on" or "off")) end
-  elseif cmd == "food" then db.food = arg ~= "off"; say("Food reminder: " .. (db.food and "on" or "off"))
+    if arg == "reset" then ns.Journey.reset() else db.journey = arg ~= "off" end
   elseif cmd == "spec" then
-    if arg == "" then
+    local wanted = arg:lower()
+    local choice = (wanted == "" or wanted == "auto") and "auto" or nil
+    for _, p in ipairs(Profiles.forClass(C.class)) do
+      if p.spec:lower() == wanted then choice = p.spec end
+    end
+    if not choice then
       local specs = {}
       for _, p in ipairs(Profiles.forClass(C.class)) do specs[#specs + 1] = p.spec end
-      say("Profile: " .. C.profile.spec .. ". Available: " .. (#specs > 0 and table.concat(specs, ", ") or "none yet (general coaching)"))
+      say("No profile called \"" .. arg .. "\". Available: auto" .. (#specs > 0 and (", " .. table.concat(specs, ", ")) or ""))
     else
-      ClassCoachCharDB.spec = (arg:lower() ~= "auto") and arg or nil
+      ClassCoachCharDB.specChoice = choice
       chooseProfile(); rescanSoon()
       say("Profile: " .. C.profile.spec .. " (" .. tostring(C.profileWhy) .. ")")
     end

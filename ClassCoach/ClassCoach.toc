@@ -2,8 +2,12 @@
 ## Title: ClassCoach
 ## Notes: A beginner's coach for any class: mana coach, pre-fight checklist, next-ability hint, fight summary and level-up tips. It never presses anything for you.
 ## Author: Cedric
-## Version: 0.4.1
+## Version: 0.5.0
 ## Category: Combat
+## IconTexture: Interface\Icons\INV_Misc_Book_09
+## AddonCompartmentFunc: ClassCoach_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: ClassCoach_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: ClassCoach_OnAddonCompartmentLeave
 ## SavedVariables: ClassCoachDB
 ## SavedVariablesPerCharacter: ClassCoachCharDB
 
@@ -20,6 +24,8 @@ Profiles\Shaman.lua
 Profiles\Priest.lua
 Profiles\Warlock.lua
 
+UI\Style.lua
 UI\Panel.lua
 UI\Journey.lua
+UI\Options.lua
 ClassCoach.lua

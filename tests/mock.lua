@@ -209,5 +209,40 @@ function M.advance(sec)
 end
 
 SlashCmdList = {}
+RAID_CLASS_COLORS = { SHAMAN = { r = 0, g = 0.44, b = 0.87 }, WARLOCK = { r = 0.53, g = 0.53, b = 0.93 } }
+GameTooltip = widget()
+
+-- The game's Settings system, 11.0.2+ signatures. Wrong argument shapes error, as in the game.
+M.settings = { list = {}, headers = {}, buttons = {}, opened = nil }
+Settings = {
+  RegisterVerticalLayoutCategory = function(name)
+    local category = { name = name, GetID = function() return 77 end }
+    local page = { AddInitializer = function(_, init) (init.button and M.settings.buttons or M.settings.headers)[#(init.button and M.settings.buttons or M.settings.headers) + 1] = init end }
+    return category, page
+  end,
+  RegisterAddOnSetting = function(category, variable, key, tbl, kind, name, default)
+    assert(type(category) == "table" and type(variable) == "string" and type(key) == "string", "bad setting ids")
+    assert(type(tbl) == "table", "variableTbl must be the saved table")
+    assert(kind == type(default) and type(name) == "string", "bad type or name")
+    local s = { variable = variable, key = key, tbl = tbl, name = name, default = default }
+    M.settings.list[key] = s
+    return s
+  end,
+  CreateCheckbox = function(_, setting, tip) assert(type(setting.default) == "boolean"); setting.control = "check"; setting.tip = tip end,
+  CreateSliderOptions = function(lo, hi, step) return { min = lo, max = hi, step = step, SetLabelFormatter = function(self, _, fn) self.format = fn end } end,
+  CreateSlider = function(_, setting, opts, tip) assert(type(setting.default) == "number" and opts.min < opts.max); setting.control = "slider"; setting.opts = opts end,
+  CreateControlTextContainer = function()
+    local c = { data = {} }
+    function c:Add(value, label) self.data[#self.data + 1] = { value = value, label = label } end
+    function c:GetData() return self.data end
+    return c
+  end,
+  CreateDropdown = function(_, setting, getOptions) setting.control = "choice"; setting.getOptions = getOptions end,
+  RegisterAddOnCategory = function(category) M.settings.category = category end,
+  OpenToCategory = function(id) M.settings.opened = id end,
+}
+MinimalSliderWithSteppersMixin = { Label = { Right = 2 } }
+function CreateSettingsListSectionHeaderInitializer(name) return { header = name } end
+function CreateSettingsButtonInitializer(name, text, onClick, tip) return { button = name, text = text, click = onClick } end
 
 return M

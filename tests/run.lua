@@ -30,9 +30,9 @@ end
 
 local function panel() return ClassCoachPanelRef end
 local function tick(ns)
-  local f = ns.Panel.frame
-  f.scripts.OnUpdate(f, 1)
-  return f
+  local driver = ns.C.driver
+  driver.scripts.OnUpdate(driver, 1)
+  return ns.Panel.frame
 end
 local function cast(id, cost)
   M.P.mana = M.P.mana - (cost or M.P.spells[id].cost or 0)
@@ -155,6 +155,46 @@ if SCENARIO == "shaman" then
   local flashed = ns.Panel.frame.msg.text
   check("level-up trainer tip", flashed:find("Cure Poison") ~= nil, flashed)
   check("level-up talent tip", flashed:find("Mental Dexterity") ~= nil, flashed)
+
+  -- The settings screen
+  local S = M.settings
+  check("settings page registered with the game", S.category ~= nil and S.category.name == "ClassCoach")
+  local count = 0
+  for _ in pairs(S.list) do count = count + 1 end
+  check("every option made it onto the page", count == 21 and #ns.Options.registered == 21, count)
+  check("sections and action buttons", #S.headers == 5 and #S.buttons == 2, #S.headers .. "/" .. #S.buttons)
+  check("options write to the saved settings", S.list.compact.tbl == ClassCoachDB and S.list.specChoice.tbl == ClassCoachCharDB)
+  check("slider shows its unit", S.list.opacity.opts.format(75) == "75%" and S.list.scale.opts.format(1.1) == "1.10x")
+  local specs = S.list.specChoice.getOptions()
+  check("profile choices for this class", #specs == 2 and specs[1].value == "auto" and specs[2].value == "Enhancement", #specs)
+  SlashCmdList.CLASSCOACH("")
+  check("/coach opens the settings", S.opened == 77, tostring(S.opened))
+  ClassCoach_OnAddonCompartmentClick()
+  -- Changing an option shows on the next refresh, with no reload.
+  target({ name = "Trogg", level = 11, hostile = true, guid = "Creature-20" })
+  M.P.mana = 300; M.advance(1); f = tick(ns)
+  check("explanation shown by default", f.why.text ~= "" and f.why.shown, f.why.text)
+  ClassCoachDB.compact = true; f = tick(ns)
+  check("compact hides the explanation", f.why.text == "" and f.chainText.text == "")
+  ClassCoachDB.compact = false
+  ClassCoachDB.showMana = false; f = tick(ns)
+  check("mana bar can be switched off", f.bar.shown == false)
+  ClassCoachDB.showMana = true
+  ClassCoachDB.showCoach = false; f = tick(ns)
+  check("coach panel can be hidden", f.shown == false)
+  check("hidden coach panel does not stop the journey panel", journey(ns) ~= "(hidden)", journey(ns))
+  ClassCoachDB.showCoach = true; f = tick(ns)
+  check("and shown again", f.shown == true)
+  ClassCoachDB.journey = false; tick(ns)
+  check("journey panel can be switched off", journey(ns) == "(hidden)")
+  ClassCoachDB.journey = true
+  ClassCoachDB.food = false; M.P.buffs = {}; M.fire("UNIT_AURA", "player"); M.advance(2); tick(ns)
+  check("food reminder can be switched off", not journey(ns):find("No food buff"), journey(ns))
+  ClassCoachDB.food = true
+  ClassCoachCharDB.specChoice = "Enhancement"; tick(ns)
+  check("profile picked on the settings screen", ns.C.profileWhy == "chosen", tostring(ns.C.profileWhy))
+  ClassCoachCharDB.specChoice = "auto"; tick(ns)
+  target(nil)
 
   SlashCmdList.CLASSCOACH("check")
   SlashCmdList.CLASSCOACH("spec")
@@ -507,7 +547,10 @@ elseif SCENARIO == "template" then
 elseif SCENARIO == "warrior" then
   M.player({ class = "WARRIOR", className = "Warrior", level = 8, powerType = 1, mana = 0, maxMana = 0,
     spells = { [78] = { name = "Heroic Strike", cost = 0 } }, book = { 78 } })
+  Settings = nil   -- a client without the Settings system: the addon must still run
   local ns = load()
+  check("runs without a settings screen", ns.C.optionsReady == false and ClassCoachDB.showCoach == true)
+  SlashCmdList.CLASSCOACH("")
   check("generic profile", ns.C.profile.class == "ANY", ns.C.profile.class)
   local f = tick(ns)
   check("no mana bar for rage users", ns.C.usesMana == false)
