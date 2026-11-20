@@ -138,8 +138,76 @@ function API.target()
   t.level = plain(try(UnitLevel, "target"))
   local class = plain(try(UnitClassification, "target"))
   t.elite = class == "elite" or class == "rareelite" or class == "worldboss"
-  t.key = plain(try(UnitGUID, "target")) or "target"
   return t
+end
+
+-- A key that tells enemies apart, so damage-over-time timers stay with the
+-- right one. Three ways, best first; `mode` says which one worked:
+--   "guid"      the game gave us the enemy's id
+--   "nameplate" we matched your target to one of the visible nameplates
+--   "count"     neither is readable: every target change counts as a new enemy
+local plateGen, targetSeq = {}, 0
+function API.targetChanged() targetSeq = targetSeq + 1 end
+function API.plateAdded(token)
+  token = plain(token)
+  if token then plateGen[token] = (plateGen[token] or 0) + 1 end
+end
+function API.targetKey()
+  local guid = plain(try(UnitGUID, "target"))
+  if type(guid) == "string" then return "g:" .. guid, "guid" end
+  local plates = C_NamePlate and try(C_NamePlate.GetNamePlates)
+  if type(plates) == "table" then
+    for _, plate in ipairs(plates) do
+      local token = field(plate, "namePlateUnitToken")
+      if type(token) == "string" and plain(try(UnitIsUnit, "target", token)) == true then
+        return "np:" .. token .. ":" .. (plateGen[token] or 0), "nameplate"
+      end
+    end
+  end
+  return "t:" .. targetSeq, "count"
+end
+
+-- Your pet's kind ("Imp", "Voidwalker", ...) when the game tells us; English clients.
+function API.petFamily()
+  local family = plain(try(UnitCreatureFamily, "pet"))
+  if type(family) ~= "string" or family == "" then return nil end
+  return family
+end
+
+-- How long a spell's damage over time lasts, read from its own tooltip text
+-- ("... over 18 sec"). nil when the text isn't available or isn't English.
+function API.dotDuration(id)
+  local text = plain(try(C_Spell and C_Spell.GetSpellDescription, id))
+  if type(text) ~= "string" then text = plain(try(GetSpellDescription, id)) end
+  if type(text) ~= "string" then return nil end
+  local seconds = tonumber(text:match("over (%d+) sec"))
+  if seconds and seconds >= 3 and seconds <= 120 then return seconds end
+  return nil
+end
+
+---------------------------------------------------------------------------
+-- Macros (the game only lets addons create or change them out of combat)
+---------------------------------------------------------------------------
+
+-- Returns "created", "updated", "same", "full", "combat" or nil on failure.
+function API.saveMacro(name, body, onlyExisting)
+  if API.inCombat() then return "combat" end
+  local index = plain(try(GetMacroIndexByName, name)) or 0
+  if index > 0 then
+    if plain(try(GetMacroBody, index)) == body then return "same" end
+    local done = try(EditMacro, index, name, nil, body)
+    return done and "updated" or nil
+  end
+  if onlyExisting then return nil end
+  local _, perChar = try(GetNumMacros)
+  perChar = plain(perChar)
+  if type(perChar) == "number" and perChar >= (MAX_CHARACTER_MACROS or 18) then return "full" end
+  local done = try(CreateMacro, name, "INV_MISC_QUESTIONMARK", body, true)
+  return done and "created" or nil
+end
+
+function API.macroExists(name)
+  return (plain(try(GetMacroIndexByName, name)) or 0) > 0
 end
 
 ---------------------------------------------------------------------------
@@ -323,6 +391,55 @@ function API.itemCount(itemID)
   return plain(try(C_Item.GetItemCount, itemID)) or plain(try(GetItemCount, itemID))
 end
 
+---------------------------------------------------------------------------
+-- Out-of-combat status for the journey panel
+---------------------------------------------------------------------------
+
+-- cur, max, rested (0 when none), resting. Any may be nil.
+function API.xp()
+  local cur, max = plain(try(UnitXP, "player")), plain(try(UnitXPMax, "player"))
+  local rested = plain(try(GetXPExhaustion))
+  if type(cur) ~= "number" or type(max) ~= "number" then return nil end
+  return { cur = cur, max = max, rested = type(rested) == "number" and rested or 0, resting = plain(try(IsResting)) == true }
+end
+
+function API.unspentTalents()
+  local points = plain(try(UnitCharacterPoints, "player"))
+  if type(points) ~= "number" then return nil end
+  return points
+end
+
+-- Lowest durability of anything you wear, in percent.
+function API.durability()
+  local lowest
+  for slot = 1, 18 do
+    local cur, max = try(GetInventoryItemDurability, slot)
+    cur, max = plain(cur), plain(max)
+    if type(cur) == "number" and type(max) == "number" and max > 0 then
+      local pct = cur / max * 100
+      if not lowest or pct < lowest then lowest = pct end
+    end
+  end
+  return lowest
+end
+
+function API.freeBagSlots()
+  local free, any = 0, false
+  for bag = 0, 4 do
+    local slots = plain(try(C_Container and C_Container.GetContainerNumFreeSlots, bag))
+    if type(slots) ~= "number" then slots = plain(try(GetContainerNumFreeSlots, bag)) end
+    if type(slots) == "number" then free = free + slots; any = true end
+  end
+  if not any then return nil end
+  return free
+end
+
+-- Do you carry an item with this name? (true / false)
+function API.hasItem(name)
+  local count = API.itemCount(name)
+  return type(count) == "number" and count > 0
+end
+
 -- Something equipped in a slot (18 = ranged/wand).
 function API.equipped(slot)
   local id = plain(try(GetInventoryItemID, "player", slot))
@@ -382,6 +499,13 @@ function API.scanKeys()
         local name = API.spellName(id)
         if name and keys[name] == nil then
           keys[name] = shortKey(plain(try(GetBindingKey, binding))) or false
+        end
+      elseif kind == "macro" then
+        -- remembered as "macro:<name>" so the key can stand in for the spells inside it
+        local name = plain(try(GetActionText, slot))
+        if not name and id then name = plain(try(GetMacroInfo, id)) end
+        if name and keys["macro:" .. name] == nil then
+          keys["macro:" .. name] = shortKey(plain(try(GetBindingKey, binding))) or false
         end
       end
     end

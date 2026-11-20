@@ -72,7 +72,7 @@ local CHECKLIST = {
       local best = s:known("Windfury Weapon") and "Windfury Weapon" or "Rockbiter Weapon"
       return "Put " .. best .. " on your weapon: it lasts 30 minutes."
     end },
-  { item = 17030, needs = "Reincarnation", label = "No Ankh", hint = "Buy Ankhs at a reagent vendor so Reincarnation works." },
+  { tip = true, item = 17030, needs = "Reincarnation", label = "No Ankh", hint = "Buy Ankhs at a reagent vendor so Reincarnation works." },
 }
 
 ---------------------------------------------------------------------------
@@ -149,6 +149,21 @@ ns.RegisterProfile({
         return "Several Lightning Bolts in melee range: as Enhancement, one bolt to pull is enough."
       end
     end,
+  },
+
+  -- /coach macros builds these from the spells you know.
+  macros = {
+    { name = "CC Pull", about = "Casts your pull spell and starts your auto attack.",
+      body = function(s)
+        local key = s:known("Flame Shock") and "Flame Shock" or "Lightning Bolt"
+        if not s:known(key) then return nil end
+        return "#showtooltip\n/startattack\n/cast " .. s.spells[key].name
+      end },
+    { name = "CC Strike", about = "Stormstrike, and it makes sure you are swinging.",
+      body = function(s)
+        if not s:known("Stormstrike") then return nil end
+        return "#showtooltip\n/startattack\n/cast " .. s.spells["Stormstrike"].name
+      end },
   },
 
   trainer = TRAINER,

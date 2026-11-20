@@ -20,11 +20,12 @@ local WARLOCK_SPELLS = {
   ["Fear"]           = { ids = { 5782, 6213, 6215 } },
   ["Demon Skin"]     = { ids = { 687, 696 } },
   ["Demon Armor"]    = { ids = { 706, 1086, 11733, 11734, 11735 }, learn = 20 },
-  ["Summon Imp"]     = { ids = { 688 } },          -- class quest, level 1
-  ["Summon Voidwalker"] = { ids = { 697 } },       -- class quest, level 10
-  ["Summon Succubus"] = { ids = { 712 } },         -- class quest, level 20
-  ["Summon Incubus"] = {},                         -- class quest, level 20 (by name)
-  ["Summon Felhunter"] = { ids = { 691 } },        -- class quest, level 30
+  -- `summons`: which demon it brings out, so the coach knows who is at your side
+  ["Summon Imp"]     = { ids = { 688 }, summons = "Imp" },                -- class quest, level 1
+  ["Summon Voidwalker"] = { ids = { 697 }, summons = "Voidwalker" },      -- class quest, level 10
+  ["Summon Succubus"] = { ids = { 712 }, summons = "Succubus" },          -- class quest, level 20
+  ["Summon Incubus"] = { summons = "Incubus" },                           -- class quest, level 20 (by name)
+  ["Summon Felhunter"] = { ids = { 691 }, summons = "Felhunter" },        -- class quest, level 30
   ["Shoot"]          = { ids = { 5019 }, core = true },
 }
 
@@ -57,6 +58,26 @@ local TRAINER = {
 }
 
 local function wandOrMelee(s) return s.hasWand and "wand" or "melee" end
+
+-- How to pull depends on who is at your side:
+--   Voidwalker  the tank: let it reach the enemy and hit first
+--   Imp         ranged and fragile: the enemy comes to you, so just start casting
+--   others      melee damage: send them in and cast right away
+local function pullWith(key, alone)
+  return function(s)
+    local spell = s.spells[key] and s.spells[key].name or key
+    if s.demon == "Voidwalker" then return "Send your Voidwalker in, let it hit first, then " .. spell .. "." end
+    if s.demon == "Imp" then return "Imp out: cast " .. spell .. " right away. The enemy will come to you." end
+    if s.hasPet then return "Send your demon in, then pull with " .. spell .. "." end
+    return alone
+  end
+end
+
+local function names(s, keys)
+  local out = {}
+  for _, k in ipairs(keys) do if s.spells[k] then out[#out + 1] = s.spells[k].name end end
+  return out
+end
 
 ---------------------------------------------------------------------------
 -- Affliction: damage over time, a demon at your side, Life Tap instead of drinking
@@ -107,13 +128,9 @@ ns.RegisterProfile({
   },
 
   opener = {
-    { spell = "Bane of Agony", mana = "medium", why = function(s)
-        return s.hasPet and "Send your demon in, then pull with Bane of Agony."
-          or "Pull with Bane of Agony: instant, and it marks the enemy as yours."
-      end },
-    { spell = "Corruption", mana = "medium", why = function(s)
-        return s.hasPet and "Send your demon in, then pull with Corruption." or "Pull with Corruption from max range."
-      end },
+    { spell = "Bane of Agony", mana = "medium",
+      why = pullWith("Bane of Agony", "Pull with Bane of Agony: instant, and it marks the enemy as yours.") },
+    { spell = "Corruption", mana = "medium", why = pullWith("Corruption", "Pull with Corruption from max range.") },
     { spell = "Shadow Bolt", why = function(s)
         return s:known("Immolate") and "Pull with Shadow Bolt from max range, then Immolate."
           or "Pull with Shadow Bolt from max range."
@@ -121,20 +138,23 @@ ns.RegisterProfile({
   },
 
   checklist = {
-    { check = function(s) return s.level < 10 and not s:known("Summon Imp") end,
+    -- tip = true: advice for the journey panel, not something to fix before every pull
+    { tip = true, check = function(s) return s.level < 10 and not s:known("Summon Imp") end,
       label = "No Imp yet", hint = "Your class trainer has a short quest for your first helper, the Imp. Do it first." },
-    { check = function(s) return s.level >= 10 and s:known("Summon Imp") and not s:known("Summon Voidwalker") end,
+    { tip = true, check = function(s) return s.level >= 10 and s:known("Summon Imp") and not s:known("Summon Voidwalker") end,
       label = "No Voidwalker yet", hint = "Do the level 10 class quest: the Voidwalker takes the hits for you." },
     { pet = true, needs = DEMONS, label = "No demon",
       hint = function(s)
         if s:known("Summon Voidwalker") then return "Summon your Voidwalker (costs a Soul Shard): it takes the hits for you." end
         return "Summon your Imp and keep it out: free extra damage."
       end },
+    { check = function(s) return s.demon == "Imp" and s:known("Summon Voidwalker") and not s.inGroup end,
+      label = "Imp is out", hint = "Solo, your Voidwalker is safer: it takes the hits. The Imp is the pick for groups." },
     { buff = { "Demon Skin", "Demon Armor" }, label = "No armor",
       hint = function(s) return "Cast " .. (s:known("Demon Armor") and "Demon Armor" or "Demon Skin") .. ": it lasts 30 minutes." end },
-    { item = 6265, needs = "Drain Soul", label = "No Soul Shard",
+    { tip = true, item = 6265, needs = "Drain Soul", label = "No Soul Shard",
       hint = "Channel Drain Soul on a dying enemy to get a shard for summons and Healthstones." },
-    { slot = 18, needs = "Shoot", minLevel = 5, label = "No wand",
+    { tip = true, slot = 18, needs = "Shoot", minLevel = 5, label = "No wand",
       hint = "Get a wand (Lesser Magic Wand, level 5): your free damage while leveling." },
   },
 
@@ -151,6 +171,11 @@ ns.RegisterProfile({
   },
 
   tips = {
+    function(f)
+      if f.demon == "Voidwalker" and f.precast and not f.elite then
+        return "You cast before your Voidwalker reached the enemy. Send it in, wait for its first hit, then start."
+      end
+    end,
     function(f, s)
       if f.hadPet == false and f.duration > 6 and s:have(DEMONS) then
         return "You fought without your demon. Summon it first: it adds free damage and takes hits."
@@ -172,6 +197,40 @@ ns.RegisterProfile({
         return "Low on mana: Life Tap between fights instead of drinking, then eat to heal."
       end
     end,
+  },
+
+  -- /coach macros builds these from the spells you know.
+  macros = {
+    { name = "CC Pull",
+      about = function(s)
+        local count = #names(s, { "Bane of Agony", "Corruption", "Immolate" })
+        local presses = count > 0 and ("Press it %d time%s, one spell each"):format(count, count == 1 and "" or "s")
+          or "One spell per press"
+        return presses .. ", then use CC Wand. With the Voidwalker out, the first press only sends it in."
+      end,
+      body = function(s)
+        local order = names(s, { "Bane of Agony", "Corruption", "Immolate" })
+        if #order < 2 then order = names(s, { "Shadow Bolt", "Immolate" }) end
+        if #order == 0 then return nil end
+        local lines = { "#showtooltip" }
+        if s:have(DEMONS) then
+          lines[#lines + 1] = "/petattack [harm,nodead]"
+          if s:known("Summon Voidwalker") then lines[#lines + 1] = "/stopmacro [pet:Voidwalker,nocombat]" end
+        end
+        lines[#lines + 1] = "/castsequence reset=target/combat " .. table.concat(order, ", ")
+        return table.concat(lines, "\n")
+      end },
+    { name = "CC Wand", about = "Starts your wand and keeps your demon on the enemy.",
+      body = function(s)
+        if not s:known("Shoot") then return nil end
+        local shoot = s.spells["Shoot"].name
+        return "#showtooltip " .. shoot .. "\n" .. (s:have(DEMONS) and "/petattack [harm,nodead]\n" or "") .. "/cast !" .. shoot
+      end },
+    { name = "CC Demon", about = "Summons your Voidwalker; hold Shift for the Imp.",
+      body = function(s)
+        if not (s:known("Summon Voidwalker") and s:known("Summon Imp")) then return nil end
+        return ("#showtooltip\n/cast [mod:shift] %s; %s"):format(s.spells["Summon Imp"].name, s.spells["Summon Voidwalker"].name)
+      end },
   },
 
   trainer = TRAINER,

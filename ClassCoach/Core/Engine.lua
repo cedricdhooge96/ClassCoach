@@ -15,7 +15,8 @@ ns.Engine = Engine
 local State = {}
 State.__index = State
 
--- fields: level, now, inCombat, inGroup, usesMana, manaPct, manaExact,
+-- fields: meta (the profile's spell table), killTime (average seconds per kill, or nil), demon,
+-- level, now, inCombat, inGroup, usesMana, manaPct, manaExact,
 -- manaLevel, healthPct (nil in combat), hasPet, target, hasWand, buffs (set or nil), mainHandBuff, keys,
 -- spells (resolved by key), tracker, fightTime, check (ready/usable functions)
 function Engine.newState(fields)
@@ -40,8 +41,33 @@ function State:usable(key)
   return usable
 end
 
+-- Seconds left on your damage-over-time spell on the current enemy (0 = gone).
+function State:debuffLeft(key)
+  return self.tracker:debuffLeft(self.target and self.target.key, key, self.now)
+end
+
 function State:debuffUp(key)
-  return self.tracker:debuffUp(self.target and self.target.key, key, self.now)
+  return self:debuffLeft(key) > 0
+end
+
+-- Seconds since you first hit the current enemy this fight.
+function State:timeOnTarget()
+  return self.tracker:timeOnTarget(self.target and self.target.key, self.now)
+end
+
+function State:duration(key)
+  local sp, meta = self.spells[key], self.meta and self.meta[key]
+  return (sp and sp.duration) or (meta and meta.debuff) or nil
+end
+
+-- Is a new damage-over-time spell still worth its mana on this enemy?
+-- The enemy's health is hidden, so we go by how long your recent kills took
+-- (killTime). Unknown, elite or in a group: always yes.
+function State:worthDot(key)
+  local lasts = self:duration(key)
+  if not lasts or not self.killTime or not self.inCombat then return true end
+  if self.inGroup or (self.target and self.target.elite) then return true end
+  return self.killTime - self:timeOnTarget() >= lasts * 0.4
 end
 
 function State:totemUp(element)
@@ -111,6 +137,11 @@ local function allowed(entry, s)
     local fine, result = pcall(entry.when, s)
     if not (fine and result) then return nil end
   end
+  local meta = s.meta and s.meta[entry.spell]
+  if meta and meta.debuff and not entry.always and not s:worthDot(entry.spell) then
+    s.skippedDot = true
+    return nil
+  end
   return sp
 end
 
@@ -173,26 +204,37 @@ end
 -- The chain: what follows, assuming you press each step
 ---------------------------------------------------------------------------
 
+local STEP = 1.5   -- seconds one press takes (the global cooldown)
+
 local Sim = {}
 function Sim:pressed(key)
   local meta = self.profile.spells[key]
   self.virtual[key] = (self.virtual[key] or 0) + 1
+  self.virtualAt[key] = self.now
   if meta and meta.totem then self.virtualTotems[meta.totem] = true end
   if meta and meta.cd then self.virtualCd[meta.cd == true and key or meta.cd] = true end
-  self.fightTime = self.fightTime + 1.5
+  self:advance(STEP)
 end
-function Sim:debuffUp(key)
-  local meta = self.profile.spells[key]
-  if self.virtual[key] and meta and meta.debuff then return true end
-  return self.base:debuffUp(key)
+function Sim:advance(seconds)
+  self.now = self.now + seconds
+  self.fightTime = self.fightTime + seconds
+end
+function Sim:debuffLeft(key)
+  local at, lasts = self.virtualAt[key], self:duration(key)
+  if at and lasts then return math.max(0, at + lasts - self.now) end
+  return State.debuffLeft(self, key)
+end
+function Sim:timeOnTarget()
+  local real = self.base:timeOnTarget()
+  return real + (self.now - self.base.now)
 end
 function Sim:totemUp(element)
   if self.virtualTotems[element] then return true end
-  return self.base:totemUp(element)
+  return State.totemUp(self, element)
 end
 function Sim:sinceCast(key)
-  if self.virtual[key] then return 0 end
-  return self.base:sinceCast(key)
+  if self.virtualAt[key] then return self.now - self.virtualAt[key] end
+  return State.sinceCast(self, key)
 end
 function Sim:castsOnTarget(key)
   return self.base:castsOnTarget(key) + (self.virtual[key] or 0)
@@ -204,8 +246,8 @@ function Sim:ready(key)
 end
 
 local function simulate(profile, s)
-  local sim = { base = s, profile = profile, virtual = {}, virtualTotems = {}, virtualCd = {},
-    inCombat = true, fightTime = s.inCombat and (s.fightTime or 0) or 0 }
+  local sim = { base = s, profile = profile, virtual = {}, virtualAt = {}, virtualTotems = {}, virtualCd = {},
+    now = s.now, inCombat = true, fightTime = s.inCombat and (s.fightTime or 0) or 0 }
   return setmetatable(sim, { __index = function(_, k)
     local own = Sim[k]
     if own ~= nil then return own end
@@ -213,23 +255,67 @@ local function simulate(profile, s)
   end })
 end
 
+-- When the filler is all that is left: the next moment something better
+-- comes up again (a damage-over-time spell running out).
+local function later(profile, s, sim)
+  local times = {}
+  for _, d in ipairs(s.tracker:dotsOn(s.target and s.target.key, sim.now)) do
+    if not sim.virtualAt[d.name] then times[#times + 1] = sim.now + d.left end
+  end
+  for key, at in pairs(sim.virtualAt) do
+    local lasts = sim:duration(key)
+    if lasts and at + lasts > sim.now then times[#times + 1] = at + lasts end
+  end
+  table.sort(times)
+  for _, t in ipairs(times) do
+    sim:advance(t + 0.1 - sim.now)
+    local found = pick(profile.priority, sim)
+    if found then
+      found.inSeconds = t - s.now
+      return found
+    end
+  end
+end
+
 -- Up to `max` steps. Step 1 is what Engine.next shows; with nothing targeted
--- out of combat it is the plan for your next pull.
+-- out of combat it is the plan for your next pull. A step with `inSeconds`
+-- is not due yet: it comes up again in that many seconds.
 function Engine.chain(profile, s, max)
-  max = max or 4
+  max = max or 3
   local steps = {}
   local first = Engine.next(profile, s) or opening(profile, s)
   local sim = simulate(profile, s)
   local current = first
   while current and #steps < max do
     steps[#steps + 1] = current
-    if current.filler then break end
+    if current.filler then
+      if #steps < max and s.inCombat then
+        local again = later(profile, s, sim)
+        if again then steps[#steps + 1] = again end
+      end
+      break
+    end
     sim:pressed(current.key)
     local nextStep = pick(profile.priority, sim) or filler(profile, sim)
     if nextStep.key == current.key then break end   -- would repeat: nothing new to show
     current = nextStep
   end
   return steps
+end
+
+---------------------------------------------------------------------------
+-- Macros a profile offers (built from the spells you know)
+---------------------------------------------------------------------------
+
+function Engine.macros(profile, s)
+  local out = {}
+  for _, def in ipairs(profile.macros or {}) do
+    local body = text(def.body, s)
+    if type(body) == "string" and body ~= "" and #body <= 255 then
+      out[#out + 1] = { name = def.name, body = body, about = text(def.about, s) }
+    end
+  end
+  return out
 end
 
 ---------------------------------------------------------------------------
@@ -260,40 +346,88 @@ local function anyBuff(s, list)
   return false
 end
 
--- Returns a list of { text = "...", hint = "..." } for things to fix.
+-- One checklist entry: { text, hint } when it needs fixing, else nil.
+local function evaluate(entry, s)
+  if not needsMet(entry, s) then return nil end
+  local isMissing = false
+  if entry.buff then
+    -- only nag about buffs you actually know
+    local list = type(entry.buff) == "table" and entry.buff or { entry.buff }
+    local knowsOne = false
+    for _, k in ipairs(list) do if s:known(k) then knowsOne = true end end
+    if knowsOne then isMissing = anyBuff(s, list) == false end
+  elseif entry.weapon then
+    local knowsOne = false
+    for _, k in ipairs(entry.weapon) do if s:known(k) then knowsOne = true end end
+    if knowsOne then isMissing = s.mainHandBuff == false end
+  elseif entry.item then
+    local count = s.itemCount and s.itemCount(entry.item)
+    isMissing = count ~= nil and count < (entry.min or 1)
+  elseif entry.slot then
+    local has = s.equipped and s.equipped(entry.slot)
+    isMissing = has == false
+  elseif entry.pet then
+    isMissing = s.hasPet == false
+  elseif entry.check then
+    local fine, result = pcall(entry.check, s)
+    isMissing = fine and result == true
+  end
+  if isMissing then return { text = text(entry.label, s), hint = text(entry.hint, s) } end
+end
+
+-- Before the pull: only what matters for the next fight. Entries marked
+-- `tip = true` are advice for the journey panel instead (Engine.journey).
+-- Returns a list of { text = "...", hint = "..." }.
 function Engine.checklist(profile, s, options)
   options = options or {}
   local missing = {}
   if s.inCombat then return missing end
   for _, entry in ipairs(profile.checklist) do
-    if needsMet(entry, s) then
-      local isMissing = false
-      if entry.buff then
-        -- only nag about buffs you actually know
-        local list = type(entry.buff) == "table" and entry.buff or { entry.buff }
-        local knowsOne = false
-        for _, k in ipairs(list) do if s:known(k) then knowsOne = true end end
-        if knowsOne then isMissing = anyBuff(s, list) == false end
-      elseif entry.weapon then
-        local knowsOne = false
-        for _, k in ipairs(entry.weapon) do if s:known(k) then knowsOne = true end end
-        if knowsOne then isMissing = s.mainHandBuff == false end
-      elseif entry.item then
-        local count = s.itemCount and s.itemCount(entry.item)
-        isMissing = count ~= nil and count < (entry.min or 1)
-      elseif entry.slot then
-        local has = s.equipped and s.equipped(entry.slot)
-        isMissing = has == false
-      elseif entry.pet then
-        isMissing = s.hasPet == false
-      elseif entry.check then
-        local fine, result = pcall(entry.check, s)
-        isMissing = fine and result == true
-      end
-      if isMissing then missing[#missing + 1] = { text = text(entry.label, s), hint = text(entry.hint, s) } end
+    if not entry.tip then
+      local item = evaluate(entry, s)
+      if item then missing[#missing + 1] = item end
     end
   end
-  -- Spells the trainer already sells at this level.
+  if s.healthPct and s.healthPct < 50 then
+    missing[#missing + 1] = { text = ("Health %d%%"):format(math.floor(s.healthPct)), hint = "Eat or bandage before the next pull." }
+  end
+  if s.usesMana and s.manaPct and s.manaPct < (options.drinkAt or 60) then
+    missing[#missing + 1] = { text = ("Mana %d%%"):format(math.floor(s.manaPct)), hint = text(profile.restHint, s) or "Drink before the next pull." }
+  end
+  return missing
+end
+
+---------------------------------------------------------------------------
+-- The journey: everything outside the fight that makes leveling smoother
+---------------------------------------------------------------------------
+
+-- A buff whose name starts with `prefix` (names differ a little between
+-- foods and clients). nil when buffs can't be read.
+local function buffStarting(s, prefix)
+  if not s.buffs then return nil end
+  for name in pairs(s.buffs) do
+    if name:sub(1, #prefix) == prefix then return true end
+  end
+  return false
+end
+Engine.buffStarting = buffStarting
+
+-- s.journey = { xp = { cur, max, rested, resting }, talentPoints, durability (lowest %),
+--   freeSlots, hasItem(name) }. Every field may be nil when the game won't say.
+-- Returns { xp = { pct, restedPct, resting }, lines = { { kind, text, hint } } }
+-- kind: "do" (worth acting on now), "info" (good to know).
+function Engine.journey(profile, s, options)
+  options = options or {}
+  local j = s.journey or {}
+  local out = { lines = {} }
+  local function add(kind, line, hint) out.lines[#out.lines + 1] = { kind = kind, text = line, hint = hint } end
+
+  if j.talentPoints and j.talentPoints > 0 then
+    local pick = Engine.talentFor(profile, s.level)
+    add("do", j.talentPoints == 1 and "1 talent point to spend" or (j.talentPoints .. " talent points to spend"),
+      pick and ("Suggested: " .. pick .. ".") or "Open your talents (N) and spend it.")
+  end
+
   if s.bookReady then
     local untrained = {}
     for key, meta in pairs(profile.spells) do
@@ -301,21 +435,52 @@ function Engine.checklist(profile, s, options)
     end
     if #untrained > 0 then
       table.sort(untrained)
-      missing[#missing + 1] = { text = "Not trained: " .. table.concat(untrained, ", "),
-        hint = "Visit your class trainer: you can learn " .. table.concat(untrained, ", ") .. " now." }
+      add("do", "Not trained: " .. table.concat(untrained, ", "), "Visit your class trainer: you can learn it now.")
     end
   end
-  -- Generic checks every class gets.
-  if s.healthPct and s.healthPct < 50 then
-    missing[#missing + 1] = { text = ("Health %d%%"):format(math.floor(s.healthPct)), hint = "Eat or bandage before the next pull." }
+
+  for _, entry in ipairs(profile.checklist) do
+    if entry.tip then
+      local item = evaluate(entry, s)
+      if item then add("do", item.text, item.hint) end
+    end
   end
-  if s.usesMana and s.manaPct and s.manaPct < (options.drinkAt or 60) then
-    missing[#missing + 1] = { text = ("Mana %d%%"):format(math.floor(s.manaPct)), hint = text(profile.restHint, s) or "Drink before the next pull." }
+
+  if options.food and s.level >= 5 and buffStarting(s, "Well Fed") == false then
+    add("do", "No food buff", "Eat cooked food for 10 seconds: +5% XP from kills for 15 minutes.")
   end
-  if options.food and s.level >= 5 and s.buffs and not s.buffs["Well Fed"] then
-    missing[#missing + 1] = { text = "No food buff", hint = "Eat buff food: +5% XP from kills." }
+
+  local xp = j.xp
+  if xp and xp.max and xp.max > 0 and s.level < 60 then
+    out.xp = { pct = (xp.cur or 0) / xp.max * 100, resting = xp.resting == true }
+    local rested = xp.rested or 0
+    out.xp.restedPct = rested / xp.max * 100
+    if xp.resting then
+      add("info", "In a rest area", "Log out here: rested XP builds while you are away, and doubles XP from kills.")
+    elseif rested <= 0 then
+      add("do", "No rested XP", j.hasItem and j.hasItem("Camp Tent")
+        and "Pitch your Camp Tent at a campfire (once an hour), or log out in an inn or city."
+        or "Log out in an inn or city: rested XP doubles XP from kills. A Camp Tent (Leatherworking 20) tops it up on the road.")
+    elseif out.xp.restedPct < 5 and j.hasItem and j.hasItem("Camp Tent") then
+      add("info", ("Rested XP low (%d%% of a level)"):format(math.floor(out.xp.restedPct)),
+        "Your Camp Tent tops it up to 5% at a campfire, once an hour.")
+    end
   end
-  return missing
+
+  if j.hasItem and j.hasItem("Cozy Sleeping Bag") and buffStarting(s, "Cozy") == false and s.level < 60 then
+    add("do", "Sleeping bag buff missing", "Lie on your Cozy Sleeping Bag for up to 3 minutes: up to +3% XP.")
+  end
+
+  if j.durability and j.durability < 25 then
+    add("do", ("Gear at %d%% durability"):format(math.floor(j.durability)), "Repair at any vendor with an anvil icon before it breaks.")
+  end
+  if j.freeSlots and j.freeSlots <= 2 then
+    add("do", j.freeSlots == 0 and "Bags full" or ("Bags nearly full (%d free)"):format(j.freeSlots), "Sell grey items at a vendor.")
+  end
+
+  local nextLevel = Engine.nextTraining(profile, s.level)
+  if nextLevel then add("info", ("New spells at level %d"):format(nextLevel)) end
+  return out
 end
 
 ---------------------------------------------------------------------------
@@ -328,6 +493,9 @@ local GENERIC_ADVICE = {
 }
 
 function Engine.advice(profile, s)
+  if s.inCombat and s.skippedDot and (not s.usesMana or s.manaLevel == "high") then
+    return "This enemy is nearly dead: no new damage over time, just finish it."
+  end
   if not s.usesMana or not s.inCombat then return nil end
   local a = profile.advice[s.manaLevel]
   if type(a) == "function" then

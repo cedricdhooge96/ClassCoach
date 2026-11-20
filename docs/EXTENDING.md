@@ -53,6 +53,8 @@ spells = {
 - `core = true`: a main spell. The generic "most of your mana went on X" tip skips it.
 - `learn = 8`: the level the trainer sells it. From that level the checklist says "Not trained: X" until it is learned.
 - `cd = true`: it has a cooldown, so the chain preview won't show it twice in a row. Spells sharing one cooldown use the same name: `cd = "shock"`.
+- `debuff = 18`: it leaves damage over time on the enemy for about that long. The real length is read from the spell's description when possible; this is the fallback. The coach then tracks it per enemy and stops suggesting it on enemies about to die (add `always = true` to a priority entry to opt out).
+- `summons = "Voidwalker"`: casting it brings out that pet (`s.demon`).
 - `restores = 0.15`: it gives mana back (Life Tap): a rough share of maximum mana, for the mana level.
 
 ### priority, opener, filler
@@ -83,6 +85,8 @@ Unknown values (the game hiding something) count as "fine", so advice never free
 | `s.manaPct`, `s.manaLevel` (`"high"`/`"medium"`/`"low"`), `s.manaExact`, `s.usesMana` | Mana |
 | `s.target.exists`, `.hostile`, `.dead`, `.elite`, `.level` | Target (name may be hidden in combat) |
 | `s.hasWand` | Something in the ranged slot |
+| `s.demon` | Which pet is out, when known (`"Imp"`, `"Voidwalker"`, ...) |
+| `s:debuffLeft(key)`, `s:timeOnTarget()`, `s.killTime` | Seconds left on your spell on this enemy; seconds on this enemy; your usual kill time |
 | `s.hasPet` | Pet out (`nil` = unknown). In combat: what it was at the pull |
 | `s.healthPct` | Your health %, out of combat only |
 | `s:known(key)`, `s:ready(key)`, `s:usable(key)` | Spell checks (`nil` = unknown) |
@@ -106,6 +110,22 @@ The panel's chain strip is built from `priority`, `opener` and `filler`
 automatically (`Engine.chain`): it presses each step in a simulation and asks
 what comes next.
 
+### macros
+
+```lua
+macros = {
+  { name = "CC Pull", about = "Shown after /coach macros.",
+    body = function(s)                       -- return nil when the spells aren't known yet
+      if not s:known("Frostbolt") then return nil end
+      return "#showtooltip\n/cast " .. s.spells["Frostbolt"].name
+    end },
+}
+```
+
+Bodies are limited to 255 characters and use the spell names from `s.spells[key].name`.
+After-fight tips also get `f.demon`, `f.precast` (you cast before combat started),
+`f.targets` and `f.elite`.
+
 ### checklist
 
 ```lua
@@ -121,7 +141,11 @@ checklist = {
 
 Buff and weapon checks only nag when you know at least one of the spells.
 `needs` = a spell key (or list) the character must know; `minLevel` also works.
-Health, drink and food checks are added for every class automatically.
+Add `tip = true` to an entry that is advice rather than something to fix before
+every pull (a missing wand, a class quest, a reagent): it then shows on the
+journey panel instead. Health and mana checks, and the journey panel's XP,
+rested XP, food, talent, trainer, repair and bag lines, are added for every class
+automatically (`Engine.journey`).
 After a fight, tips get `f.hadPet` (was a pet out at the pull).
 
 ### tips

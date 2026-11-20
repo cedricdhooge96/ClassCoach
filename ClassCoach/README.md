@@ -3,7 +3,11 @@
 A beginner's coach for WoW Forever that works for any class. One small panel shows:
 
 - **What to press next**: the spell, its key, and why. Out of combat with an enemy targeted, it shows how to pull.
-- **The chain**: small icons for the steps that follow ("Then: Corruption > Immolate > Shoot"), or your pull plan when nothing is targeted. Only spells your character has learned are shown.
+- **The carousel**: on the left what you already did to this enemy, in the middle (bigger) what to press now, on the right what comes next. With nothing targeted it shows your pull plan. Only spells your character has learned are shown.
+- **Damage over time, per enemy**: each spell's seconds left on the enemy you are looking at, on the left icons and in the "On this enemy" line. Switch enemies and each keeps its own timers. When a spell is about to matter again the right side says so ("Corruption in 8s").
+- **No wasted spells**: the addon learns how long your kills usually take. When an enemy should be nearly dead it stops suggesting new damage over time and tells you to finish it.
+- **Your demon** (Warlock): the pull advice changes with who is out. Voidwalker goes in first; with the Imp you just start casting.
+- **Macros**: `/coach macros` makes a few helper macros from the spells you know (see below).
 - **Mana**: the bar is your real mana, drawn by the game itself. When mana gets low the advice changes, e.g. "melee only" or "wand until it dies".
 - **Before you pull**: missing buffs, weapon buff, wand, reagents, food, and "drink first" when mana is low.
 - **After each fight**: time, casts, mana spent, and up to two tips on what to do better.
@@ -42,6 +46,25 @@ ClassCoach only shows advice. It never presses buttons for you, which keeps it w
 | Every other class | General | Mana coach, drink/food checks, fight report, level-up reminders |
 
 The profile is picked from your talent points (the tree with the most points); before level 10 the class's default spec is used. Adding a class or spec is one file: see `docs/EXTENDING.md` in the project.
+
+## Two panels
+
+- **Coach** (top): only the fight. The carousel, your timers, mana, and before a pull the few things that matter for that fight (shield, weapon buff, demon, low health or mana).
+- **Journey** (below it, hidden in combat): your XP and rested XP, and a short to-do list from the leveling guides: unspent talent points, spells you can train, a missing food buff (+5% XP from kills), no rested XP, your Cozy Sleeping Bag or Camp Tent if you own one, gear that needs repair, full bags, and the level your trainer next has something new. `!` marks something worth doing now; the grey line under the list explains the first one.
+
+Drag either panel where you like. `/coach journey off` hides the second one; `/coach journey reset` puts it back under the first.
+
+## Macros
+
+`/coach macros` (out of combat) creates this class's macros on your character's macro tab, named `CC ...`. Open `/macro` and drag them to your bar. They rewrite themselves when you train new spells, and a macro on your bar lends its key to the spells inside it on the panel.
+
+- One press still casts one spell: the game allows nothing else. `CC Pull` steps through your opening spells in order, one per press.
+- Warlock `CC Pull` also sends your demon in. With the Voidwalker out, the first press only sends it; the spells start once it is fighting.
+- Macros cannot think. Keep watching the panel: it knows when a spell is still running, the macro does not.
+
+## How the timers work
+
+In combat the game hides enemy debuffs from addons, so ClassCoach counts from your own casts: it knows what you cast, on whom, and how long the spell lasts (read from the spell's own description). Two limits follow from that: a resisted spell still counts as applied, and if the game also hides enemy ids on your client, coming back to an earlier enemy starts its timers fresh. `/coach check` says how enemies are told apart on your client.
 
 ## How mana works
 

@@ -38,6 +38,20 @@ local function cast(id, cost)
   M.P.mana = M.P.mana - (cost or M.P.spells[id].cost or 0)
   M.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", id)
 end
+-- Selecting an enemy fires the game's event, like a real click does.
+local function target(t)
+  M.P.target = t
+  M.fire("PLAYER_TARGET_CHANGED")
+end
+-- Everything the journey panel is showing, as one string.
+local function journey(ns)
+  local f, parts = ns.Journey.frame, {}
+  if not f.shown then return "(hidden)" end
+  parts[#parts + 1] = f.barText.text
+  for _, l in ipairs(f.lines) do if l.shown and l.text ~= "" then parts[#parts + 1] = l.text end end
+  parts[#parts + 1] = f.hint.text
+  return table.concat(parts, " | ")
+end
 local function errors() return ClassCoachDB.log and #ClassCoachDB.log or 0 end
 
 local SCENARIO = SCENARIO
@@ -67,15 +81,30 @@ if SCENARIO == "shaman" then
   local f = tick(ns)
   check("checklist: shield missing", f.status.text:find("No shield") ~= nil, f.status.text)
   check("checklist: weapon buff missing", f.status.text:find("No weapon buff") ~= nil, f.status.text)
-  check("checklist: food", f.status.text:find("No food") ~= nil, f.status.text)
+  check("food is a journey to-do, not a pull blocker", journey(ns):find("No food buff") ~= nil and not f.status.text:find("food"), journey(ns))
+  check("journey: xp and rested", journey(ns):find("XP 0%% · not rested") ~= nil and journey(ns):find("No rested XP") ~= nil, journey(ns))
+  check("journey: next trainer level", journey(ns):find("New spells at level 16") ~= nil, journey(ns))
+  M.P.xp, M.P.rested, M.P.talentPoints, M.P.durability, M.P.freeSlots = 430, 180, 1, 12, 1
+  M.P.buffs["Well Fed XP Boost"] = true; M.fire("UNIT_AURA", "player")
+  M.advance(3); f = tick(ns)
+  check("journey: rested amount", journey(ns):find("XP 43%% · rested 18%% of a level") ~= nil, journey(ns))
+  check("journey: talent point with the suggested talent", journey(ns):find("1 talent point to spend") ~= nil and journey(ns):find("Thundering Strikes") ~= nil, journey(ns))
+  check("journey: repair and bags", journey(ns):find("Gear at 12%% durability") ~= nil and journey(ns):find("Bags nearly full %(1 free%)") ~= nil, journey(ns))
+  check("journey: any Well Fed buff counts", not journey(ns):find("No food buff"), journey(ns))
+  M.P.talentPoints, M.P.durability, M.P.freeSlots = 0, nil, 10
+  M.P.items["Cozy Sleeping Bag"] = 1; M.P.items["Camp Tent"] = 1; M.P.rested = 20
+  M.advance(3); f = tick(ns)
+  check("journey: sleeping bag reminder when you own one", journey(ns):find("Sleeping bag buff missing") ~= nil, journey(ns))
+  check("journey: tent reminder when rested is low", journey(ns):find("Rested XP low %(2%% of a level%)") ~= nil, journey(ns))
+  M.P.items["Cozy Sleeping Bag"] = nil; M.P.items["Camp Tent"] = nil
 
   M.P.buffs = { ["Lightning Shield"] = true, ["Well Fed"] = true }
   M.P.mainHand = true
   M.fire("UNIT_AURA", "player")
   f = tick(ns)
-  check("ready to pull", f.status.text == "Ready to pull.", f.status.text)
+  check("ready to pull", f.status.text:find("^Ready to pull%.") ~= nil, f.status.text)
 
-  M.P.target = { name = "Rockjaw Trogg", level = 11, hostile = true, guid = "Creature-1" }
+  target({ name = "Rockjaw Trogg", level = 11, hostile = true, guid = "Creature-1" })
   f = tick(ns)
   check("opener is Flame Shock", f.name.text == "Flame Shock", f.name.text)
   check("opener keybind", f.key.text == "S3", f.key.text)
@@ -88,6 +117,7 @@ if SCENARIO == "shaman" then
   cast(529)
   M.advance(1.5); f = tick(ns)
   check("in combat: Flame Shock next", f.name.text == "Flame Shock", f.name.text)
+  check("journey panel hides in combat", journey(ns) == "(hidden)", journey(ns))
   check("mana bar is handed the real hidden value", f.bar.value == M.SECRET)
   check("mana text written by the game", f.barText.secretText == true and f.barText.text == "Mana %.0f%%", f.barText.text)
   cast(8050)
@@ -152,10 +182,10 @@ elseif SCENARIO == "priest" then
   check("checklist: Fortitude", f.status.text:find("Fortitude") ~= nil, f.status.text)
   M.P.buffs = { ["Power Word: Fortitude"] = true, ["Inner Fire"] = true, ["Well Fed"] = true }
   M.fire("UNIT_AURA", "player")
-  M.P.target = { name = "Kobold", level = 13, hostile = true, guid = "Creature-2" }
+  target({ name = "Kobold", level = 13, hostile = true, guid = "Creature-2" })
   f = tick(ns)
   check("shield before the pull", f.name.text == "Power Word: Shield", f.name.text)
-  check("priest chain", f.chainText.text == "Shadow Word: Pain > Mind Blast > Smite", f.chainText.text)
+  check("priest chain", f.chainText.text == "Shadow Word: Pain > Mind Blast", f.chainText.text)
   cast(17); M.advance(1.5); f = tick(ns)
   check("opener Mind Blast", f.name.text == "Mind Blast", f.name.text)
   M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
@@ -182,7 +212,7 @@ elseif SCENARIO == "warlock" then
     class = "WARLOCK", className = "Warlock", level = 12, mana = 300, maxMana = 300,
     spells = {
       [686] = { name = "Shadow Bolt", cost = 25 }, [695] = { name = "Shadow Bolt", cost = 40 },
-      [348] = { name = "Immolate", cost = 25 }, [172] = { name = "Corruption", cost = 35 },
+      [348] = { name = "Immolate", cost = 25 }, [172] = { name = "Corruption", cost = 35, text = "Corrupts the target, causing 40 Shadow damage over 12 sec." },
       [980] = { name = "Bane of Agony", cost = 25 }, [1454] = { name = "Life Tap", cost = 0 },
       [1120] = { name = "Drain Soul", cost = 55 }, [5782] = { name = "Fear", cost = 40 },
       [687] = { name = "Demon Skin", cost = 50 }, [688] = { name = "Summon Imp", cost = 60 },
@@ -196,7 +226,7 @@ elseif SCENARIO == "warlock" then
   check("warlock profile chosen", ns.C.profile.spec == "Affliction", ns.C.profile.spec)
   local f = tick(ns)
   check("checklist: no demon", f.status.text:find("demon") ~= nil, f.status.text)
-  M.P.pet = {}
+  M.P.pet = { family = "Voidwalker" }
   M.P.buffs = { ["Demon Skin"] = true, ["Well Fed"] = true }
   M.P.items[6265] = 2
   M.fire("UNIT_AURA", "player")
@@ -205,34 +235,112 @@ elseif SCENARIO == "warlock" then
   M.P.health = 80; f = tick(ns)
   check("low health check", f.status.text:find("Health") ~= nil, f.status.text)
   M.P.health = 200
-  M.P.target = { name = "Gnoll", level = 11, hostile = true, guid = "Creature-5" }
+  target({ name = "Gnoll", level = 11, hostile = true, guid = "Creature-5" })
   f = tick(ns)
   check("opener Bane of Agony", f.name.text == "Bane of Agony", f.name.text)
-  check("opener mentions the demon when it is out", f.why.text:find("demon") ~= nil, f.why.text)
-  check("warlock chain", f.chainText.text == "Corruption > Immolate > Shoot", f.chainText.text)
+  check("opener is told for the Voidwalker", f.why.text:find("Voidwalker in, let it hit first") ~= nil, f.why.text)
+  check("warlock chain", f.chainText.text == "Corruption > Immolate", f.chainText.text)
+  check("durations read from the spell text", ns.C.spells["Corruption"].duration == 12 and ns.C.spells["Bane of Agony"].duration == 24,
+    tostring(ns.C.spells["Corruption"].duration))
+
+  -- The pull lands a moment before combat starts: it still counts.
+  cast(980); M.advance(0.4)
   M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
   f = tick(ns)
-  check("bane first", f.name.text == "Bane of Agony", f.name.text)
-  cast(980); M.advance(1.5); f = tick(ns)
+  check("pull spell counted in the fight", ns.C.tracker:castsOnTarget("g:Creature-5", "Bane of Agony") == 1)
+  check("mana start includes the pull spell", ns.C.tracker.fight.manaStart == 300, ns.C.tracker.fight.manaStart)
   check("then Corruption", f.name.text == "Corruption", f.name.text)
+  check("done slot shows Bane ticking", f.done[2].shown and f.done[2].timer.text == "24", f.done[2].timer.text)
+  check("dot line", f.dots.text:find("On this enemy: Bane of Agony 24s") ~= nil, f.dots.text)
   cast(172); M.advance(2); f = tick(ns)
   check("then Immolate (mana high)", f.name.text == "Immolate", f.name.text)
   cast(348); M.advance(2); f = tick(ns)
   check("then wand", f.name.text == "Shoot", f.name.text)
+  check("chain says when Corruption comes back", f.chainText.text == "Corruption in 8s", f.chainText.text)
+  check("two done slots", f.done[1].timer.text == "8" and f.done[2].timer.text == "13", f.done[1].timer.text .. "/" .. f.done[2].timer.text)
+  M.advance(8.5); f = tick(ns)
+  check("Corruption ran out: cast it again", f.name.text == "Corruption", f.name.text)
+  cast(172); M.advance(1.5)
+
+  -- A second enemy joins: its own timers, and the first one keeps ticking.
+  target({ name = "Gnoll", level = 11, hostile = true, guid = "Creature-6" })
+  f = tick(ns)
+  check("new enemy needs its own Bane", f.name.text == "Bane of Agony", f.name.text)
+  check("other enemy still ticking", f.dots.text == "1 other enemy still ticking", f.dots.text)
+  check("no done slots on a fresh enemy", not f.done[1].shown and not f.done[2].shown)
+  target({ name = "Gnoll", level = 11, hostile = true, guid = "Creature-5" })
+  f = tick(ns)
+  check("back on the first: its timers are remembered", f.name.text == "Shoot" and f.dots.text:find("Corruption") ~= nil, f.name.text .. " / " .. f.dots.text)
+
   M.P.mana = 50; M.advance(3); f = tick(ns)
   check("low mana: Life Tap", f.name.text == "Life Tap", f.name.text)
   check("low mana advice", f.status.text:find("Life Tap") ~= nil, f.status.text)
   M.advance(10)
   M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
   local tips = table.concat(ns.C.lastReport.tips, " | ")
-  check("life tap tip", tips:find("Life Tap") ~= nil, tips)
-  -- a fight without the demon
-  M.P.pet = nil; M.P.mana = 300; f = tick(ns)
+  check("tip: cast before the Voidwalker", tips:find("before your Voidwalker") ~= nil, tips)
+  check("dots forgotten after the fight", #ns.C.tracker:dotsOn("g:Creature-5", M.now) == 0)
+  check("kill time learned", ClassCoachCharDB.kill and ClassCoachCharDB.kill.n == 1 and ClassCoachCharDB.kill.avg > 10, ClassCoachCharDB.kill and ClassCoachCharDB.kill.avg)
+
+  -- Enemy nearly dead (by your usual kill time): no new damage over time.
+  ClassCoachCharDB.kill = { avg = 8, n = 5 }
+  M.P.mana = 300; target({ name = "Wolf", level = 11, hostile = true, guid = "Creature-7" })
+  M.advance(1); f = tick(ns)
+  M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
+  f = tick(ns)
+  check("short fights: Bane of Agony is skipped", f.name.text == "Corruption", f.name.text)
+  cast(172); M.advance(6); f = tick(ns)
+  check("late in the fight: no Immolate, just wand", f.name.text == "Shoot", f.name.text)
+  check("and it says why", f.status.text:find("nearly dead") ~= nil, f.status.text)
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
+  ClassCoachCharDB.kill = nil
+
+  -- Enemy ids hidden: every target change is a new enemy, timers never leak across.
+  M.secretGuid = true
+  target({ name = "Boar", level = 11, hostile = true, guid = "Creature-8" })
+  M.advance(1); f = tick(ns)
+  M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
+  cast(980); cast(172); M.advance(1.5); f = tick(ns)
+  check("hidden ids: timers on the current enemy work", f.dots.text:find("Bane of Agony") ~= nil, f.dots.text)
+  target({ name = "Boar", level = 11, hostile = true, guid = "Creature-9" })
+  f = tick(ns)
+  check("hidden ids: the next enemy starts clean", f.name.text == "Bane of Agony", f.name.text)
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
+  M.secretGuid = false
+  target(nil)
+
+  -- The Imp: no waiting, and a nudge towards the Voidwalker when solo.
+  M.P.pet = { family = "Imp" }; M.advance(1); f = tick(ns)
+  check("Imp out: nudge to the Voidwalker", f.status.text:find("Imp is out") ~= nil, f.status.text)
+  target({ name = "Boar", level = 11, hostile = true, guid = "Creature-10" })
+  f = tick(ns)
+  check("Imp pull text", f.why.text:find("Imp out: cast Bane of Agony right away") ~= nil, f.why.text)
+  target(nil)
+  -- Family hidden: the last summon you cast is remembered.
+  M.P.pet = {}; cast(697); M.advance(1); f = tick(ns)
+  check("demon known from the summon cast", ns.C.lastState.demon == "Voidwalker", tostring(ns.C.lastState.demon))
+
+  -- A fight without the demon
+  M.P.pet = nil; M.P.mana = 300; M.advance(1); f = tick(ns)
+  target({ name = "Boar", level = 11, hostile = true, guid = "Creature-11" })
   M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
   cast(980); M.advance(10)
   M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
   tips = table.concat(ns.C.lastReport.tips, " | ")
   check("no-demon tip", tips:find("demon") ~= nil, tips)
+  target(nil)
+
+  -- Macros
+  M.P.pet = { family = "Voidwalker" }; M.advance(1); tick(ns)
+  SlashCmdList.CLASSCOACH("macros")
+  local pull = M.macros[GetMacroIndexByName("CC Pull")]
+  check("pull macro made", pull ~= nil and pull.perChar == true)
+  check("pull macro: demon in, Voidwalker goes first, spells in order", pull and pull.body ==
+    "#showtooltip\n/petattack [harm,nodead]\n/stopmacro [pet:Voidwalker,nocombat]\n/castsequence reset=target/combat Bane of Agony, Corruption, Immolate",
+    pull and pull.body)
+  check("wand and demon macros", GetMacroIndexByName("CC Wand") > 0 and GetMacroIndexByName("CC Demon") > 0)
+  check("macros fit the game's limit", #pull.body <= 255)
+  SlashCmdList.CLASSCOACH("check")
   check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
   check("no tick error", ns.C.lastError == nil, ns.C.lastError)
 
@@ -291,7 +399,7 @@ elseif SCENARIO == "sweep" then
   local function look(level, opts, spells, where)
     local f = tick(ns)
     local tag = ("%s L%d %s wand=%s pet=%s mana=%d"):format(WANT, level, where, tostring(opts.wand), tostring(opts.pet), opts.mana)
-    local shown = { f.name.text, f.why.text, f.status.text, f.chainText.text }
+    local shown = { f.name.text, f.why.text, f.status.text, f.chainText.text, f.dots.text, journey(ns) }
     for key in pairs(profile.spells) do
       if not spells[idOf[key]] then
         for _, t in ipairs(shown) do
@@ -316,12 +424,12 @@ elseif SCENARIO == "sweep" then
           local opts = { wand = wand and level >= 5, pet = pet, mana = mana, noImp = def.pet and not pet and level < 10 }
           local spells = setup(level, opts)
           local f = look(level, opts, spells, "idle")
-          check(("%s L%d: a pull plan is shown"):format(WANT, level), f.chainLabel.text == "Pull" and f.chainText.text ~= "", f.chainText.text)
+          check(("%s L%d: a pull plan is shown"):format(WANT, level), f.chainLabel.text == "Pull" and f.name.text ~= "" and f.name.text ~= "Ready", f.name.text)
           if opts.noImp then
             check(("%s L%d: points at the Imp quest, not at a missing demon"):format(WANT, level),
-              f.status.text:find("No Imp yet") ~= nil and not f.status.text:find("No demon"), f.status.text)
+              journey(ns):find("No Imp yet") ~= nil and not f.status.text:find("No demon"), journey(ns) .. " / " .. f.status.text)
           end
-          M.P.target = { name = "Boar", level = level, hostile = true, guid = ("Creature-%d-%s-%s-%d"):format(level, tostring(wand), tostring(pet), mana) }
+          target({ name = "Boar", level = level, hostile = true, guid = ("Creature-%d-%s-%s-%d"):format(level, tostring(wand), tostring(pet), mana) })
           f = look(level, opts, spells, "pull")
           if mana == 300 then
             check(("%s L%d: pulls with a spell, not melee"):format(WANT, level), f.name.text ~= "Melee", f.name.text)
@@ -340,7 +448,7 @@ elseif SCENARIO == "sweep" then
             if not id then break end
           end
           M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
-          M.P.target = nil
+          target(nil)
           if mana == 300 then samples[#samples + 1] = ("L%-2d wand=%-5s pet=%-5s  %s"):format(level, tostring(opts.wand), tostring(pet), table.concat(line, " > ")) end
         end
       end
@@ -349,7 +457,7 @@ elseif SCENARIO == "sweep" then
   if WANT == "WARLOCK" then
     setup(4, { mana = 300, pet = true, skip = "Corruption" })
     local f = tick(ns)
-    check("trainer reminder for an unlearned spell", f.status.text:find("Not trained: Corruption") ~= nil, f.status.text)
+    check("trainer reminder for an unlearned spell", journey(ns):find("Not trained: Corruption") ~= nil, journey(ns))
     check("and it is not suggested", not f.chainText.text:find("Corruption"), f.chainText.text)
     setup(12, { mana = 60, pet = true })
     f = tick(ns)
@@ -373,7 +481,7 @@ elseif SCENARIO == "template" then
     book = { 116, 205, 2136, 168, 5019 }, equipped = { [18] = 1 }, talents = { 0, 0, 4 } })
   local ns = load("docs/ProfileTemplate.lua")
   check("template profile loads and is picked", ns.C.profile.spec == "Frost", ns.C.profile.spec)
-  M.P.target = { name = "Murloc", level = 11, hostile = true, guid = "Creature-4" }
+  target({ name = "Murloc", level = 11, hostile = true, guid = "Creature-4" })
   M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED")
   local f = tick(ns)
   check("template priority works", f.name.text == "Fire Blast", f.name.text)
@@ -387,7 +495,7 @@ elseif SCENARIO == "warrior" then
   check("generic profile", ns.C.profile.class == "ANY", ns.C.profile.class)
   local f = tick(ns)
   check("no mana bar for rage users", ns.C.usesMana == false)
-  M.P.target = { name = "Wolf", level = 7, hostile = true, guid = "Creature-3" }
+  target({ name = "Wolf", level = 7, hostile = true, guid = "Creature-3" })
   M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
   M.advance(5); f = tick(ns); cast(78); M.advance(5)
   M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)

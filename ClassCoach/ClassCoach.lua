@@ -3,7 +3,8 @@
 local ADDON, ns = ...
 local API, Mana, Tracker, Engine, Profiles = ns.API, ns.Mana, ns.Tracker, ns.Engine, ns.Profiles
 
-local DEFAULTS = { scale = 1, locked = false, hidden = false, chat = true, food = true, drinkAt = 60 }
+local DEFAULTS = { scale = 1, locked = false, hidden = false, chat = true, food = true, drinkAt = 60, journey = true }
+local KILL_SAMPLES = 3   -- fights needed before the "enemy nearly dead" guess is used
 
 local C = {}            -- runtime state
 ns.C = C
@@ -42,6 +43,7 @@ local function rescan()
     for _, id in ipairs(spec.ids or {}) do idToKey[id] = key end
     local sp = API.resolveSpell(spec, book)
     if sp then
+      if spec.debuff then sp.duration = API.dotDuration(sp.id) or spec.debuff end
       spells[key] = sp
       idToKey[sp.id] = key
       idToKey[sp.lowest] = key
@@ -64,6 +66,7 @@ local function rescan()
   C.keys = API.scanKeys()
   C.hasWand = API.equipped(18)
   C.usesMana = API.usesMana()
+  C.syncMacros(true)
 end
 
 local rescanQueued = false
@@ -75,6 +78,54 @@ local function rescanSoon()
     local ok, err = pcall(rescan)
     if not ok then log("rescan error: %s", tostring(err)) end
   end)
+end
+
+---------------------------------------------------------------------------
+-- Target, demon and macros
+---------------------------------------------------------------------------
+
+-- The current target, with a key that keeps enemies apart (see API.targetKey).
+local function currentTarget()
+  local t = API.target()
+  if t.exists then
+    if not C.targetKey then C.targetKey, C.targetMode = API.targetKey() end
+    t.key = C.targetKey
+  end
+  return t
+end
+
+local DEMON_FAMILIES = { Imp = true, Voidwalker = true, Succubus = true, Incubus = true, Felhunter = true }
+
+-- Which pet is out: what the game says, else the last one you summoned.
+local function currentDemon(hasPet)
+  if hasPet == false then return nil end
+  local family = API.petFamily()
+  if family and DEMON_FAMILIES[family] then
+    ClassCoachCharDB.demon = family
+    return family
+  end
+  if hasPet then return ClassCoachCharDB.demon end
+  return nil
+end
+
+-- Builds the profile's macros from the spells you know. With onlyExisting it
+-- only refreshes macros you already made (after training new spells).
+function C.syncMacros(onlyExisting)
+  local s = C.lastState
+  if not s or not C.profile.macros or API.inCombat() then return {} end
+  local results = {}
+  for _, m in ipairs(Engine.macros(C.profile, s)) do
+    local result = API.saveMacro(m.name, m.body, onlyExisting)
+    results[#results + 1] = { name = m.name, result = result, about = m.about }
+    -- a macro on your bar lends its key to the spells inside it
+    local key = C.keys and C.keys["macro:" .. m.name]
+    if key and API.macroExists(m.name) then
+      for _, sp in pairs(C.spells or {}) do
+        if C.keys[sp.name] == nil and m.body:find(sp.name, 1, true) then C.keys[sp.name] = key end
+      end
+    end
+  end
+  return results
 end
 
 ---------------------------------------------------------------------------
@@ -114,6 +165,16 @@ local function petState(inCombat)
   return API.hasPet()
 end
 
+-- Slow-changing things for the journey panel: read every couple of seconds, never in combat.
+function C.journeyData(now)
+  local j = C.journey
+  if j and now - j.at < 2 then return j end
+  j = { at = now, xp = API.xp(), talentPoints = API.unspentTalents(), durability = API.durability(),
+    freeSlots = API.freeBagSlots(), hasItem = API.hasItem }
+  C.journey = j
+  return j
+end
+
 local function buildState(now)
   local inCombat = API.inCombat() or C.tracker.fight ~= nil
   local manaPct, exact = readMana(now, inCombat)
@@ -128,14 +189,20 @@ local function buildState(now)
     end
     buffs, mainHand = C.buffs, C.mainHand
   end
+  local hasPet = petState(inCombat)
+  local demon
+  if inCombat then demon = C.demonAtPull else demon = currentDemon(hasPet) end
+  local kill = ClassCoachCharDB.kill
   return Engine.newState({
+    meta = C.profile.spells, demon = demon,
+    killTime = kill and kill.n >= KILL_SAMPLES and kill.avg or nil,
     now = now, level = C.level or API.level(), inCombat = inCombat, inGroup = API.inGroup(),
     usesMana = C.usesMana, manaPct = manaPct, manaExact = exact, manaLevel = C.manaLevel,
-    healthPct = (not inCombat) and API.healthPct() or nil, hasPet = petState(inCombat),
-    target = API.target(), hasWand = C.hasWand, buffs = buffs, mainHandBuff = mainHand,
+    healthPct = (not inCombat) and API.healthPct() or nil, hasPet = hasPet,
+    target = currentTarget(), hasWand = C.hasWand, buffs = buffs, mainHandBuff = mainHand,
     keys = C.keys, spells = C.spells, bookReady = next(C.spells) ~= nil, tracker = C.tracker, fightTime = C.tracker:fightTime(now),
     check = { ready = API.ready, usable = API.usable },
-    itemCount = API.itemCount, equipped = API.equipped,
+    itemCount = API.itemCount, equipped = API.equipped, journey = (not inCombat) and C.journeyData(now) or nil,
   })
 end
 
@@ -149,13 +216,29 @@ local function tick()
     usesMana = s.usesMana, manaPct = s.manaPct, manaExact = s.manaExact, manaLevel = s.manaLevel,
   }
   view.next = Engine.next(profile, s)
-  view.chain = Engine.chain(profile, s, 4)
+  view.chain = Engine.chain(profile, s, 3)
+  view.planning = view.next == nil
   view.drawMana = API.drawMana
+  -- What you already did to this enemy, and what is still ticking on it.
+  local key = s.target and s.target.key
+  view.done, view.dots = {}, {}
+  if key then
+    for _, c in ipairs(C.tracker:recent(key, 2, now, 30)) do
+      local sp = s.spells[c.name]
+      view.done[#view.done + 1] = { label = sp and sp.name or c.name, icon = sp and sp.icon,
+        left = profile.spells[c.name] and profile.spells[c.name].debuff and C.tracker:debuffLeft(key, c.name, now) or nil }
+    end
+    for _, d in ipairs(C.tracker:dotsOn(key, now)) do
+      local sp = s.spells[d.name]
+      view.dots[#view.dots + 1] = { label = sp and sp.name or d.name, left = d.left }
+    end
+  end
+  view.otherDotted = C.tracker:otherDotted(key or "none", now)
   if s.inCombat then
     view.status = Engine.advice(profile, s)
     view.statusKind = s.manaLevel == "low" and "warn" or nil
   else
-    local missing = Engine.checklist(profile, s, { food = ClassCoachDB.food, drinkAt = ClassCoachDB.drinkAt })
+    local missing = Engine.checklist(profile, s, { drinkAt = ClassCoachDB.drinkAt })
     if #missing > 0 then
       local names = {}
       for _, m in ipairs(missing) do names[#names + 1] = m.text end
@@ -165,10 +248,12 @@ local function tick()
       view.status = "Ready to pull."
       view.statusKind = "ok"
     end
-    local lvl, what = Engine.nextTraining(profile, s.level)
-    view.idleText = "Out of combat"
-    view.idleWhy = lvl and ("Next new spells at level %d."):format(lvl) or ""
+    local journey = Engine.journey(profile, s, { food = ClassCoachDB.food })
+    journey.title = ("Journey · level %d"):format(s.level)
+    C.lastJourney = journey
+    ns.Journey.render(journey)
   end
+  if s.inCombat then ns.Journey.render({ inCombat = true }) end
   ns.Panel.render(view)
 end
 
@@ -210,8 +295,25 @@ function handlers.UNIT_SPELLCAST_SUCCEEDED(unit, _, spellID)
   if not key then return end
   local cost = C.costById[id]
   if cost == nil then cost = API.cost(id); C.costById[id] = cost or false end
-  local t = API.target()
-  C.tracker:cast(GetTime(), key, cost or 0, C.profile.spells[key], t.key)
+  local meta = C.profile.spells[key]
+  if meta and meta.summons then ClassCoachCharDB.demon = meta.summons end
+  local t = currentTarget()
+  local sp = C.spells[key]
+  -- Out of combat the next exact reading may come after combat starts: keep our own count right.
+  if not C.tracker.fight and C.lastMana and cost and cost > 0 then C.lastMana = math.max(0, C.lastMana - cost) end
+  C.tracker:cast(GetTime(), key, cost or 0, meta, t.key, sp and sp.duration)
+end
+
+function handlers.PLAYER_TARGET_CHANGED()
+  API.targetChanged()
+  C.targetKey = nil
+end
+function handlers.NAME_PLATE_UNIT_ADDED(token)
+  API.plateAdded(token)
+  C.targetKey = nil
+end
+function handlers.NAME_PLATE_UNIT_REMOVED()
+  C.targetKey = nil
 end
 
 function handlers.PLAYER_SWING()
@@ -221,9 +323,10 @@ end
 function handlers.PLAYER_REGEN_DISABLED()
   local t = API.target()
   C.petAtPull = C.lastState and C.lastState.hasPet
+  C.demonAtPull = C.lastState and C.lastState.demon
   C.tracker:startFight(GetTime(), {
-    target = t.hostile and t.name or nil, targetLevel = t.level,
-    manaStart = C.lastMana, manaMax = C.manaMax, hasPet = C.petAtPull,
+    target = t.hostile and t.name or nil, targetLevel = t.level, elite = t.elite,
+    manaStart = C.lastMana, manaMax = C.manaMax, hasPet = C.petAtPull, demon = C.demonAtPull,
   })
 end
 
@@ -231,6 +334,14 @@ local function finishFight()
   local cur, max = API.mana()
   local summary = C.tracker:endFight(GetTime(), cur, max)
   if not summary or summary.duration < 3 then return end
+  -- Learn how long your kills take: it decides when a new damage-over-time spell is wasted.
+  if not summary.elite and not API.inGroup() and summary.duration < 120 then
+    local kill = ClassCoachCharDB.kill or { avg = 0, n = 0 }
+    local per = summary.duration / summary.targets
+    kill.avg = kill.n == 0 and per or (kill.avg * 0.7 + per * 0.3)
+    kill.n = kill.n + 1
+    ClassCoachCharDB.kill = kill
+  end
   local s = C.lastState or buildState(GetTime())
   local report = Engine.report(C.profile, summary, s)
   C.lastReport = report
@@ -290,6 +401,7 @@ local function start()
   local mana, max = API.mana()
   C.lastMana, C.manaMax = mana, max
   ns.Panel.create(ClassCoachCharDB, ClassCoachDB)
+  ns.Journey.create(ClassCoachCharDB, ClassCoachDB, ns.Panel.frame)
   ns.Panel.frame:SetScript("OnUpdate", onUpdate)
 end
 
@@ -348,6 +460,14 @@ local function check()
   local costs = {}
   for _, p in ipairs(C.probes) do costs[#costs + 1] = p.cost end
   add("mana probes: %s", table.concat(costs, " "))
+  local _, mode = API.targetKey()
+  add("enemies told apart by: %s; pet family %s; saved demon %s", tostring(mode), tostring(API.petFamily()), tostring(ClassCoachCharDB.demon))
+  local kill = ClassCoachCharDB.kill
+  add("average kill time: %s (%s fights)", kill and ("%.1fs"):format(kill.avg) or "-", kill and kill.n or 0)
+  local durations = {}
+  for key, sp in pairs(C.spells or {}) do if sp.duration then durations[#durations + 1] = key .. " " .. sp.duration .. "s" end end
+  table.sort(durations)
+  add("damage over time: %s", table.concat(durations, ", "))
   add("mana bar drawn by the game: %s; percent function %s, readable %s", tostring(not ns.Panel.manaRefused),
     tostring(UnitPowerPercent ~= nil), tostring(API.manaPct() ~= nil))
   add("buffs readable %s, weapon buff %s, wand %s", tostring(C.buffs ~= nil), tostring(API.mainHandBuff()), tostring(C.hasWand))
@@ -362,8 +482,10 @@ local HELP = {
   "/coach scale 1.2 — panel size",
   "/coach spec <name> | auto — pick a profile (e.g. /coach spec Enhancement)",
   "/coach last — repeat the last fight report",
+  "/coach macros — create or refresh this class's helper macros (out of combat)",
   "/coach chat on | off — fight tips in chat",
   "/coach food on | off — remind about buff food",
+  "/coach journey on | off | reset — the second panel: XP, rested XP and to-dos",
   "/coach hide | show | reset — panel visibility and position",
   "/coach check — what the addon can read on this client (for bug reports)",
 }
@@ -375,11 +497,14 @@ SlashCmdList.CLASSCOACH = function(msg)
   local db = ClassCoachDB
   if cmd == "lock" then db.locked = true; say("Panel locked.")
   elseif cmd == "unlock" then db.locked = false; say("Panel unlocked: drag it where you like.")
-  elseif cmd == "scale" and tonumber(arg) then db.scale = math.max(0.5, math.min(2, tonumber(arg))); ns.Panel.setScale(db.scale)
+  elseif cmd == "scale" and tonumber(arg) then db.scale = math.max(0.5, math.min(2, tonumber(arg))); ns.Panel.setScale(db.scale); ns.Journey.setScale(db.scale)
   elseif cmd == "hide" then db.hidden = true; ns.Panel.toggle(false)
   elseif cmd == "show" then db.hidden = false; ns.Panel.toggle(true)
   elseif cmd == "reset" then ns.Panel.resetPosition()
   elseif cmd == "chat" then db.chat = arg ~= "off"; say("Fight tips in chat: " .. (db.chat and "on" or "off"))
+  elseif cmd == "journey" then
+    if arg == "reset" then ns.Journey.reset(); say("Journey panel back under the coach panel.")
+    else db.journey = arg ~= "off"; say("Journey panel: " .. (db.journey and "on" or "off")) end
   elseif cmd == "food" then db.food = arg ~= "off"; say("Food reminder: " .. (db.food and "on" or "off"))
   elseif cmd == "spec" then
     if arg == "" then
@@ -397,6 +522,18 @@ SlashCmdList.CLASSCOACH = function(msg)
     say(r.headline)
     if r.casts then say(r.casts) end
     for _, tip in ipairs(r.tips) do say("• " .. tip) end
+  elseif cmd == "macros" then
+    if not C.profile.macros then say("No macros for " .. C.profile.spec .. " yet.") return end
+    if API.inCombat() then say("Macros can only be made out of combat. Try again after the fight.") return end
+    local results = C.syncMacros(false)
+    if #results == 0 then say("Nothing to make yet: you don't know the spells for them.") return end
+    local WORDS = { created = "created", updated = "updated", same = "already up to date",
+      full = "not made: your character macro list is full", combat = "not made: in combat" }
+    for _, r in ipairs(results) do
+      say(("%s: %s.%s"):format(r.name, WORDS[r.result] or "could not be made", r.about and (" " .. r.about) or ""))
+    end
+    say("Open /macro, pick your character's tab and drag them onto your action bar. They update themselves when you learn new spells.")
+    rescanSoon()
   elseif cmd == "check" then check()
   else
     say("Coach for " .. C.profile.spec .. ". Commands:")

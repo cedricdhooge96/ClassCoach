@@ -79,7 +79,38 @@ function UnitIsDead(u)
 end
 function UnitName(u) if u == "target" then return P.target and hidden(P.target.name) end return "Marida" end
 function UnitClassification() return P.target and P.target.classification or "normal" end
-function UnitGUID(u) if u == "target" then return P.target and P.target.guid end end
+-- Some clients hide enemy ids: tests switch that on with M.secretGuid.
+function UnitGUID(u)
+  if u ~= "target" or not P.target then return nil end
+  if M.secretGuid then return SECRET end
+  return P.target.guid
+end
+-- Journey: XP, rested XP, talents, gear, bags
+function UnitXP() return P.xp or 0 end
+function UnitXPMax() return P.xpMax or 1000 end
+function GetXPExhaustion() return P.rested end
+function IsResting() return P.resting or false end
+function UnitCharacterPoints() return P.talentPoints or 0 end
+function GetInventoryItemDurability(slot) if slot == 16 and P.durability then return P.durability, 100 end end
+C_Container = { GetContainerNumFreeSlots = function(bag) if bag == 0 then return P.freeSlots or 10 end return 0 end }
+function UnitCreatureFamily(u) if u == "pet" then return P.pet and P.pet.family end end
+function UnitIsUnit() return SECRET end
+
+-- Macros
+M.macros = {}
+function GetMacroIndexByName(name) for i, m in ipairs(M.macros) do if m.name == name then return i end end return 0 end
+function GetMacroBody(i) return M.macros[i] and M.macros[i].body end
+function GetNumMacros() return 0, #M.macros end
+function CreateMacro(name, icon, body, perChar)
+  assert(not P.combat, "macros cannot be made in combat")
+  M.macros[#M.macros + 1] = { name = name, icon = icon, body = body, perChar = perChar }
+  return #M.macros
+end
+function EditMacro(i, name, icon, body)
+  assert(not P.combat, "macros cannot be changed in combat")
+  M.macros[i].name, M.macros[i].body = name, body
+  return i
+end
 
 C_SpellBook = {
   IsSpellKnown = function(id) return P.spells[id] ~= nil and P.knownIds and P.knownIds[id] or false end,
@@ -91,6 +122,7 @@ C_SpellBook = {
   end,
 }
 C_Spell = {
+  GetSpellDescription = function(id) return P.spells[id] and P.spells[id].text end,
   GetSpellName = function(id) return P.spells[id] and P.spells[id].name or M.names[id] end,
   GetSpellTexture = function(id) return "Interface\\Icons\\spell_" .. id end,
   GetSpellPowerCost = function(id) local s = P.spells[id]; return s and { { type = 0, cost = s.cost or 0 } } or {} end,
@@ -118,7 +150,7 @@ C_UnitAuras = {
 }
 function GetWeaponEnchantInfo() return hidden(P.mainHand) end
 function GetTotemInfo(slot) return hidden(P.totems[slot] == true) end
-C_Item = { GetItemCount = function(id) return P.items[id] or 0 end }
+C_Item = { GetItemCount = function(id) return P.items[id] or 0 end }   -- by id or by name
 function GetInventoryItemID(_, slot) return P.equipped[slot] end
 function GetTalentTabInfo(tab) return tab, "Tree" .. tab, "", "icon", P.talents[tab] or 0 end
 function GetActionInfo(slot) local id = P.actions[slot]; if id then return "spell", id end end

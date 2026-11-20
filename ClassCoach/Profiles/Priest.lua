@@ -92,7 +92,7 @@ ns.RegisterProfile({
   checklist = {
     { buff = "Power Word: Fortitude", label = "No Fortitude", hint = "Cast Power Word: Fortitude on yourself." },
     { buff = "Inner Fire", label = "No Inner Fire", hint = "Cast Inner Fire before the pull." },
-    { slot = 18, needs = "Shoot", minLevel = 5, label = "No wand",
+    { tip = true, slot = 18, needs = "Shoot", minLevel = 5, label = "No wand",
       hint = "Get a wand (Lesser Magic Wand, level 5): your free damage while leveling." },
   },
 
@@ -120,6 +120,34 @@ ns.RegisterProfile({
         return "Two shields in a short fight is expensive. One at the start is enough on normal enemies."
       end
     end,
+  },
+
+  -- /coach macros builds these from the spells you know.
+  macros = {
+    { name = "CC Pull", about = "Your opening spells in order, one per press. Then use CC Wand.",
+      body = function(s)
+        local order = {}
+        for _, k in ipairs({ "Mind Blast", "Shadow Word: Pain" }) do
+          if s:known(k) then order[#order + 1] = s.spells[k].name end
+        end
+        if #order == 0 then
+          if not s:known("Smite") then return nil end
+          return "#showtooltip\n/cast " .. s.spells["Smite"].name
+        end
+        if #order == 1 then return "#showtooltip\n/cast " .. order[1] end
+        return "#showtooltip\n/castsequence reset=target/combat " .. table.concat(order, ", ")
+      end },
+    { name = "CC Shield", about = "Shields you without dropping your target.",
+      body = function(s)
+        if not s:known("Power Word: Shield") then return nil end
+        return "#showtooltip\n/cast [@player] " .. s.spells["Power Word: Shield"].name
+      end },
+    { name = "CC Wand", about = "Starts your wand; pressing it again won't stop it.",
+      body = function(s)
+        if not s:known("Shoot") then return nil end
+        local shoot = s.spells["Shoot"].name
+        return "#showtooltip " .. shoot .. "\n/cast !" .. shoot
+      end },
   },
 
   trainer = TRAINER,

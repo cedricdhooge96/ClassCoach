@@ -3,9 +3,12 @@
 A beginner coach addon for **World of Warcraft Forever** (client 1.60.1). One compact panel that shows:
 
 - the next ability to press, with its keybind,
-- the chain of steps that follows it, using only spells you have learned,
+- a carousel of what you did, what to press now and what comes next, using only spells you have learned,
+- timers for your damage-over-time spells on each enemy,
+- helper macros built from your spells (`/coach macros`),
 - your real mana (drawn by the game, since Forever hides the number from addons in combat),
-- a pre-fight checklist (buffs, demon/pet, shards, wand, food, drink),
+- a pre-fight checklist (buffs, demon, low health or mana),
+- a second "journey" panel for everything outside the fight: XP, rested XP, food buff, trainer, talents, repairs, bags,
 - a short report after each fight with what to improve,
 - what to train and which talent to take when you level up.
 
