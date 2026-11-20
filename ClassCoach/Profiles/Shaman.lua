@@ -7,10 +7,10 @@ local function n(summary, key) return summary.castCount[key] or 0 end
 
 -- Spells shared by every Shaman spec ------------------------------------
 local SHAMAN_SPELLS = {
-  ["Lightning Bolt"]   = { ids = { 403, 529, 548, 915, 943, 6041, 10391, 10392, 15207, 15208 } },
-  ["Earth Shock"]      = { ids = { 8042, 8044, 8045, 8046, 10412, 10413, 10414 }, cd = "shock", learn = 4 },
+  ["Lightning Bolt"]   = { ids = { 403, 529, 548, 915, 943, 6041, 10391, 10392, 15207, 15208 }, harm = true, travel = true },
+  ["Earth Shock"]      = { ids = { 8042, 8044, 8045, 8046, 10412, 10413, 10414 }, cd = "shock", learn = 4, harm = true },
   ["Flame Shock"]      = { ids = { 8050, 8052, 8053, 10447, 10448, 29228 }, debuff = 12, cd = "shock", learn = 10 },
-  ["Frost Shock"]      = { ids = { 8056, 8058, 10472, 10473 }, cd = "shock" },
+  ["Frost Shock"]      = { ids = { 8056, 8058, 10472, 10473 }, cd = "shock", harm = true },
   ["Lightning Shield"] = { ids = { 324, 325, 905, 945, 8134, 10431, 10432 }, learn = 8 },
   ["Water Shield"]     = {},  -- new in Forever (Restoration talent): looked up by name
   ["Rockbiter Weapon"] = { ids = { 8017, 8018, 8019, 10399, 16314, 16315, 16316 } },
@@ -160,6 +160,8 @@ ns.RegisterProfile({
         if not s:known(key) then return nil end
         return "#showtooltip\n/startattack\n/cast " .. s.spells[key].name
       end },
+    { name = "CC Attack", smart = true, about = "Used by the smart key: keeps you swinging.",
+      body = function() return "/startattack" end },
     { name = "CC Strike", about = "Stormstrike, and it makes sure you are swinging.",
       body = function(s)
         if not s:known("Stormstrike") then return nil end
@@ -168,6 +170,9 @@ ns.RegisterProfile({
   },
 
   trainer = TRAINER,
+
+  -- The smart key ends on Stormstrike plus auto attack once you have it.
+  smart = { tail = "CC Strike" },
 
   -- /coach bar: one entry per button, best candidate first.
   bar = {

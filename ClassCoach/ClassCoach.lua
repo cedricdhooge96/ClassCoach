@@ -119,7 +119,7 @@ function C.syncMacros(onlyExisting)
   local results = {}
   for _, m in ipairs(Engine.macros(C.profile, s)) do
     local result = API.saveMacro(m.name, m.body, onlyExisting)
-    results[#results + 1] = { name = m.name, result = result, about = m.about }
+    results[#results + 1] = { name = m.name, result = result, about = m.about, smart = m.smart }
     -- a macro on your bar lends its key to the spells inside it
     local key = C.keys and C.keys["macro:" .. m.name]
     if key and API.macroExists(m.name) then
@@ -128,7 +128,17 @@ function C.syncMacros(onlyExisting)
       end
     end
   end
+  C.syncSmart()
   return results
+end
+
+-- Loads the coach's current pull plan into the smart key (out of combat only).
+function C.syncSmart()
+  local s = C.lastState
+  if not s or ClassCoachDB.smartKey == false or API.inCombat() then return false end
+  if not ns.Smart.create() then return false end
+  local steps, gate = Engine.smartSteps(C.profile, s, { macro = API.macroExists })
+  return ns.Smart.load(steps, gate)
 end
 
 -- Lays out the profile's suggested action bar on buttons 1-12 of the main bar.
@@ -256,6 +266,17 @@ local function tick()
   view.next = Engine.next(profile, s)
   view.chain = Engine.chain(profile, s, 3)
   view.planning = view.next == nil
+  -- The smart key: when its next step is what the coach wants, show that key.
+  -- After a resist the coach wants the same spell again: that is the Again key.
+  local now1 = view.chain[1]
+  local smart = ClassCoachDB.smartKey ~= false and now1 and ns.Smart.status() or nil
+  if smart and smart.ready then
+    if now1.retry and smart.keys.again and smart.lastLabel == now1.label then
+      now1.keybind, now1.viaSmart = smart.keys.again, "again"
+    elseif smart.keys.next and smart.nextLabel == now1.label then
+      now1.keybind, now1.viaSmart = smart.keys.next, "next"
+    end
+  end
   view.drawMana = API.drawMana
   -- What you already did to this enemy, and what is still ticking on it.
   local key = s.target and s.target.key
@@ -263,7 +284,7 @@ local function tick()
   if key then
     for _, c in ipairs(C.tracker:recent(key, 2, now, 30)) do
       local sp = s.spells[c.name]
-      view.done[#view.done + 1] = { label = sp and sp.name or c.name, icon = sp and sp.icon,
+      view.done[#view.done + 1] = { label = sp and sp.name or c.name, icon = sp and sp.icon, missed = c.missed,
         left = profile.spells[c.name] and profile.spells[c.name].debuff and C.tracker:debuffLeft(key, c.name, now) or nil }
     end
     for _, d in ipairs(C.tracker:dotsOn(key, now)) do
@@ -348,6 +369,19 @@ function handlers.UNIT_SPELLCAST_SUCCEEDED(unit, _, spellID)
   -- Out of combat the next exact reading may come after combat starts: keep our own count right.
   if not C.tracker.fight and C.lastMana and cost and cost > 0 then C.lastMana = math.max(0, C.lastMana - cost) end
   C.tracker:cast(GetTime(), key, cost or 0, meta, t.key, sp and sp.duration)
+end
+
+-- The game reports "something was resisted on your target" without saying
+-- what. Right after one of your harmful casts it is that cast: undo it, so the
+-- coach asks for it again (or skips it on an immune enemy).
+local SPELL_FAILS = { RESIST = "resist", IMMUNE = "immune", EVADE = "resist", REFLECT = "resist", DEFLECT = "resist" }
+function handlers.UNIT_COMBAT(unit, action)
+  if API.plain(unit) ~= "target" then return end
+  local kind = SPELL_FAILS[API.plain(action) or ""]
+  if not kind then return end
+  local c = C.tracker:castMissed(GetTime(), kind == "immune")
+  C.stats = C.stats or { resists = 0, unmatched = 0 }
+  if c then C.stats.resists = C.stats.resists + 1 else C.stats.unmatched = C.stats.unmatched + 1 end
 end
 
 function handlers.PLAYER_TARGET_CHANGED()
@@ -533,6 +567,10 @@ local function check()
   table.sort(durations)
   add("damage over time: %s", table.concat(durations, ", "))
   add("built-in rotation assistant on this client: %s", tostring(C_AssistedCombat ~= nil))
+  local st = ns.Smart.status()
+  add("smart key: button %s, %s steps, at step %s, keys next=%s again=%s restart=%s", tostring(ns.Smart.button ~= nil), st.count,
+    tostring(st.step), tostring(st.keys.next), tostring(st.keys.again), tostring(st.keys.restart))
+  add("resists seen: %s matched to a cast, %s not", C.stats and C.stats.resists or 0, C.stats and C.stats.unmatched or 0)
   add("mana bar drawn by the game: %s; percent function %s, readable %s", tostring(not ns.Panel.manaRefused),
     tostring(UnitPowerPercent ~= nil), tostring(API.manaPct() ~= nil))
   add("buffs readable %s, weapon buff %s, wand %s", tostring(C.buffs ~= nil), tostring(API.mainHandBuff()), tostring(C.hasWand))
@@ -546,6 +584,7 @@ local HELP = {
   "/coach — open the settings screen (also: Esc > Options > AddOns > ClassCoach)",
   "/coach macros — create or refresh this class's helper macros (out of combat)",
   "/coach bar — put the suggested layout on empty buttons of your main action bar (\"/coach bar replace\" overwrites)",
+  "/coach smart — the smart key: one key that walks the coach's plan (shows its steps and keys)",
   "/coach last — repeat the last fight report",
   "/coach reset — put both panels back where they started",
   "/coach hide | show — the coach panel",
@@ -619,6 +658,21 @@ SlashCmdList.CLASSCOACH = function(msg)
     say("Open /macro, pick your character's tab and drag them onto your action bar. They update themselves when you learn new spells.")
     rescanSoon()
   elseif cmd == "bar" then C.setupBar(arg:lower() == "replace")
+  elseif cmd == "smart" then
+    local what, key = arg:match("^(%S+)%s+(%S+)$")
+    if API.inCombat() then say("The smart key can only be set up out of combat.") return end
+    C.syncMacros(false)   -- it uses a few CC macros (wand, demon, attack)
+    if not C.syncSmart() then say("The smart key could not be set up on this client. /coach check shows why.") return end
+    if what then
+      if ns.Smart.bind(what:lower(), key:upper()) then say(("Smart key: %s is now on %s."):format(what:lower(), key:upper()))
+      else say("Use: /coach smart next 1   (or again / restart, then the key)") end
+    end
+    local st = ns.Smart.status()
+    say("Smart key steps: " .. table.concat(ns.Smart.describe(), ", ") .. ".")
+    say(("Keys: next %s, again %s, restart %s."):format(st.keys.next or "not bound", st.keys.again or "not bound", st.keys.restart or "not bound"))
+    if not st.keys.next then
+      say("Bind them in Esc > Options > Keybindings > AddOns > ClassCoach, or type /coach smart next 1 (then again, restart).")
+    end
   elseif cmd == "check" then check()
   else
     say("Coach for " .. C.profile.spec .. ". Commands:")

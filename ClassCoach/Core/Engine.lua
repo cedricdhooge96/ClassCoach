@@ -50,6 +50,17 @@ function State:debuffUp(key)
   return self:debuffLeft(key) > 0
 end
 
+-- This enemy cannot be affected by that spell (the game said "immune").
+function State:immune(key)
+  return self.tracker:isImmune(self.target and self.target.key, key)
+end
+
+-- Your last cast on this enemy that was resisted, while it is still news.
+function State:justMissed()
+  local m = self.tracker.lastMiss
+  if m and m.target == (self.target and self.target.key or "target") and self.now - m.at <= 8 then return m end
+end
+
 -- Seconds since you first hit the current enemy this fight.
 function State:timeOnTarget()
   return self.tracker:timeOnTarget(self.target and self.target.key, self.now)
@@ -132,6 +143,7 @@ local function allowed(entry, s)
   if entry.minLevel and s.level < entry.minLevel then return nil end
   if entry.maxLevel and s.level > entry.maxLevel then return nil end
   if not s:manaAtLeast(entry.mana) then return nil end
+  if s:immune(entry.spell) then return nil end
   if s:ready(entry.spell) == false or s:usable(entry.spell) == false then return nil end
   if entry.when then
     local fine, result = pcall(entry.when, s)
@@ -192,7 +204,14 @@ end
 -- In combat: the priority list. Out of combat with an enemy targeted: the opener.
 function Engine.next(profile, s)
   if s.inCombat then
-    return pick(profile.priority, s) or filler(profile, s)
+    local step = pick(profile.priority, s) or filler(profile, s)
+    -- The cast before this one was resisted and the coach wants it again: say so.
+    local missed = s:justMissed()
+    if missed and not missed.immune and step.key == missed.name then
+      step.retry = true
+      step.why = step.label .. " was resisted. Cast it again."
+    end
+    return step
   end
   if s.target and s.target.exists and s.target.hostile and not s.target.dead then
     return opening(profile, s)
@@ -331,6 +350,46 @@ function Engine.bar(profile, s, has)
 end
 
 ---------------------------------------------------------------------------
+-- The smart key's steps (see UI/Smart.lua)
+---------------------------------------------------------------------------
+
+-- Turns the pull plan into steps for the secure button: the plan's spells in
+-- order, then one last step it stays on (wand, a filler spell, or attacking).
+-- profile.smart may adjust it:
+--   open  = "CC Open"   a macro to use for the first step (it sends the pet too)
+--   tail  = "CC Strike" a macro to stay on at the end, for melee classes
+--   gate  = { when = "[pet:Voidwalker,nocombat]", macro = "CC Send" }
+--   skip  = { ["Power Word: Shield"] = true }   steps that have their own key
+-- has.macro(name) says whether a macro exists.
+function Engine.smartSteps(profile, s, has)
+  local smart = profile.smart or {}
+  local steps, tail = {}, nil
+  for _, st in ipairs(Engine.plan(profile, s)) do
+    if not (smart.skip and smart.skip[st.key]) then
+      if not st.filler then
+        steps[#steps + 1] = { kind = "spell", value = st.label, label = st.label }
+      elseif st.key == "Shoot" then
+        tail = has.macro("CC Wand") and { kind = "macro", value = "CC Wand", label = st.label }
+          or { kind = "spell", value = st.label, label = st.label }
+      elseif not st.melee then
+        tail = { kind = "spell", value = st.label, label = st.label }
+      end
+    end
+  end
+  if not tail then
+    local name = smart.tail and has.macro(smart.tail) and smart.tail or (has.macro("CC Attack") and "CC Attack" or nil)
+    if name then tail = { kind = "macro", value = name, label = name == "CC Attack" and "Attack" or name } end
+  end
+  if tail then steps[#steps + 1] = tail end
+  if #steps > 0 and smart.open and steps[1].kind == "spell" and has.macro(smart.open) then
+    steps[1] = { kind = "macro", value = smart.open, label = steps[1].label }
+  end
+  local gate = smart.gate
+  if gate and not has.macro(gate.macro) then gate = nil end
+  return steps, gate
+end
+
+---------------------------------------------------------------------------
 -- Macros a profile offers (built from the spells you know)
 ---------------------------------------------------------------------------
 
@@ -371,7 +430,7 @@ function Engine.macros(profile, s)
   for _, def in ipairs(profile.macros or {}) do
     local body = build(def.body)
     if type(body) == "string" and body ~= "" and #body <= 255 then
-      out[#out + 1] = { name = def.name, body = body, about = build(def.about) }
+      out[#out + 1] = { name = def.name, body = body, about = build(def.about), smart = def.smart }
     end
   end
   return out
@@ -702,6 +761,11 @@ local GENERIC_ADVICE = {
 }
 
 function Engine.advice(profile, s)
+  local missed = s.inCombat and s:justMissed()
+  if missed and missed.immune then
+    local sp = s.spells[missed.name]
+    return "This enemy is immune to " .. (sp and sp.name or missed.name) .. ": the coach will skip it here."
+  end
   if s.inCombat and s.skippedDot and (not s.usesMana or s.manaLevel == "high") then
     return "This enemy is nearly dead: no new damage over time, just finish it."
   end
@@ -729,6 +793,7 @@ function Engine.report(profile, summary, s)
   for _, c in ipairs(summary.casts) do castTotal = castTotal + c.count end
   parts[#parts + 1] = castTotal .. (castTotal == 1 and " cast" or " casts")
   if summary.swings and summary.swings > 0 then parts[#parts + 1] = summary.swings .. " swings" end
+  if (summary.missed or 0) > 0 then parts[#parts + 1] = summary.missed .. " resisted" end
   if s.usesMana and summary.spent and summary.spent > 0 then
     if summary.spentPct then
       parts[#parts + 1] = ("%d mana (%d%%)"):format(math.floor(summary.spent), math.floor(summary.spentPct))
@@ -747,6 +812,14 @@ function Engine.report(profile, summary, s)
   out.casts = #castsText > 0 and table.concat(castsText, ", ") or nil
 
   local function add(text) if text and #out.tips < 2 then out.tips[#out.tips + 1] = text end end
+  -- A lot resisted: that is the enemy's level, not your play.
+  local missed = summary.missed or 0
+  if missed >= 2 and castTotal > 0 and missed / castTotal >= 0.25 then
+    local above = summary.targetLevel and summary.targetLevel > 0 and summary.targetLevel - s.level or 0
+    add(("%d of your %d casts were resisted. %s"):format(missed, castTotal, above >= 2
+      and ("That enemy was %d levels above you: higher enemies resist far more. Pick ones nearer your level."):format(above)
+      or "Bad luck this time; nothing you did wrong."))
+  end
   for _, rule in ipairs(profile.tips) do
     local fine, text = pcall(rule, summary, s)
     if fine then add(text) end

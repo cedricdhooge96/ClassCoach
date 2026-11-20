@@ -245,7 +245,7 @@ if SCENARIO == "shaman" then
   check("settings page registered with the game", S.category ~= nil and S.category.name == "ClassCoach")
   local count = 0
   for _ in pairs(S.list) do count = count + 1 end
-  check("every option made it onto the page", count == 24 and #ns.Options.registered == 24, count)
+  check("every option made it onto the page", count == 25 and #ns.Options.registered == 25, count)
   check("sections and action buttons", #S.headers == 5 and #S.buttons == 3, #S.headers .. "/" .. #S.buttons)
   check("options write to the saved settings", S.list.compact.tbl == ClassCoachDB and S.list.specChoice.tbl == ClassCoachCharDB)
   check("slider shows its unit", S.list.opacity.opts.format(75) == "75%" and S.list.scale.opts.format(1.1) == "1.10x")
@@ -480,6 +480,87 @@ elseif SCENARIO == "warlock" then
   SlashCmdList.CLASSCOACH("macros")
   pull = M.macros[GetMacroIndexByName("CC Pull")]
   check("no wand: filler added to the sequence", pull.body:find("Bane of Agony, Corruption, Immolate, Shadow Bolt, Shadow Bolt, Shadow Bolt$") ~= nil, pull.body)
+
+  -- A resisted spell: the game only says "something was resisted on your target".
+  M.P.equipped = { [18] = 11287 }; M.fire("PLAYER_EQUIPMENT_CHANGED"); M.advance(1); tick(ns)
+  M.P.mana = 300
+  target({ name = "Murloc", level = 12, hostile = true, guid = "Creature-40" })
+  M.advance(1); tick(ns)
+  M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
+  cast(980); M.fire("UNIT_COMBAT", "target", "RESIST", "", 0, 32)
+  M.advance(0.1); f = tick(ns)
+  check("resisted: the coach asks for the same spell again", f.name.text == "Bane of Agony", f.name.text)
+  check("and says why", f.why.text == "Bane of Agony was resisted. Cast it again.", f.why.text)
+  check("the done icon shows the miss", f.done[2].timer.text == "miss", tostring(f.done[2].timer.text))
+  check("a resisted cast does not count as on the enemy", ns.C.tracker:castsOnTarget("g:Creature-40", "Bane of Agony") == 0
+    and not f.dots.text:find("Bane of Agony"), f.dots.text)
+  cast(980); M.advance(1.5); f = tick(ns)
+  check("it landed the second time", f.name.text == "Corruption" and f.dots.text:find("Bane of Agony") ~= nil, f.name.text)
+  cast(172); M.advance(1.2)
+  M.fire("UNIT_COMBAT", "target", "RESIST", "", 0, 32); f = tick(ns)
+  check("a resist long after your cast is someone else's", f.name.text ~= "Corruption" and f.dots.text:find("Corruption") ~= nil, f.name.text)
+  -- a resisted refresh keeps the old one running
+  M.advance(1); local left = ns.C.tracker:debuffLeft("g:Creature-40", "Corruption", M.now)
+  cast(172); M.fire("UNIT_COMBAT", "target", "RESIST", "", 0, 32)
+  check("a resisted recast leaves the running one alone", math.abs(ns.C.tracker:debuffLeft("g:Creature-40", "Corruption", M.now) - left) < 0.01)
+  -- immune
+  cast(348); M.fire("UNIT_COMBAT", "target", "IMMUNE", "", 0, 4)
+  M.advance(0.2); f = tick(ns)
+  check("immune: not suggested again on this enemy", f.name.text ~= "Immolate" and not f.chainText.text:find("Immolate"), f.name.text .. " / " .. f.chainText.text)
+  check("immune: explained", f.status.text:find("immune to Immolate") ~= nil, f.status.text)
+  check("immune: marked on the done icon", f.done[2].timer.text == "imm", tostring(f.done[2].timer.text))
+  M.advance(12)
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
+  check("the report counts resists", ns.C.lastReport.headline:find("3 resisted") ~= nil, ns.C.lastReport.headline)
+  check("and puts them in perspective", table.concat(ns.C.lastReport.tips, " | "):find("3 of your 5 casts were resisted") ~= nil, table.concat(ns.C.lastReport.tips, " | "))
+  target(nil); M.advance(1); tick(ns)
+
+  -- The smart key: one key walks the plan, inside the game's secure code.
+  SlashCmdList.CLASSCOACH("smart")
+  local b = ns.Smart.button
+  check("smart key: secure button made and loaded", b ~= nil and b:GetAttribute("cc-count") == 4, b and b:GetAttribute("cc-count"))
+  check("smart key: resets when no living enemy is targeted", M.drivers.ccreset.conditions == "[@target,harm,nodead] keep; reset")
+  local steps = table.concat(ns.Smart.describe(), ", ")
+  check("smart key: steps are the coach's plan", steps == "1 Bane of Agony, 2 Corruption, 3 Immolate, 4 Shoot (stays here)", steps)
+  target({ name = "Crab", level = 12, hostile = true, guid = "Creature-41" })
+  M.advance(1); tick(ns)
+  local kind, what = M.press(b)
+  check("Voidwalker out, no fight yet: the first press only sends it in", kind == "macro" and what == "CC Send" and b:GetAttribute("cc-step") == 1, tostring(what))
+  M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
+  kind, what = M.press(b)
+  check("then the opening spell, with the demon", kind == "macro" and what == "CC Open", tostring(what))
+  check("the opening macro", M.macros[GetMacroIndexByName("CC Open")].body == "#showtooltip\n/petattack [harm,nodead]\n/cast Bane of Agony")
+  kind, what = M.press(b)
+  check("next press: Corruption", kind == "spell" and what == "Corruption", tostring(what))
+  kind, what = M.press(b, "RightButton")
+  check("Again key: Corruption once more", kind == "spell" and what == "Corruption" and b:GetAttribute("cc-step") == 3, tostring(what))
+  kind, what = M.press(b)
+  check("next press: Immolate", what == "Immolate", tostring(what))
+  kind, what = M.press(b)
+  check("then the wand", kind == "macro" and what == "CC Wand", tostring(what))
+  kind, what = M.press(b)
+  check("and it stays on the wand: no looping back", what == "CC Wand" and b:GetAttribute("cc-step") == 4, tostring(what))
+  M.channeling = true; kind = M.press(b); M.channeling = false
+  check("never cuts off a channel", kind == nil)
+  kind, what = M.press(b, "MiddleButton")
+  check("Restart key: back to the opening", what == "CC Open", tostring(what))
+  M.press(b); M.secureReset(b)
+  check("enemy dead: back to step one by itself", b:GetAttribute("cc-step") == 1)
+  local ok = pcall(b.SetAttribute, b, "cc-step", 3)
+  check("the addon cannot touch the key during a fight", ok == false and ns.C.syncSmart() == false)
+
+  -- The panel shows which key to press: Next, or Again after a resist.
+  M.P.bindings["CLICK ClassCoachSmartButton:LeftButton"] = "1"
+  M.P.bindings["CLICK ClassCoachSmartButton:RightButton"] = "2"
+  M.advance(0.5); f = tick(ns)
+  check("panel: Bane of Agony is on the smart key", f.name.text == "Bane of Agony" and f.key.text == "1", f.name.text .. "/" .. tostring(f.key.text))
+  M.press(b); cast(980); M.fire("UNIT_COMBAT", "target", "RESIST", "", 0, 32)
+  M.advance(0.1); f = tick(ns)
+  check("panel: after a resist it points at the Again key", f.name.text == "Bane of Agony" and f.key.text == "2", f.name.text .. "/" .. tostring(f.key.text))
+  M.press(b, "RightButton"); cast(980); M.advance(1.5); f = tick(ns)
+  check("panel: then on with the Next key", f.name.text == "Corruption" and f.key.text == "1", f.name.text .. "/" .. tostring(f.key.text))
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
+  target(nil)
   SlashCmdList.CLASSCOACH("check")
   check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
   check("no tick error", ns.C.lastError == nil, ns.C.lastError)

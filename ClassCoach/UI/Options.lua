@@ -69,6 +69,8 @@ local function layout()
       tip = "Out of combat, below this much mana the coach tells you to drink (or Life Tap) first." },
     { key = "chat", kind = "check", name = "Fight tips in chat", default = true,
       tip = "After a fight, also print the tips in the chat window." },
+    { key = "smartKey", kind = "check", name = "Smart key: one key walks the coach's plan", default = true,
+      tip = "Bind its three keys under Options > Keybindings > AddOns > ClassCoach: Next, Again (after a resist) and Restart. One press still casts one spell. Type /coach smart to see its steps." },
     { key = "autoMacros", kind = "check", name = "Keep my CC macros up to date", default = true,
       tip = "Rewrites the macros made by /coach macros when you learn spells or the pull plan changes." },
   }

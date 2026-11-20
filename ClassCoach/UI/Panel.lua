@@ -268,7 +268,12 @@ function Panel.render(view)
   for i = 1, 2 do
     local d = done[#done - 2 + i]
     local s = f.done[i]
-    if fill(s, d, true) and d.left then
+    if fill(s, d, true) and d.missed then
+      -- resisted: it did not land
+      s.timer:SetText(d.missed == "immune" and "imm" or "miss")
+      setColor(s.timer, COLORS.low)
+      s:SetAlpha(0.9)
+    elseif d and d.left then
       if d.left > 0 then
         s.timer:SetText(seconds(d.left))
         setColor(s.timer, d.left <= 3 and COLORS.low or COLORS.text)

@@ -28,6 +28,7 @@ ClassCoach only shows advice. It never presses buttons for you, which keeps it w
 |---|---|
 | `/coach` | Opens the settings screen |
 | `/coach macros` | Creates or refreshes this class's helper macros (out of combat) |
+| `/coach smart` | Shows the smart key's steps and keys; `/coach smart next 1` binds a key |
 | `/coach bar` | Puts the suggested layout on empty buttons of your main action bar; `/coach bar replace` overwrites buttons 1–12 |
 | `/coach last` | Repeats the last fight report in chat |
 | `/coach hide` / `show` | Hides or shows the coach panel |
@@ -81,6 +82,23 @@ The two panels move independently: drag each where you like. `/coach reset` puts
 - Without a wand, the filler spell (Shadow Bolt, Smite) is added to the end, so that one key carries the whole fight.
 - Warlock `CC Pull` also sends your demon in. With the Voidwalker out, the first press only sends it; the spells start once it is fighting.
 - Macros cannot think. Keep watching the panel: it knows when a spell is still running, the macro does not.
+
+## When a spell is resisted
+
+The game tells addons only that "something was resisted on your target", not what. ClassCoach matches that to the harmful spell you cast a moment before and undoes it: the timer is removed, the carousel marks the cast "miss", and the coach asks for the same spell again. If the enemy is immune, the spell is skipped on that enemy for the rest of the fight. The fight report counts resists and tells you when the enemy's level was the reason.
+
+A macro cannot do this. A `/castsequence` moves on after a resisted cast, because the cast itself went off. That is what the smart key's Again key is for.
+
+## The smart key
+
+One key that walks the coach's plan: opening spells in order, then it stays on your wand, filler spell or attack. No looping back, no cutting off a channel, and it returns to the first step by itself when your enemy dies.
+
+- Bind three keys under Esc > Options > Keybindings > AddOns > ClassCoach (or type `/coach smart next 1`, `/coach smart again 2`, `/coach smart restart 3`):
+  **Next** casts the next step. **Again** casts the previous step once more, for a resist. **Restart** goes back to the start, for a new enemy.
+- The panel shows which of those keys to press: it switches to the Again key when a spell was resisted.
+- `/coach smart` lists its steps and keys.
+
+What it is not: the addon does not decide during a fight what the key casts. The game forbids that, and nothing here works around it. The plan is loaded into the game's own secure button between fights; in a fight one press is still one cast, the same rule macros follow.
 
 ## How the timers work
 

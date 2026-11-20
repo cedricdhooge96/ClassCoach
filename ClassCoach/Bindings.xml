@@ -1,0 +1,8 @@
+<Bindings>
+	<Binding name="CLICK ClassCoachSmartButton:LeftButton" header="CLASSCOACH" category="ADDONS">
+	</Binding>
+	<Binding name="CLICK ClassCoachSmartButton:RightButton" category="ADDONS">
+	</Binding>
+	<Binding name="CLICK ClassCoachSmartButton:MiddleButton" category="ADDONS">
+	</Binding>
+</Bindings>

@@ -183,6 +183,37 @@ function PlaceAction(slot)
   if held then P.actions[slot] = held.spell or held end
 end
 function UnitClassification(u) if u == "target" and P.target then return P.target.elite and "elite" or "normal" end end
+-- Secure environment
+M.drivers = {}
+function RegisterStateDriver(frame, state, conditions) M.drivers[state] = { frame = frame, conditions = conditions } end
+function SetBindingClick(key, button, click) P.bindings["CLICK " .. button .. ":" .. (click or "LeftButton")] = key end
+function SaveBindings() end
+function GetCurrentBindingSet() return 1 end
+-- The game's own condition parser, for the conditions the smart key uses.
+function M.secureParse(text)
+  if text:find("%[channeling%]") then return M.channeling and "hold" or "go" end
+  if text:find("pet:Voidwalker,nocombat", 1, true) then
+    return (P.pet and P.pet.family == "Voidwalker" and not P.combat) and "hold" or "go"
+  end
+  return "go"
+end
+-- One key press on a secure button: the wrapped snippet runs (down, then up), then the button acts.
+function M.press(b, click)
+  local fn = assert(loadstring("return function(self, button, down, SecureCmdOptionParse) " .. b.wrapped.OnClick .. "\nend"))()
+  M.inSecure = true
+  fn(b, click or "LeftButton", true, M.secureParse)
+  fn(b, click or "LeftButton", false, M.secureParse)
+  M.inSecure = false
+  local kind = b:GetAttribute("type")
+  if kind == "spell" then return "spell", b:GetAttribute("spell") end
+  if kind == "macro" then return "macro", b:GetAttribute("macro") end
+  return nil
+end
+-- The state driver noticing there is no living enemy targeted.
+function M.secureReset(b)
+  local fn = assert(loadstring("return function(self, newstate) " .. b:GetAttribute("_onstate-ccreset") .. "\nend"))()
+  M.inSecure = true; fn(b, "reset"); M.inSecure = false
+end
 function UnitFactionGroup() return P.faction or "Alliance" end
 function CanMerchantRepair() return P.vendorRepairs == true end
 function GetItemSpell(id) for _, it in ipairs(P.bag or {}) do if it.id == id then return it.use end end end
@@ -215,6 +246,17 @@ local function widget()
     GetPoint = function() return "CENTER", nil, "CENTER", 0, 0 end,
     SetValue = function(self, v) self.value = v end,
     SetTexture = function(self, t) self.texture = t end,
+    -- secure buttons: attributes may not change in combat, like the real thing
+    SetAttribute = function(self, k, v)
+      assert(not (P.combat and not M.inSecure), "attributes cannot change in combat")
+      if not rawget(self, "attrs") then rawset(self, "attrs", {}) end
+      self.attrs[k] = v
+    end,
+    GetAttribute = function(self, k) local a = rawget(self, "attrs"); return a and a[k] end,
+    WrapScript = function(self, _, script, body)
+      if not rawget(self, "wrapped") then rawset(self, "wrapped", {}) end
+      self.wrapped[script] = body
+    end,
   }
   return setmetatable(w, { __index = function(_, k) return methods[k] or function() end end })
 end

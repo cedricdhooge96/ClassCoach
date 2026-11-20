@@ -9,9 +9,13 @@ Tracker.__index = Tracker
 ns.Tracker = Tracker
 
 local PRECAST_WINDOW = 3   -- a cast this soon before combat belongs to the fight
+-- How long after a cast its "resisted" can still arrive. Live play (see the
+-- sigil addon) showed an ability's result comes the instant it is cast; a
+-- spell that flies to the enemy reports when it lands.
+local RESULT_WINDOW, FLIGHT_WINDOW = 0.35, 1.6
 
 function Tracker.new()
-  return setmetatable({ lastCast = {}, dots = {}, totems = {}, pre = {}, recentCasts = {}, fight = nil, last = nil }, Tracker)
+  return setmetatable({ lastCast = {}, dots = {}, totems = {}, pre = {}, recentCasts = {}, immune = {}, fight = nil, last = nil }, Tracker)
 end
 
 local function record(f, c)
@@ -59,18 +63,53 @@ function Tracker:cast(now, name, cost, meta, targetKey, duration)
   meta = meta or {}
   targetKey = targetKey or "target"
   local lasts = meta.debuff and (duration or meta.debuff)
-  if lasts then self.dots[targetKey .. "|" .. name] = { target = targetKey, name = name, expires = now + lasts, duration = lasts } end
+  local dotKey = targetKey .. "|" .. name
+  local before = self.dots[dotKey]            -- kept so a resisted recast can be undone
+  if before and now >= before.expires then before = nil end
+  if lasts then self.dots[dotKey] = { target = targetKey, name = name, expires = now + lasts, duration = lasts } end
   if meta.totem then self.totems[meta.totem] = { name = name, expires = now + (meta.lasts or 60) } end
+  local c = { name = name, cost = cost, meta = meta, target = targetKey, at = now, dotKey = lasts and dotKey or nil, before = before }
   local list = self.recentCasts
-  list[#list + 1] = { name = name, at = now, target = targetKey }
+  list[#list + 1] = c
   if #list > 12 then table.remove(list, 1) end
-  local c = { name = name, cost = cost, meta = meta, target = targetKey, at = now }
   if self.fight then
     record(self.fight, c)
   else
     self.pre[#self.pre + 1] = c
     while self.pre[1] and now - self.pre[1].at > PRECAST_WINDOW do table.remove(self.pre, 1) end
   end
+end
+
+-- The game said "something was resisted on your target" just now. It does
+-- not say what, so we take your most recent harmful cast that could still be
+-- waiting for its result, and undo it: its damage over time is not running,
+-- and it does not count as cast on that enemy. `immune` also remembers that
+-- this enemy cannot be affected by it. Returns the cast, or nil.
+function Tracker:castMissed(now, immune)
+  for i = #self.recentCasts, 1, -1 do
+    local c = self.recentCasts[i]
+    local window = c.meta.travel and FLIGHT_WINDOW or RESULT_WINDOW
+    if now - c.at > FLIGHT_WINDOW then break end
+    if not c.missed and (c.meta.debuff or c.meta.harm) and now - c.at <= window then
+      c.missed = immune and "immune" or "resist"
+      if c.dotKey then self.dots[c.dotKey] = c.before end
+      if immune then self.immune[c.target .. "|" .. c.name] = true end
+      local f = self.fight
+      if f then
+        local on = f.onTarget[c.target]
+        if on and on[c.name] and on[c.name] > 0 then on[c.name] = on[c.name] - 1 end
+        f.missed = (f.missed or 0) + 1
+        f.missedBy = f.missedBy or {}
+        f.missedBy[c.name] = (f.missedBy[c.name] or 0) + 1
+      end
+      self.lastMiss = { name = c.name, target = c.target, at = now, immune = immune == true }
+      return c
+    end
+  end
+end
+
+function Tracker:isImmune(targetKey, name)
+  return self.immune[(targetKey or "target") .. "|" .. name] == true
 end
 
 function Tracker:swing()
@@ -189,6 +228,7 @@ function Tracker:endFight(now, manaEnd, manaMax)
     casts = list, castCount = f.casts, spent = f.spent, spentBy = f.spentBy, swings = f.swings,
     manaStart = f.manaStart, manaEnd = manaEnd, manaMax = max, hadPet = f.hadPet, demon = f.demon,
     targets = math.max(1, f.targets), precast = f.precast == true,
+    missed = f.missed or 0, missedBy = f.missedBy or {},
   }
   if max and max > 0 then
     if f.manaStart then summary.startPct = f.manaStart / max * 100 end
@@ -199,5 +239,7 @@ function Tracker:endFight(now, manaEnd, manaMax)
   -- Combat is over: every enemy you were fighting is dead or has reset.
   self.dots = {}
   self.recentCasts = {}
+  self.immune = {}
+  self.lastMiss = nil
   return summary
 end

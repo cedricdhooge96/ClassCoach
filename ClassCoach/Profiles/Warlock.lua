@@ -7,17 +7,17 @@ local _, ns = ...
 local function n(f, key) return f.castCount[key] or 0 end
 
 local WARLOCK_SPELLS = {
-  ["Shadow Bolt"]    = { ids = { 686, 695, 705, 1088, 1106, 7641, 11659, 11660, 11661, 25307 } },
+  ["Shadow Bolt"]    = { ids = { 686, 695, 705, 1088, 1106, 7641, 11659, 11660, 11661, 25307 }, harm = true, travel = true },
   ["Immolate"]       = { ids = { 348, 707, 1094, 2941, 11665, 11667, 11668, 25309 }, debuff = 15, learn = 1 },
   ["Corruption"]     = { ids = { 172, 6222, 6223, 7648, 11671, 11672, 25311 }, debuff = 15, core = true, learn = 4 },
   ["Bane of Agony"]  = { ids = { 980, 1014, 6217, 11711, 11712, 11713 }, debuff = 24, core = true, learn = 8 },
   ["Siphon Life"]    = { ids = { 18265, 18879, 18880, 18881 }, debuff = 30 },          -- talent, from 30
   ["Curse of the Elements"] = { ids = { 1490, 11721, 11722 }, debuff = 300 },         -- 20 in Forever
-  ["Wrack"]          = { cd = true },   -- new Forever talent (from 40): by name
+  ["Wrack"]          = { cd = true, harm = true },   -- new Forever talent (from 40): by name
   ["Life Tap"]       = { ids = { 1454, 1455, 1456, 11687, 11688, 11689 }, core = true, learn = 6, restores = 0.15 },
-  ["Drain Life"]     = { ids = { 689, 699, 709, 7651, 11699, 11700 }, learn = 14 },
-  ["Drain Soul"]     = { ids = { 1120, 8288, 8289, 11675 }, learn = 10 },
-  ["Fear"]           = { ids = { 5782, 6213, 6215 } },
+  ["Drain Life"]     = { ids = { 689, 699, 709, 7651, 11699, 11700 }, learn = 14, harm = true },
+  ["Drain Soul"]     = { ids = { 1120, 8288, 8289, 11675 }, learn = 10, harm = true },
+  ["Fear"]           = { ids = { 5782, 6213, 6215 }, harm = true },
   ["Demon Skin"]     = { ids = { 687, 696 } },
   ["Demon Armor"]    = { ids = { 706, 1086, 11733, 11734, 11735 }, learn = 20 },
   -- `summons`: which demon it brings out, so the coach knows who is at your side
@@ -224,6 +224,14 @@ ns.RegisterProfile({
         lines[#lines + 1] = (#order == 1 and "/cast " or "/castsequence reset=target/combat ") .. table.concat(order, ", ")
         return table.concat(lines, "\n")
       end },
+    { name = "CC Send", smart = true, about = "Used by the smart key: sends your demon in.",
+      body = function(s) return s:have(DEMONS) and "/petattack [harm,nodead]" or nil end },
+    { name = "CC Open", smart = true, about = "Used by the smart key: demon in, then your first spell.",
+      body = function(s, plan)
+        local first = ns.Engine.sequence(plan)[1]
+        if not first or not s:have(DEMONS) then return nil end
+        return "#showtooltip\n/petattack [harm,nodead]\n/cast " .. first
+      end },
     { name = "CC Wand", about = "Starts your wand and keeps your demon on the enemy.",
       body = function(s)
         if not s:known("Shoot") then return nil end
@@ -238,6 +246,10 @@ ns.RegisterProfile({
   },
 
   trainer = TRAINER,
+
+  -- The smart key: the first press sends the demon in as well; with the
+  -- Voidwalker out and no fight yet, it only sends it and waits for you.
+  smart = { open = "CC Open", gate = { when = "[pet:Voidwalker,nocombat]", macro = "CC Send" } },
 
   -- /coach bar: one entry per button, best candidate first.
   bar = {

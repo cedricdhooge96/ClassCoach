@@ -54,6 +54,7 @@ spells = {
 - `learn = 8`: the level the trainer sells it. From that level the checklist says "Not trained: X" until it is learned.
 - `cd = true`: it has a cooldown, so the chain preview won't show it twice in a row. Spells sharing one cooldown use the same name: `cd = "shock"`.
 - `debuff = 18`: it leaves damage over time on the enemy for about that long. The real length is read from the spell's description when possible; this is the fallback. The coach then tracks it per enemy and stops suggesting it on enemies about to die (add `always = true` to a priority entry to opt out).
+- `harm = true`: it damages or hinders the enemy, so it can be resisted. (Spells with `debuff` count already.) Add `travel = true` when it flies to the enemy, so its result arrives later.
 - `summons = "Voidwalker"`: casting it brings out that pet (`s.demon`).
 - `restores = 0.15`: it gives mana back (Life Tap): a rough share of maximum mana, for the mana level.
 
@@ -127,6 +128,21 @@ macros = {
 spell names for a `/castsequence`. Bodies are limited to 255 characters and use the spell names from `s.spells[key].name`.
 After-fight tips also get `f.demon`, `f.precast` (you cast before combat started),
 `f.targets` and `f.elite`.
+
+### smart
+
+```lua
+smart = {
+  open = "CC Open",                -- a macro for the first step (send the pet as well)
+  tail = "CC Strike",              -- a macro to stay on at the end, for melee classes
+  gate = { when = "[pet:Voidwalker,nocombat]", macro = "CC Send" },  -- hold step one while this is true
+  skip = { ["Power Word: Shield"] = true },                           -- steps with their own key
+},
+```
+
+The smart key's steps come from the same pull plan as the macros
+(`Engine.smartSteps`). Macros it needs are ordinary `macros` entries marked
+`smart = true`.
 
 ### bar, supplies, milestones
 
