@@ -247,10 +247,10 @@ local function tick()
     view.statusKind = s.manaLevel == "low" and "warn" or nil
   else
     local missing = Engine.checklist(profile, s, { drinkAt = ClassCoachDB.drinkAt })
+    view.missing = missing
     if #missing > 0 then
-      local names = {}
-      for _, m in ipairs(missing) do names[#names + 1] = m.text end
-      view.status = "Before you pull: " .. table.concat(names, " · ") .. (missing[1].hint and ("\n" .. missing[1].hint) or "")
+      -- the panel shows each as the icon of what fixes it; the line under them explains the first
+      view.status = missing[1].hint
       view.statusKind = "warn"
     else
       view.status = "Ready to pull."

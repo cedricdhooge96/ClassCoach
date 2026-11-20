@@ -59,7 +59,7 @@ Type `/coach`, or go to Esc > Options > AddOns > ClassCoach, or click ClassCoach
 
 ## Two panels
 
-- **Coach** (top): only the fight. The carousel, your timers, mana, and before a pull the few things that matter for that fight (shield, weapon buff, demon, low health or mana).
+- **Coach** (top): only the fight. The carousel, your timers, mana, and before a pull the few things that matter for that fight (shield, weapon buff, demon, low health or mana). Anything missing shows as the icon of the spell that fixes it, with its key; hover it for the details.
 - **Journey** (its own panel, hidden in combat): your XP and rested XP, and a short to-do list with an icon per item (hover one for the full advice). The list covers from the leveling guides: unspent talent points, spells you can train, a missing food buff (+5% XP from kills), no rested XP, your Cozy Sleeping Bag or Camp Tent if you own one, gear that needs repair, full bags, and the level your trainer next has something new. `!` marks something worth doing now; the grey line under the list explains the first one.
 
 The two panels move independently: drag each where you like. `/coach reset` puts both back.

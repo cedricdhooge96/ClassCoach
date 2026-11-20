@@ -68,6 +68,7 @@ local CHECKLIST = {
   { buff = { "Lightning Shield", "Water Shield" }, label = "No shield",
     hint = function(s) return "Cast " .. (s:have({ "Lightning Shield" }) or "Water Shield") .. " before the pull." end },
   { weapon = { "Windfury Weapon", "Flametongue Weapon", "Rockbiter Weapon" }, label = "No weapon buff",
+    fix = function(s) return s:known("Windfury Weapon") and "Windfury Weapon" or "Rockbiter Weapon" end,
     hint = function(s)
       local best = s:known("Windfury Weapon") and "Windfury Weapon" or "Rockbiter Weapon"
       return "Put " .. best .. " on your weapon: it lasts 30 minutes."

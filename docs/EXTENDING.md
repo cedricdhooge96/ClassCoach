@@ -144,6 +144,11 @@ checklist = {
 Buff and weapon checks only nag when you know at least one of the spells.
 `needs` = a spell key (or list) the character must know; `minLevel` also works.
 Give a `tip` entry an `icon = "Interface\\Icons\\..."` for its row on the journey panel.
+A missing entry is shown as the icon of the spell that fixes it: by default the
+first spell of its `buff` / `weapon` / `needs` list that you know. Set
+`fix = "Spell"` or `fix = function(s) return "Spell" end` to choose another, or
+`icon = "Interface\\Icons\\..."` for something that is not a spell. A profile's
+`restFix = "Life Tap"` is the icon for low mana.
 Add `tip = true` to an entry that is advice rather than something to fix before
 every pull (a missing wand, a class quest, a reagent): it then shows on the
 journey panel instead. Health and mana checks, and the journey panel's XP,

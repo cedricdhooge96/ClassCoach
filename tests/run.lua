@@ -43,6 +43,12 @@ local function target(t)
   M.P.target = t
   M.fire("PLAYER_TARGET_CHANGED")
 end
+-- What the coach panel shows as missing before a pull (the icons' titles).
+local function missing(ns)
+  local parts = {}
+  for _, s in ipairs(ns.Panel.frame.missing) do if s.shown and rawget(s, "title") then parts[#parts + 1] = rawget(s, "title") end end
+  return table.concat(parts, " | ")
+end
 -- Everything the journey panel is showing, as one string.
 local function journey(ns)
   local f, parts = ns.Journey.frame, {}
@@ -79,8 +85,13 @@ if SCENARIO == "shaman" then
   check("keybind found", ns.C.keys["Flame Shock"] == "S3", tostring(ns.C.keys["Flame Shock"]))
 
   local f = tick(ns)
-  check("checklist: shield missing", f.status.text:find("No shield") ~= nil, f.status.text)
-  check("checklist: weapon buff missing", f.status.text:find("No weapon buff") ~= nil, f.status.text)
+  check("missing shown as icons: shield and weapon buff", missing(ns) == "No shield | No weapon buff", missing(ns))
+  local slot1, slot2 = f.missing[1], f.missing[2]
+  check("the icon is the spell that fixes it", slot1.spell == "Lightning Shield" and slot1.icon.texture == ns.C.spells["Lightning Shield"].icon, tostring(slot1.spell))
+  check("with its key, when it is on your bar", slot1.key.text == (ns.C.keys["Lightning Shield"] or ""), tostring(slot1.key.text))
+  check("weapon buff: the best one you know", slot2.spell == "Rockbiter Weapon", tostring(slot2.spell))
+  check("one line explains the first", f.status.text == "Cast Lightning Shield before the pull.", f.status.text)
+  check("no missing list in words", not f.status.text:find("No shield"), f.status.text)
   check("food is a journey to-do, not a pull blocker", journey(ns):find("No food buff") ~= nil and not f.status.text:find("food"), journey(ns))
   check("journey: xp and rested", journey(ns):find("XP 0%% · not rested") ~= nil and journey(ns):find("No rested XP") ~= nil, journey(ns))
   check("journey rows carry icons", ns.Journey.frame.rows[1].icon.texture == "Interface\\Icons\\INV_Misc_Food_15", tostring(ns.Journey.frame.rows[1].icon.texture))
@@ -103,7 +114,7 @@ if SCENARIO == "shaman" then
   M.P.mainHand = true
   M.fire("UNIT_AURA", "player")
   f = tick(ns)
-  check("ready to pull", f.status.text:find("^Ready to pull%.") ~= nil, f.status.text)
+  check("ready to pull", f.status.text:find("^Ready to pull%.") ~= nil and missing(ns) == "", f.status.text .. " / " .. missing(ns))
 
   target({ name = "Rockjaw Trogg", level = 11, hostile = true, guid = "Creature-1" })
   f = tick(ns)
@@ -220,7 +231,7 @@ elseif SCENARIO == "priest" then
   local ns = load()
   check("priest profile chosen", ns.C.profile.spec == "Discipline", ns.C.profile.spec)
   local f = tick(ns)
-  check("checklist: Fortitude", f.status.text:find("Fortitude") ~= nil, f.status.text)
+  check("checklist: Fortitude", missing(ns):find("No Fortitude") ~= nil and f.missing[1].spell == "Power Word: Fortitude", missing(ns))
   M.P.buffs = { ["Power Word: Fortitude"] = true, ["Inner Fire"] = true, ["Well Fed"] = true }
   M.fire("UNIT_AURA", "player")
   target({ name = "Kobold", level = 13, hostile = true, guid = "Creature-2" })
@@ -266,15 +277,15 @@ elseif SCENARIO == "warlock" then
   local ns = load()
   check("warlock profile chosen", ns.C.profile.spec == "Affliction", ns.C.profile.spec)
   local f = tick(ns)
-  check("checklist: no demon", f.status.text:find("demon") ~= nil, f.status.text)
+  check("checklist: no demon, fixed by the Voidwalker", missing(ns):find("No demon") ~= nil and f.missing[1].spell == "Summon Voidwalker", missing(ns) .. " / " .. tostring(f.missing[1].spell))
   M.P.pet = { family = "Voidwalker" }
   M.P.buffs = { ["Demon Skin"] = true, ["Well Fed"] = true }
   M.P.items[6265] = 2
   M.fire("UNIT_AURA", "player")
   f = tick(ns)
-  check("checklist clear with pet", not f.status.text:find("demon"), f.status.text)
+  check("checklist clear with pet", not missing(ns):find("demon"), missing(ns))
   M.P.health = 80; f = tick(ns)
-  check("low health check", f.status.text:find("Health") ~= nil, f.status.text)
+  check("low health check, with the number on the icon", missing(ns):find("Health 40%%") ~= nil and f.missing[1].timer.text == "40", missing(ns))
   M.P.health = 200
   target({ name = "Gnoll", level = 11, hostile = true, guid = "Creature-5" })
   f = tick(ns)
@@ -352,7 +363,7 @@ elseif SCENARIO == "warlock" then
 
   -- The Imp: no waiting, and a nudge towards the Voidwalker when solo.
   M.P.pet = { family = "Imp" }; M.advance(1); f = tick(ns)
-  check("Imp out: nudge to the Voidwalker", f.status.text:find("Imp is out") ~= nil, f.status.text)
+  check("Imp out: nudge to the Voidwalker", missing(ns):find("Imp is out") ~= nil, missing(ns))
   target({ name = "Boar", level = 11, hostile = true, guid = "Creature-10" })
   f = tick(ns)
   check("Imp pull text", f.why.text:find("Imp out: cast Bane of Agony right away") ~= nil, f.why.text)
@@ -455,10 +466,12 @@ elseif SCENARIO == "sweep" then
   local function look(level, opts, spells, where)
     local f = tick(ns)
     local tag = ("%s L%d %s wand=%s pet=%s mana=%d"):format(WANT, level, where, tostring(opts.wand), tostring(opts.pet), opts.mana)
-    local shown = { f.name.text, f.why.text, f.status.text, f.chainText.text, f.dots.text, journey(ns) }
+    local shown = { f.name.text, f.why.text, f.status.text, f.chainText.text, f.dots.text, journey(ns), missing(ns) }
+    for _, s in ipairs(f.missing) do if s.shown and rawget(s, "spell") then shown[#shown + 1] = rawget(s, "spell") end end
     for key in pairs(profile.spells) do
       if not spells[idOf[key]] then
         for _, t in ipairs(shown) do
+          if type(t) ~= "string" then error(tag .. ": a shown value is a " .. type(t)) end
           if t:find(key, 1, true) then check(tag .. ": mentions " .. key .. " before it is learned", false, t) end
         end
       end
@@ -483,7 +496,7 @@ elseif SCENARIO == "sweep" then
           check(("%s L%d: a pull plan is shown"):format(WANT, level), f.chainLabel.text == "Pull" and f.name.text ~= "" and f.name.text ~= "Ready", f.name.text)
           if opts.noImp then
             check(("%s L%d: points at the Imp quest, not at a missing demon"):format(WANT, level),
-              journey(ns):find("No Imp yet") ~= nil and not f.status.text:find("No demon"), journey(ns) .. " / " .. f.status.text)
+              journey(ns):find("No Imp yet") ~= nil and not missing(ns):find("No demon"), journey(ns) .. " / " .. missing(ns))
           end
           target({ name = "Boar", level = level, hostile = true, guid = ("Creature-%d-%s-%s-%d"):format(level, tostring(wand), tostring(pet), mana) })
           f = look(level, opts, spells, "pull")
@@ -517,7 +530,7 @@ elseif SCENARIO == "sweep" then
     check("and it is not suggested", not f.chainText.text:find("Corruption"), f.chainText.text)
     setup(12, { mana = 60, pet = true })
     f = tick(ns)
-    check("low mana out of combat: Life Tap hint", f.status.text:find("Mana 20%%") ~= nil, f.status.text)
+    check("low mana out of combat: Life Tap icon and hint", missing(ns):find("Mana 20%%") ~= nil and f.missing[2].spell == "Life Tap" and f.missing[2].timer.text == "20" and f.missing[2].hint:find("Life Tap") ~= nil, missing(ns) .. " / " .. tostring(f.missing[2].spell))
   end
   check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
   if SWEEP_PRINT then

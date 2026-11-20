@@ -12,6 +12,7 @@ ns.Panel = Panel
 local WIDTH = 320
 local SIDE, MAIN, GAP = 28, 46, 16
 local ROW_TOP = -24
+local MISSING_SLOTS, MISSING_SIZE = 6, 26
 local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
 local COLORS = {
   high = { 0.32, 0.62, 1.00 }, medium = { 1.00, 0.78, 0.25 }, low = { 1.00, 0.35, 0.30 },
@@ -150,7 +151,34 @@ function Panel.create(charDB, db)
   barText:SetJustifyH("CENTER")
   f.bar, f.barText = bar, barText
 
-  -- Status line (checklist or live advice)
+  -- Before a pull: what is missing, shown as the icon of the spell that fixes it
+  local missingLabel = font(f, "GameFontNormalSmall", unpack(COLORS.warn))
+  missingLabel:SetText("Missing")
+  f.missingLabel = missingLabel
+  f.missing = {}
+  for i = 1, MISSING_SLOTS do
+    local s = slot(f, MISSING_SIZE, 0, 0)
+    local edge = s:CreateTexture(nil, "BORDER")
+    edge:SetPoint("TOPLEFT", -2, 2)
+    edge:SetPoint("BOTTOMRIGHT", 2, -2)
+    edge:SetColorTexture(COLORS.warn[1], COLORS.warn[2], COLORS.warn[3], 0.9)
+    s:EnableMouse(true)
+    s:SetScript("OnEnter", function(self)
+      if not self.title or not GameTooltip then return end
+      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+      GameTooltip:SetText(self.title, 1, 0.82, 0.2)
+      if self.spell then GameTooltip:AddLine("Cast " .. self.spell .. (self.bind and (" (" .. self.bind .. ")") or ""), 1, 1, 1) end
+      if self.hint then GameTooltip:AddLine(self.hint, 0.9, 0.9, 0.9, true) end
+      GameTooltip:Show()
+    end)
+    s:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    s:RegisterForDrag("LeftButton")
+    s:SetScript("OnDragStart", function() local d = f:GetScript("OnDragStart"); if d then d(f) end end)
+    s:SetScript("OnDragStop", function() local d = f:GetScript("OnDragStop"); if d then d(f) end end)
+    f.missing[i] = s
+  end
+
+  -- Status line (the first fix explained, or live advice)
   local status = font(f, "GameFontNormalSmall")
   status:SetWidth(WIDTH - 20)
   status:SetWordWrap(true)
@@ -202,7 +230,7 @@ end
 
 -- view = { title, chain = steps (1 = now), planning, done = { {label, icon, left} },
 --          dots = { {label, left} }, otherDotted, usesMana, manaPct, manaExact, drawMana,
---          status, statusKind ("warn"|"ok") }
+--          missing = { {text, hint, icon, keybind, spell, badge} }, status, statusKind ("warn"|"ok") }
 function Panel.render(view)
   local f = Panel.frame
   if not f then return end
@@ -311,8 +339,37 @@ function Panel.render(view)
   end
   if barShown then y = y - 18 end
 
-  setColor(f.status, view.statusKind == "warn" and COLORS.warn or view.statusKind == "ok" and COLORS.ok or COLORS.text)
-  y = place(f.status, y, view.status, 4)
+  -- Missing before the pull: icons, not words. Hover one for the details.
+  local missing = view.missing or {}
+  f.missingLabel:ClearAllPoints()
+  if #missing > 0 then
+    f.missingLabel:SetPoint("TOPLEFT", 10, y - 7)
+    f.missingLabel:Show()
+  else
+    f.missingLabel:Hide()
+  end
+  for i = 1, MISSING_SLOTS do
+    local s, item = f.missing[i], missing[i]
+    s:ClearAllPoints()
+    if item then
+      s.icon:SetTexture(item.icon or QUESTION)
+      s.key:SetText(item.keybind or "")
+      s.timer:SetText(item.badge or "")
+      s.title, s.hint, s.spell, s.bind = item.text, item.hint, item.spell, item.keybind
+      s:SetPoint("TOPLEFT", 64 + (i - 1) * (MISSING_SIZE + 8), y - 2)
+      s:Show()
+    else
+      s.title, s.hint, s.spell, s.bind = nil, nil, nil, nil
+      s:Hide()
+    end
+  end
+  if #missing > 0 then y = y - MISSING_SIZE - 8 end
+
+  local explain = view.status
+  if #missing > 0 and compact then explain = nil end
+  setColor(f.status, view.statusKind == "warn" and COLORS.dim or view.statusKind == "ok" and COLORS.ok or COLORS.text)
+  if view.statusKind == "warn" and #missing == 0 then setColor(f.status, COLORS.warn) end
+  y = place(f.status, y, explain, 4)
 
   local time = GetTime()
   if Panel.msgUntil and time > Panel.msgUntil then

@@ -378,7 +378,32 @@ local function anyBuff(s, list)
   return false
 end
 
--- One checklist entry: { text, hint } when it needs fixing, else nil.
+-- Icons for things that are not spells.
+local ICON = {
+  talent = "Interface\\Icons\\Ability_Marksmanship", food = "Interface\\Icons\\INV_Misc_Food_15",
+  rest = "Interface\\Icons\\Spell_Nature_Sleep", sleep = "Interface\\Icons\\INV_Misc_Bag_10",
+  repair = "Interface\\Icons\\Trade_BlackSmithing", bags = "Interface\\Icons\\INV_Misc_Bag_08",
+  trainer = "Interface\\Icons\\INV_Misc_Book_09", drink = "Interface\\Icons\\INV_Drink_07",
+}
+
+-- The spell that fixes a checklist entry: `fix` on the entry (a key, or a
+-- function(s) returning one), else the first spell of its list that you know.
+local function fixFor(entry, s)
+  local fix = entry.fix
+  if type(fix) == "function" then
+    local fine, result = pcall(fix, s)
+    fix = fine and result or nil
+  end
+  if fix then return s.spells[fix] end
+  local list = entry.buff or entry.weapon or (entry.pet and entry.needs) or nil
+  if type(list) == "string" then list = { list } end
+  for _, key in ipairs(list or {}) do
+    if s.spells[key] then return s.spells[key] end
+  end
+end
+
+-- One checklist entry: { text, hint, icon, keybind, spell } when it needs fixing, else nil.
+-- The icon is the spell that fixes it, so the panel can show what to press.
 local function evaluate(entry, s)
   if not needsMet(entry, s) then return nil end
   local isMissing = false
@@ -404,7 +429,11 @@ local function evaluate(entry, s)
     local fine, result = pcall(entry.check, s)
     isMissing = fine and result == true
   end
-  if isMissing then return { text = text(entry.label, s), hint = text(entry.hint, s), icon = entry.icon } end
+  if isMissing then
+    local sp = fixFor(entry, s)
+    return { text = text(entry.label, s), hint = text(entry.hint, s), icon = entry.icon or (sp and sp.icon),
+      spell = sp and sp.name, keybind = sp and s.keys and s.keys[sp.name] or nil }
+  end
 end
 
 -- Before the pull: only what matters for the next fight. Entries marked
@@ -421,10 +450,15 @@ function Engine.checklist(profile, s, options)
     end
   end
   if s.healthPct and s.healthPct < 50 then
-    missing[#missing + 1] = { text = ("Health %d%%"):format(math.floor(s.healthPct)), hint = "Eat or bandage before the next pull." }
+    missing[#missing + 1] = { text = ("Health %d%%"):format(math.floor(s.healthPct)), hint = "Eat or bandage before the next pull.",
+      icon = ICON.food, badge = ("%d"):format(math.floor(s.healthPct)) }
   end
   if s.usesMana and s.manaPct and s.manaPct < (options.drinkAt or 60) then
-    missing[#missing + 1] = { text = ("Mana %d%%"):format(math.floor(s.manaPct)), hint = text(profile.restHint, s) or "Drink before the next pull." }
+    -- restFix: a spell that gets mana back without drinking (Life Tap)
+    local sp = profile.restFix and s.spells[profile.restFix]
+    missing[#missing + 1] = { text = ("Mana %d%%"):format(math.floor(s.manaPct)), hint = text(profile.restHint, s) or "Drink before the next pull.",
+      icon = sp and sp.icon or ICON.drink, spell = sp and sp.name, keybind = sp and s.keys and s.keys[sp.name] or nil,
+      badge = ("%d"):format(math.floor(s.manaPct)) }
   end
   return missing
 end
@@ -433,12 +467,6 @@ end
 -- The journey: everything outside the fight that makes leveling smoother
 ---------------------------------------------------------------------------
 
-local ICON = {
-  talent = "Interface\\Icons\\Ability_Marksmanship", food = "Interface\\Icons\\INV_Misc_Food_15",
-  rest = "Interface\\Icons\\Spell_Nature_Sleep", sleep = "Interface\\Icons\\INV_Misc_Bag_10",
-  repair = "Interface\\Icons\\Trade_BlackSmithing", bags = "Interface\\Icons\\INV_Misc_Bag_08",
-  trainer = "Interface\\Icons\\INV_Misc_Book_09",
-}
 
 -- A buff whose name starts with `prefix` (names differ a little between
 -- foods and clients). nil when buffs can't be read.

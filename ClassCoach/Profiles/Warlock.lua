@@ -90,6 +90,7 @@ ns.RegisterProfile({
   class = "WARLOCK", spec = "Affliction", tab = 1, default = true,
   freeDamage = "your demon and your wand",
   mana = { low = 25, medium = 55 },
+  restFix = "Life Tap",
   restHint = function(s)
     if s:known("Life Tap") then return "Life Tap if your health is high, then eat to get the health back." end
     return "Drink before the next pull."
@@ -144,13 +145,15 @@ ns.RegisterProfile({
     { tip = true, check = function(s) return s.level >= 10 and s:known("Summon Imp") and not s:known("Summon Voidwalker") end,
       label = "No Voidwalker yet", icon = "Interface\\Icons\\Spell_Shadow_SummonVoidWalker", hint = "Do the level 10 class quest: the Voidwalker takes the hits for you." },
     { pet = true, needs = DEMONS, label = "No demon",
+      fix = function(s) return s:known("Summon Voidwalker") and "Summon Voidwalker" or "Summon Imp" end,
       hint = function(s)
         if s:known("Summon Voidwalker") then return "Summon your Voidwalker (costs a Soul Shard): it takes the hits for you." end
         return "Summon your Imp and keep it out: free extra damage."
       end },
     { check = function(s) return s.demon == "Imp" and s:known("Summon Voidwalker") and not s.inGroup end,
-      label = "Imp is out", hint = "Solo, your Voidwalker is safer: it takes the hits. The Imp is the pick for groups." },
+      label = "Imp is out", fix = "Summon Voidwalker", hint = "Solo, your Voidwalker is safer: it takes the hits. The Imp is the pick for groups." },
     { buff = { "Demon Skin", "Demon Armor" }, label = "No armor",
+      fix = function(s) return s:known("Demon Armor") and "Demon Armor" or "Demon Skin" end,
       hint = function(s) return "Cast " .. (s:known("Demon Armor") and "Demon Armor" or "Demon Skin") .. ": it lasts 30 minutes." end },
     { tip = true, item = 6265, needs = "Drain Soul", label = "No Soul Shard", icon = "Interface\\Icons\\INV_Misc_Gem_Amethyst_02",
       hint = "Channel Drain Soul on a dying enemy to get a shard for summons and Healthstones." },
