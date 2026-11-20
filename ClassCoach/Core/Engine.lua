@@ -326,25 +326,44 @@ end
 -- The action bar a profile suggests
 ---------------------------------------------------------------------------
 
--- profile.bar = up to 12 entries, one per button of the main bar. Each entry
--- is a list of candidates, best first: a spell key, "macro:CC Pull", or
--- "book:Ghost Wolf" for a spell that is not part of the rotation.
--- Returns { { slot, label, macro = name } | { slot, label, spell = id } }.
-function Engine.bar(profile, s, has)
-  local out = {}
-  for slot, candidates in ipairs(profile.bar or {}) do
-    for _, c in ipairs(type(candidates) == "table" and candidates or { candidates }) do
-      local macro, book = c:match("^macro:(.+)$"), c:match("^book:(.+)$")
-      if macro then
-        if has.macro(macro) then out[#out + 1] = { slot = slot, label = macro, macro = macro } break end
-      elseif book then
-        local id = has.book(book)
-        if id then out[#out + 1] = { slot = slot, label = book, spell = id } break end
-      elseif s.spells[c] then
-        out[#out + 1] = { slot = slot, label = s.spells[c].name, spell = s.spells[c].id }
-        break
+-- Three bars, each with one job, so a key always means the same kind of thing:
+--   fight  the main bar: what you press during a fight, in the order you use it
+--   react  Action Bar 2: emergencies, heals, interrupts, crowd control
+--   prep   Action Bar 3: buffs, summons and other things for between fights
+-- profile.bars = { fight = {...}, react = {...}, prep = {...} }: up to 12
+-- entries each, one per button. An entry is a list of candidates, best first:
+-- a spell key, "macro:CC Pull", or "book:Ghost Wolf" for a spell that is not
+-- part of the rotation. Positions are fixed, so a button keeps its place as
+-- you level and gaps fill in when you learn the spell.
+Engine.BAR_GROUPS = { "fight", "react", "prep" }
+
+-- Returns { fight = { { index, label, macro = name } | { index, label, spell = id } }, react = ..., prep = ... }.
+-- Nothing appears twice.
+function Engine.bars(profile, s, has)
+  local layout = profile.bars or (profile.bar and { fight = profile.bar }) or {}
+  local out, seen = {}, {}
+  for _, group in ipairs(Engine.BAR_GROUPS) do
+    local list = {}
+    for index, candidates in ipairs(layout[group] or {}) do
+      for _, c in ipairs(type(candidates) == "table" and candidates or { candidates }) do
+        local macro, book = c:match("^macro:(.+)$"), c:match("^book:(.+)$")
+        local entry
+        if macro then
+          if has.macro(macro) then entry = { index = index, label = macro, macro = macro } end
+        elseif book then
+          local id = has.book(book)
+          if id then entry = { index = index, label = book, spell = id } end
+        elseif s.spells[c] then
+          entry = { index = index, label = s.spells[c].name, spell = s.spells[c].id }
+        end
+        if entry and not seen[entry.label] then
+          seen[entry.label] = true
+          list[#list + 1] = entry
+          break
+        end
       end
     end
+    out[group] = list
   end
   return out
 end

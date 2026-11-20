@@ -29,7 +29,7 @@ ClassCoach only shows advice. It never presses buttons for you, which keeps it w
 | `/coach` | Opens the settings screen |
 | `/coach macros` | Creates or refreshes this class's helper macros (out of combat) |
 | `/coach smart` | Shows the smart key's steps and keys; `/coach smart next 1` binds a key |
-| `/coach bar` | Puts the suggested layout on empty buttons of your main action bar; `/coach bar replace` overwrites buttons 1–12 |
+| `/coach bar` | Lays out the fight, react and prepare bars on empty buttons; `preview` only lists, `replace` overwrites |
 | `/coach last` | Repeats the last fight report in chat |
 | `/coach hide` / `show` | Hides or shows the coach panel |
 | `/coach reset` | Puts both panels back where they started |
@@ -73,6 +73,22 @@ What the journey panel adds on top of that:
 And on the coach panel, before a pull, a red or amber icon when the enemy is one you shouldn't fight alone: far above your level, elite, or grey (no XP).
 
 The two panels move independently: drag each where you like. `/coach reset` puts both back.
+
+## Action bars
+
+`/coach bar` lays out three bars, each with one job, so a key always means the same kind of thing:
+
+| Bar | Job | Examples |
+|---|---|---|
+| Main bar | **Fight**: what you press during a fight, in the order you use it | Pull macro, wand, damage spells |
+| Action Bar 2 | **React**: emergencies and answers | Fear, heals, shield, interrupts, cleanses |
+| Action Bar 3 | **Prepare**: between fights | Armor and weapon buffs, summons, conjuring, travel |
+
+- Every spell has a fixed button, so nothing moves as you level; gaps fill in when you learn the spell.
+- `/coach bar` only fills empty buttons. If a spell's own button is taken, it goes to the next free one on the same bar. Nothing already on your bars is doubled.
+- `/coach bar preview` only lists the plan. `/coach bar replace` puts everything on its own button, overwriting what is there.
+- A bar that is switched off is skipped, and the addon tells you to turn it on (Esc > Options > Action Bars).
+- Optional setting: put newly learned spells on their button automatically. It never overwrites.
 
 ## Macros
 

@@ -214,6 +214,11 @@ function M.secureReset(b)
   local fn = assert(loadstring("return function(self, newstate) " .. b:GetAttribute("_onstate-ccreset") .. "\nend"))()
   M.inSecure = true; fn(b, "reset"); M.inSecure = false
 end
+-- Action Bars 2 and 3 are on unless a test switches one off: P.bars = { false, true }
+function GetActionBarToggles()
+  local b = P.bars or {}
+  return b[1] ~= false, b[2] ~= false, true, true
+end
 function UnitFactionGroup() return P.faction or "Alliance" end
 function CanMerchantRepair() return P.vendorRepairs == true end
 function GetItemSpell(id) for _, it in ipairs(P.bag or {}) do if it.id == id then return it.use end end end

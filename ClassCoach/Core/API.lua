@@ -483,6 +483,34 @@ end
 -- Action bar (out of combat only)
 ---------------------------------------------------------------------------
 
+-- Action slots of each bar, and the frame that shows it.
+local BARS = {
+  [1] = { first = 1, name = "your main bar" },
+  [2] = { first = 61, name = "Action Bar 2", frame = "MultiBarBottomLeft" },
+  [3] = { first = 49, name = "Action Bar 3", frame = "MultiBarBottomRight" },
+}
+function API.barInfo(bar) return BARS[bar] end
+
+-- Is that bar switched on? true / false, nil when the game won't say.
+function API.barShown(bar)
+  if bar == 1 then return true end
+  local info = BARS[bar]
+  if not info then return false end
+  if Settings and Settings.GetValue then
+    local v = plain(try(Settings.GetValue, "PROXY_SHOW_ACTIONBAR_" .. bar))
+    if type(v) == "boolean" then return v end
+  end
+  local toggles = { try(GetActionBarToggles) }
+  local v = plain(toggles[bar - 1])
+  if type(v) == "boolean" then return v end
+  local frame = _G[info.frame]
+  if frame and frame.IsShown then
+    local shown = plain(try(frame.IsShown, frame))
+    if type(shown) == "boolean" then return shown end
+  end
+  return nil
+end
+
 function API.slotEmpty(slot)
   return plain((try(GetActionInfo, slot))) == nil
 end

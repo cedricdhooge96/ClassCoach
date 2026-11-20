@@ -227,25 +227,48 @@ if SCENARIO == "shaman" then
   check("away from the vendor it goes quiet again", not journey(ns):find("Buy water"), journey(ns))
   M.P.bag, M.P.durability = nil, nil
 
-  -- /coach bar
-  M.P.actions = { [1] = 529, [2] = 8044 }
+  -- /coach bar: three bars by purpose
+  M.P.actions = { [1] = 529, [2] = 8044, [4] = 8017 }
+  M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(1); tick(ns)
+  local before = M.P.actions
+  SlashCmdList.CLASSCOACH("bar preview")
+  check("bar preview changes nothing", M.P.actions[5] == nil and M.P.actions[49] == nil and M.P.actions[61] == nil)
+  SlashCmdList.CLASSCOACH("bar")
+  check("bar: taken buttons are left alone", M.P.actions[1] == 529 and M.P.actions[2] == 8044 and M.P.actions[4] == 8017)
+  check("fight bar: Searing Totem on its own button", M.P.actions[5] == 3599, tostring(M.P.actions[5]))
+  check("fight bar: a taken button sends the entry to the next free one", type(M.P.actions[3]) == "table" and M.P.actions[3].macro == "CC Pull"
+    and M.P.actions[6] == 8050, tostring(M.P.actions[3]) .. "/" .. tostring(M.P.actions[6]))
+  local bolts = 0
+  for slot = 1, 12 do if M.P.actions[slot] == 529 then bolts = bolts + 1 end end
+  check("fight bar: what is already on a bar is not doubled", bolts == 1, bolts)
+  check("react bar (Action Bar 2): the heal", M.P.actions[61] == 331, tostring(M.P.actions[61]))
+  check("prepare bar (Action Bar 3): shield first", M.P.actions[49] == 324, tostring(M.P.actions[49]))
+  check("prepare bar: a spell already on a bar is not doubled", M.P.actions[50] == nil, tostring(M.P.actions[50]))
+  M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(1); tick(ns)
+  -- a bar that is switched off is not filled blindly
+  M.P.actions = { [1] = 529 }; M.P.bars = { false, true }
   M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(1); tick(ns)
   SlashCmdList.CLASSCOACH("bar")
-  check("bar: a taken button is left alone", M.P.actions[1] == 529 and M.P.actions[2] == 8044)
-  check("bar: empty buttons are filled", M.P.actions[4] == 8050 and M.P.actions[5] == 3599 and M.P.actions[9] == 324,
-    tostring(M.P.actions[4]) .. "/" .. tostring(M.P.actions[5]) .. "/" .. tostring(M.P.actions[9]))
-  check("bar: nothing is put on twice", M.P.actions[3] == nil and M.P.actions[7] == nil, tostring(M.P.actions[3]))
+  check("a switched-off bar is skipped", M.P.actions[61] == nil and M.P.actions[49] == 324, tostring(M.P.actions[61]))
+  M.P.bars = nil
   SlashCmdList.CLASSCOACH("bar replace")
   check("bar replace: the pull macro takes button 1", type(M.P.actions[1]) == "table" and M.P.actions[1].macro == "CC Pull", tostring(M.P.actions[1]))
-  check("bar replace: every known entry placed", M.P.actions[3] == 8044 and M.P.actions[7] == 529 and M.P.actions[10] == 8017, tostring(M.P.actions[3]))
+  check("bar replace: every known entry on its own button", M.P.actions[3] == 8044 and M.P.actions[4] == 8050 and M.P.actions[6] == 529
+    and M.P.actions[50] == 8017 and M.P.actions[61] == 331, tostring(M.P.actions[3]))
   M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(1); tick(ns)
+  -- new spells find their button by themselves when you ask for that
+  ClassCoachDB.autoBar = true
+  M.P.spells[8024] = { name = "Flametongue Weapon", cost = 30 }; M.P.book[#M.P.book + 1] = 8024; M.P.knownIds[8024] = true
+  M.fire("SPELLS_CHANGED"); M.advance(1); tick(ns); M.advance(1); tick(ns)
+  check("a newly learned spell takes its button", M.P.actions[52] == 8024, tostring(M.P.actions[52]))
+  ClassCoachDB.autoBar = false
 
   -- The settings screen
   local S = M.settings
   check("settings page registered with the game", S.category ~= nil and S.category.name == "ClassCoach")
   local count = 0
   for _ in pairs(S.list) do count = count + 1 end
-  check("every option made it onto the page", count == 25 and #ns.Options.registered == 25, count)
+  check("every option made it onto the page", count == 26 and #ns.Options.registered == 26, count)
   check("sections and action buttons", #S.headers == 5 and #S.buttons == 3, #S.headers .. "/" .. #S.buttons)
   check("options write to the saved settings", S.list.compact.tbl == ClassCoachDB and S.list.specChoice.tbl == ClassCoachCharDB)
   check("slider shows its unit", S.list.opacity.opts.format(75) == "75%" and S.list.scale.opts.format(1.1) == "1.10x")

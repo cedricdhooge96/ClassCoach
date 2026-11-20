@@ -69,6 +69,7 @@ local function rescan()
   C.hasWand = API.equipped(18)
   C.usesMana = API.usesMana()
   C.syncMacros(true)
+  C.barPending = true   -- newly learned spells may want their place on your bars (see tick)
 end
 
 local rescanQueued = false
@@ -141,33 +142,76 @@ function C.syncSmart()
   return ns.Smart.load(steps, gate)
 end
 
--- Lays out the profile's suggested action bar on buttons 1-12 of the main bar.
--- Buttons that already hold something are left alone unless `replace`.
-function C.setupBar(replace)
+-- Lays out the profile's suggested bars: the fight on your main bar, reactions
+-- on Action Bar 2, preparation on Action Bar 3. mode:
+--   nil        fill only empty buttons; a taken spot sends the entry to the
+--              next free button of the same bar
+--   "replace"  put every entry on its own button, overwriting what is there
+--   "preview"  only say what would go where
+local BAR_OF = { fight = 1, react = 2, prep = 3 }
+local BAR_TITLE = { fight = "Fight", react = "React", prep = "Prepare" }
+function C.setupBar(mode, quiet)
   local s = C.lastState
-  if not C.profile.bar then say("No bar layout for " .. C.profile.spec .. " yet.") return end
-  if not s then say("Still loading: try again in a moment.") return end
-  if API.inCombat() then say("The action bar can only be changed out of combat.") return end
-  C.syncMacros(false)   -- the layout uses the CC macros: make sure they exist
-  local plan = Engine.bar(C.profile, s, {
+  local report = quiet and function() end or say
+  if not (C.profile.bars or C.profile.bar) then report("No bar layout for " .. C.profile.spec .. " yet.") return end
+  if not s then report("Still loading: try again in a moment.") return end
+  if API.inCombat() then report("The action bars can only be changed out of combat.") return end
+  if mode ~= "preview" and not quiet then C.syncMacros(false) end   -- the layout uses the CC macros
+  local plan = Engine.bars(C.profile, s, {
     macro = API.macroExists,
     book = function(name) local entry = C.book and C.book[name]; return entry and entry.ids[#entry.ids] or nil end,
   })
-  local placed, kept, already = {}, {}, {}
-  for _, b in ipairs(plan) do
-    local onBar = C.keys and C.keys[b.macro and ("macro:" .. b.macro) or b.label] ~= nil
-    if not replace and onBar then
-      already[#already + 1] = b.label
-    elseif not replace and not API.slotEmpty(b.slot) then
-      kept[#kept + 1] = ("%d (%s)"):format(b.slot, b.label)
-    elseif API.placeAction(b.slot, b) then
-      placed[#placed + 1] = ("%d %s"):format(b.slot, b.label)
+  local total, off = 0, {}
+  for _, group in ipairs(Engine.BAR_GROUPS) do
+    local entries, bar = plan[group], BAR_OF[group]
+    local info = API.barInfo(bar)
+    if #entries > 0 and API.barShown(bar) == false then
+      off[#off + 1] = ("%s (%d buttons for %s)"):format(info.name, #entries, BAR_TITLE[group]:lower())
+    elseif #entries > 0 then
+      local placed, moved, already, full = {}, {}, {}, {}
+      if mode == "preview" then
+        for _, e in ipairs(entries) do placed[#placed + 1] = ("%d %s"):format(e.index, e.label) end
+      else
+        local waiting = {}
+        for _, e in ipairs(entries) do
+          local slot = info.first + e.index - 1
+          local onBar = C.keys and C.keys[e.macro and ("macro:" .. e.macro) or e.label] ~= nil
+          if mode ~= "replace" and onBar then
+            already[#already + 1] = e.label
+          elseif mode == "replace" or API.slotEmpty(slot) then
+            if API.placeAction(slot, e) then placed[#placed + 1] = ("%d %s"):format(e.index, e.label) end
+          else
+            waiting[#waiting + 1] = e
+          end
+        end
+        -- its own button was taken: the next free one on the same bar
+        for _, e in ipairs(waiting) do
+          local put
+          for i = 1, 12 do
+            if API.slotEmpty(info.first + i - 1) then
+              if API.placeAction(info.first + i - 1, e) then put = i end
+              break
+            end
+          end
+          if put then moved[#moved + 1] = ("%d %s"):format(put, e.label) else full[#full + 1] = e.label end
+        end
+      end
+      total = total + #placed + #moved
+      local parts = {}
+      if #placed > 0 then parts[#parts + 1] = table.concat(placed, ", ") end
+      if #moved > 0 then parts[#parts + 1] = "moved to a free button: " .. table.concat(moved, ", ") end
+      if #already > 0 then parts[#parts + 1] = "already on your bars: " .. table.concat(already, ", ") end
+      if #full > 0 then parts[#parts + 1] = "no room for: " .. table.concat(full, ", ") end
+      if #parts > 0 then report(("%s, %s: %s."):format(BAR_TITLE[group], info.name, table.concat(parts, "; "))) end
     end
   end
-  if #placed > 0 then say("Action bar: " .. table.concat(placed, ", ") .. ".") else say("Action bar: nothing to place.") end
-  if #already > 0 then say("Already on your bars: " .. table.concat(already, ", ") .. ".") end
-  if #kept > 0 then say("Buttons left alone because they hold something: " .. table.concat(kept, ", ") .. ". \"/coach bar replace\" overwrites buttons 1-12.") end
-  rescanSoon()
+  if #off > 0 then
+    report("Switched off: " .. table.concat(off, "; ") .. ". Turn it on in Esc > Options > Action Bars, then run /coach bar again.")
+  end
+  if mode == "preview" then report("That is the plan. /coach bar fills empty buttons; /coach bar replace overwrites.")
+  elseif total == 0 and #off == 0 then report("Your bars already have everything.") end
+  if mode ~= "preview" and total > 0 then rescanSoon() end
+  return total
 end
 
 ---------------------------------------------------------------------------
@@ -263,6 +307,10 @@ local function tick()
     title = ("%s · %s · level %d"):format(profile.spec, profile.class == "ANY" and (C.class or "") or profile.class:sub(1, 1) .. profile.class:sub(2):lower(), s.level),
     usesMana = s.usesMana, manaPct = s.manaPct, manaExact = s.manaExact, manaLevel = s.manaLevel,
   }
+  if C.barPending and not s.inCombat then
+    C.barPending = false
+    if ClassCoachDB.autoBar then pcall(C.setupBar, nil, true) end
+  end
   view.next = Engine.next(profile, s)
   view.chain = Engine.chain(profile, s, 3)
   view.planning = view.next == nil
@@ -583,7 +631,7 @@ end
 local HELP = {
   "/coach — open the settings screen (also: Esc > Options > AddOns > ClassCoach)",
   "/coach macros — create or refresh this class's helper macros (out of combat)",
-  "/coach bar — put the suggested layout on empty buttons of your main action bar (\"/coach bar replace\" overwrites)",
+  "/coach bar — lay out three bars by purpose: fight (main bar), react (Action Bar 2), prepare (Action Bar 3). Empty buttons only; \"preview\" just lists, \"replace\" overwrites",
   "/coach smart — the smart key: one key that walks the coach's plan (shows its steps and keys)",
   "/coach last — repeat the last fight report",
   "/coach reset — put both panels back where they started",
@@ -657,7 +705,9 @@ SlashCmdList.CLASSCOACH = function(msg)
     end
     say("Open /macro, pick your character's tab and drag them onto your action bar. They update themselves when you learn new spells.")
     rescanSoon()
-  elseif cmd == "bar" then C.setupBar(arg:lower() == "replace")
+  elseif cmd == "bar" then
+    local mode = arg:lower()
+    C.setupBar((mode == "replace" or mode == "preview") and mode or nil)
   elseif cmd == "smart" then
     local what, key = arg:match("^(%S+)%s+(%S+)$")
     if API.inCombat() then say("The smart key can only be set up out of combat.") return end

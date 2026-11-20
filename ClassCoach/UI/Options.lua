@@ -71,6 +71,8 @@ local function layout()
       tip = "After a fight, also print the tips in the chat window." },
     { key = "smartKey", kind = "check", name = "Smart key: one key walks the coach's plan", default = true,
       tip = "Bind its three keys under Options > Keybindings > AddOns > ClassCoach: Next, Again (after a resist) and Restart. One press still casts one spell. Type /coach smart to see its steps." },
+    { key = "autoBar", kind = "check", name = "Put newly learned spells on my bars", default = false,
+      tip = "When you train a spell, it goes to its button on the fight, react or prepare bar if that button is free. Nothing is ever overwritten." },
     { key = "autoMacros", kind = "check", name = "Keep my CC macros up to date", default = true,
       tip = "Rewrites the macros made by /coach macros when you learn spells or the pull plan changes." },
   }
@@ -135,7 +137,7 @@ function Options.build(db, charDB, actions)
     page:AddInitializer(CreateSettingsButtonInitializer("Helper macros", "Create or refresh", actions.macros,
       "Makes this class's CC macros from the spells you know. Out of combat only.", true))
     page:AddInitializer(CreateSettingsButtonInitializer("Action bar", "Fill empty buttons", actions.bar,
-      "Puts this class's suggested layout on your main action bar. Buttons that already hold something are left alone.", true))
+      "Lays out three bars by purpose: the fight on your main bar, reactions on Action Bar 2, preparation on Action Bar 3. Buttons that already hold something are left alone.", true))
     page:AddInitializer(CreateSettingsButtonInitializer("Panel positions", "Reset", actions.reset,
       "Puts both panels back where they started.", true))
   end)

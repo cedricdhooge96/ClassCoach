@@ -147,9 +147,12 @@ The smart key's steps come from the same pull plan as the macros
 ### bar, supplies, milestones
 
 ```lua
-bar = {                                   -- one entry per button 1-12, best candidate first
-  { "macro:CC Pull", "Frostbolt" },       -- a CC macro, else a spell key
-  { "book:Blink" },                       -- "book:" = a spell that is not in `spells`
+bars = {                                  -- three bars by purpose, up to 12 buttons each
+  fight = {                               -- main bar: one entry per button, best candidate first
+    { "macro:CC Pull", "Frostbolt" },     -- a CC macro, else a spell key
+  },
+  react = { { "book:Blink" }, { "book:Counterspell" } },   -- Action Bar 2; "book:" = not in `spells`
+  prep  = { { "book:Arcane Intellect" }, { "book:Conjure Water" } },   -- Action Bar 3
 },
 supplies = { { item = 17020, name = "Arcane Powder", needs = "Arcane Brilliance", low = 5 } },
 milestones = {
