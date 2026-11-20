@@ -265,10 +265,12 @@ function Panel.render(view)
   -- Middle: what to press now (or, with nothing targeted, how your next pull starts)
   if now then
     f.icon:SetTexture(now.icon or QUESTION)
-    f.icon:SetDesaturated(view.planning and true or false)
+    -- Always in colour: grey read as "you cannot cast this". With nothing targeted
+    -- the "Pull" label and a softer glow say it is a plan, not a prompt.
+    f.icon:SetDesaturated(false)
     f.key:SetText(now.keybind or "")
     f.now.timer:SetText("")
-    f.glow:SetAlpha(view.planning and 0.25 or 0.9)
+    f.glow:SetAlpha(view.planning and 0.45 or 0.9)
   else
     f.icon:SetTexture(QUESTION)
     f.icon:SetDesaturated(true)
