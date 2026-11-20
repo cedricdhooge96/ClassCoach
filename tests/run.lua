@@ -48,7 +48,7 @@ local function journey(ns)
   local f, parts = ns.Journey.frame, {}
   if not f.shown then return "(hidden)" end
   parts[#parts + 1] = f.barText.text
-  for _, l in ipairs(f.lines) do if l.shown and l.text ~= "" then parts[#parts + 1] = l.text end end
+  for _, r in ipairs(f.rows) do if r.shown and r.label.text ~= "" then parts[#parts + 1] = r.label.text end end
   parts[#parts + 1] = f.hint.text
   return table.concat(parts, " | ")
 end
@@ -83,6 +83,7 @@ if SCENARIO == "shaman" then
   check("checklist: weapon buff missing", f.status.text:find("No weapon buff") ~= nil, f.status.text)
   check("food is a journey to-do, not a pull blocker", journey(ns):find("No food buff") ~= nil and not f.status.text:find("food"), journey(ns))
   check("journey: xp and rested", journey(ns):find("XP 0%% · not rested") ~= nil and journey(ns):find("No rested XP") ~= nil, journey(ns))
+  check("journey rows carry icons", ns.Journey.frame.rows[1].icon.texture == "Interface\\Icons\\INV_Misc_Food_15", tostring(ns.Journey.frame.rows[1].icon.texture))
   check("journey: next trainer level", journey(ns):find("New spells at level 16") ~= nil, journey(ns))
   M.P.xp, M.P.rested, M.P.talentPoints, M.P.durability, M.P.freeSlots = 430, 180, 1, 12, 1
   M.P.buffs["Well Fed XP Boost"] = true; M.fire("UNIT_AURA", "player")
@@ -340,6 +341,21 @@ elseif SCENARIO == "warlock" then
     pull and pull.body)
   check("wand and demon macros", GetMacroIndexByName("CC Wand") > 0 and GetMacroIndexByName("CC Demon") > 0)
   check("macros fit the game's limit", #pull.body <= 255)
+  -- The macro follows the coach: short kills drop the long spell, and it rewrites itself after a fight.
+  ClassCoachCharDB.kill = { avg = 7, n = 5 }
+  target({ name = "Boar", level = 11, hostile = true, guid = "Creature-12" })
+  M.advance(1); tick(ns)
+  M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
+  cast(172); M.advance(6)
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
+  pull = M.macros[GetMacroIndexByName("CC Pull")]
+  check("macro rewritten from the new plan", pull.body:find("reset=target/combat Bane of Agony, Corruption$") ~= nil, pull.body)
+  ClassCoachCharDB.kill = nil; target(nil)
+  -- No wand: the filler spell rides along so one key carries the fight.
+  M.P.equipped = {}; M.fire("PLAYER_EQUIPMENT_CHANGED"); M.advance(1); tick(ns); M.advance(1)
+  SlashCmdList.CLASSCOACH("macros")
+  pull = M.macros[GetMacroIndexByName("CC Pull")]
+  check("no wand: filler added to the sequence", pull.body:find("Bane of Agony, Corruption, Immolate, Shadow Bolt, Shadow Bolt, Shadow Bolt$") ~= nil, pull.body)
   SlashCmdList.CLASSCOACH("check")
   check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
   check("no tick error", ns.C.lastError == nil, ns.C.lastError)

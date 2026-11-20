@@ -7,7 +7,8 @@ local _, ns = ...
 local Journey = {}
 ns.Journey = Journey
 
-local WIDTH, MAX_LINES = 320, 6
+local WIDTH, MAX_LINES, ICON_SIZE = 320, 6, 20
+local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
 local COLORS = {
   act = { 1.00, 0.78, 0.30 }, info = { 0.70, 0.72, 0.78 }, dim = { 0.62, 0.62, 0.66 },
   xp = { 0.58, 0.35, 0.85 }, rested = { 0.30, 0.55, 1.00 },
@@ -19,11 +20,41 @@ local function font(parent, template)
   return fs
 end
 
-function Journey.create(charDB, db, anchor)
+-- One to-do: an icon like a spell button, its text, and the full advice on mouse-over.
+local function row(parent)
+  local r = CreateFrame("Frame", nil, parent)
+  r:SetSize(WIDTH - 20, ICON_SIZE)
+  local icon = r:CreateTexture(nil, "ARTWORK")
+  icon:SetSize(ICON_SIZE, ICON_SIZE)
+  icon:SetPoint("TOPLEFT", 0, 0)
+  icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+  r.icon = icon
+  local label = font(r, "GameFontHighlightSmall")
+  label:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+  label:SetWidth(WIDTH - 20 - ICON_SIZE - 6)
+  label:SetWordWrap(false)
+  r.label = label
+  r:EnableMouse(true)
+  r:SetScript("OnEnter", function(self)
+    if not self.title or not GameTooltip then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(self.title, 1, 0.82, 0.2)
+    if self.hint then GameTooltip:AddLine(self.hint, 0.9, 0.9, 0.9, true) end
+    GameTooltip:Show()
+  end)
+  r:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+  -- dragging a row drags the panel
+  r:RegisterForDrag("LeftButton")
+  r:SetScript("OnDragStart", function() local s = parent:GetScript("OnDragStart"); if s then s(parent) end end)
+  r:SetScript("OnDragStop", function() local s = parent:GetScript("OnDragStop"); if s then s(parent) end end)
+  return r
+end
+
+function Journey.create(charDB, db)
   if Journey.frame then return Journey.frame end
   local ok, f = pcall(CreateFrame, "Frame", "ClassCoachJourney", UIParent, "BackdropTemplate")
   if not ok or not f then f = CreateFrame("Frame", "ClassCoachJourney", UIParent) end
-  Journey.frame, Journey.charDB, Journey.db, Journey.anchor = f, charDB, db, anchor
+  Journey.frame, Journey.charDB, Journey.db = f, charDB, db
   f:SetSize(WIDTH, 60)
   f:SetFrameStrata("MEDIUM")
   f:SetClampedToScreen(true)
@@ -66,13 +97,11 @@ function Journey.create(charDB, db, anchor)
   barText:SetJustifyH("CENTER")
   f.bar, f.barText = bar, barText
 
-  f.lines = {}
-  for i = 1, MAX_LINES do
-    local line = font(f, "GameFontHighlightSmall")
-    line:SetWidth(WIDTH - 20)
-    line:SetWordWrap(true)
-    f.lines[i] = line
-  end
+  f.rows = {}
+  for i = 1, MAX_LINES do f.rows[i] = row(f) end
+  local allSet = font(f, "GameFontHighlightSmall")
+  allSet:SetTextColor(0.55, 0.85, 0.55)
+  f.allSet = allSet
   local hint = font(f, "GameFontDisableSmall")
   hint:SetWidth(WIDTH - 20)
   hint:SetWordWrap(true)
@@ -82,7 +111,7 @@ function Journey.create(charDB, db, anchor)
   return f
 end
 
--- Sits under the coach panel until you drag it somewhere else.
+-- Its own spot on screen: it never follows the coach panel. Drag it anywhere.
 function Journey.place()
   local f = Journey.frame
   if not f then return end
@@ -90,14 +119,12 @@ function Journey.place()
   local pos = Journey.charDB.journeyPos
   if pos then
     f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4])
-  elseif Journey.anchor then
-    f:SetPoint("TOPLEFT", Journey.anchor, "BOTTOMLEFT", 0, -4)
   else
-    f:SetPoint("CENTER", UIParent, "CENTER", 0, -320)
+    f:SetPoint("TOPLEFT", UIParent, "LEFT", 30, 120)
   end
 end
 
--- view = { title, inCombat, xp = { pct, restedPct, resting }, lines = { { kind, text, hint } } }
+-- view = { title, inCombat, xp = { pct, restedPct, resting }, lines = { { kind, text, hint, icon } } }
 function Journey.render(view)
   local f = Journey.frame
   if not f then return end
@@ -126,27 +153,34 @@ function Journey.render(view)
 
   local lines, firstHint = view.lines or {}, nil
   for i = 1, MAX_LINES do
-    local line, item = f.lines[i], lines[i]
-    line:ClearAllPoints()
+    local r, item = f.rows[i], lines[i]
+    r:ClearAllPoints()
     if item then
       local c = item.kind == "do" and COLORS.act or COLORS.info
-      line:SetTextColor(c[1], c[2], c[3])
-      line:SetText((item.kind == "do" and "! " or "· ") .. item.text)
-      line:SetPoint("TOPLEFT", 10, y)
-      line:Show()
-      y = y - (line:GetStringHeight() or 12) - 2
+      r.icon:SetTexture(item.icon or QUESTION)
+      r.icon:SetDesaturated(item.kind ~= "do")
+      r.label:SetTextColor(c[1], c[2], c[3])
+      r.label:SetText(item.text)
+      r.title, r.hint = item.text, item.hint
+      r:SetPoint("TOPLEFT", 10, y)
+      r:Show()
+      y = y - ICON_SIZE - 3
       if not firstHint and item.kind == "do" and item.hint then firstHint = item.hint end
     else
-      line:SetText("")
-      line:Hide()
+      r.label:SetText("")
+      r.title, r.hint = nil, nil
+      r:Hide()
     end
   end
+  f.allSet:ClearAllPoints()
   if #lines == 0 then
-    f.lines[1]:SetTextColor(0.55, 0.85, 0.55)
-    f.lines[1]:SetText("All set. Go quest.")
-    f.lines[1]:SetPoint("TOPLEFT", 10, y)
-    f.lines[1]:Show()
+    f.allSet:SetText("All set. Go quest.")
+    f.allSet:SetPoint("TOPLEFT", 10, y)
+    f.allSet:Show()
     y = y - 14
+  else
+    f.allSet:SetText("")
+    f.allSet:Hide()
   end
   f.hint:ClearAllPoints()
   if firstHint then

@@ -122,7 +122,9 @@ macros = {
 }
 ```
 
-Bodies are limited to 255 characters and use the spell names from `s.spells[key].name`.
+`body` and `about` also receive the coach's pull plan as a second argument:
+`function(s, plan)`. `ns.Engine.sequence(plan, skip, tail)` turns it into the
+spell names for a `/castsequence`. Bodies are limited to 255 characters and use the spell names from `s.spells[key].name`.
 After-fight tips also get `f.demon`, `f.precast` (you cast before combat started),
 `f.targets` and `f.elite`.
 
@@ -141,6 +143,7 @@ checklist = {
 
 Buff and weapon checks only nag when you know at least one of the spells.
 `needs` = a spell key (or list) the character must know; `minLevel` also works.
+Give a `tip` entry an `icon = "Interface\\Icons\\..."` for its row on the journey panel.
 Add `tip = true` to an entry that is advice rather than something to fix before
 every pull (a missing wand, a class quest, a reagent): it then shows on the
 journey panel instead. Health and mana checks, and the journey panel's XP,

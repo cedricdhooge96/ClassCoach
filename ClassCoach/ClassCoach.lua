@@ -250,6 +250,12 @@ local function tick()
     end
     local journey = Engine.journey(profile, s, { food = ClassCoachDB.food })
     journey.title = ("Journey · level %d"):format(s.level)
+    for _, line in ipairs(journey.lines) do
+      if type(line.icon) == "table" then   -- { spell = key }: that spell's own icon, learned or not
+        local sp, meta = s.spells[line.icon.spell], profile.spells[line.icon.spell]
+        line.icon = (sp and sp.icon) or (meta and meta.ids and API.texture(meta.ids[1])) or nil
+      end
+    end
     C.lastJourney = journey
     ns.Journey.render(journey)
   end
@@ -343,6 +349,7 @@ local function finishFight()
     ClassCoachCharDB.kill = kill
   end
   local s = C.lastState or buildState(GetTime())
+  C.syncMacros(true)   -- the pull plan may have changed with what was learned this fight
   local report = Engine.report(C.profile, summary, s)
   C.lastReport = report
   local lines = { report.headline }
@@ -401,7 +408,7 @@ local function start()
   local mana, max = API.mana()
   C.lastMana, C.manaMax = mana, max
   ns.Panel.create(ClassCoachCharDB, ClassCoachDB)
-  ns.Journey.create(ClassCoachCharDB, ClassCoachDB, ns.Panel.frame)
+  ns.Journey.create(ClassCoachCharDB, ClassCoachDB)
   ns.Panel.frame:SetScript("OnUpdate", onUpdate)
 end
 
@@ -468,6 +475,7 @@ local function check()
   for key, sp in pairs(C.spells or {}) do if sp.duration then durations[#durations + 1] = key .. " " .. sp.duration .. "s" end end
   table.sort(durations)
   add("damage over time: %s", table.concat(durations, ", "))
+  add("built-in rotation assistant on this client: %s", tostring(C_AssistedCombat ~= nil))
   add("mana bar drawn by the game: %s; percent function %s, readable %s", tostring(not ns.Panel.manaRefused),
     tostring(UnitPowerPercent ~= nil), tostring(API.manaPct() ~= nil))
   add("buffs readable %s, weapon buff %s, wand %s", tostring(C.buffs ~= nil), tostring(API.mainHandBuff()), tostring(C.hasWand))
@@ -500,10 +508,10 @@ SlashCmdList.CLASSCOACH = function(msg)
   elseif cmd == "scale" and tonumber(arg) then db.scale = math.max(0.5, math.min(2, tonumber(arg))); ns.Panel.setScale(db.scale); ns.Journey.setScale(db.scale)
   elseif cmd == "hide" then db.hidden = true; ns.Panel.toggle(false)
   elseif cmd == "show" then db.hidden = false; ns.Panel.toggle(true)
-  elseif cmd == "reset" then ns.Panel.resetPosition()
+  elseif cmd == "reset" then ns.Panel.resetPosition(); ns.Journey.reset()
   elseif cmd == "chat" then db.chat = arg ~= "off"; say("Fight tips in chat: " .. (db.chat and "on" or "off"))
   elseif cmd == "journey" then
-    if arg == "reset" then ns.Journey.reset(); say("Journey panel back under the coach panel.")
+    if arg == "reset" then ns.Journey.reset(); say("Journey panel back at its starting spot.")
     else db.journey = arg ~= "off"; say("Journey panel: " .. (db.journey and "on" or "off")) end
   elseif cmd == "food" then db.food = arg ~= "off"; say("Food reminder: " .. (db.food and "on" or "off"))
   elseif cmd == "spec" then

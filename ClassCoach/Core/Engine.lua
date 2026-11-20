@@ -307,12 +307,44 @@ end
 -- Macros a profile offers (built from the spells you know)
 ---------------------------------------------------------------------------
 
+-- The coach's plan for a fresh pull at full mana: the same steps the carousel
+-- would walk through, ending with the filler. Macros are written from this,
+-- so they follow the coach (your level, spells and usual kill time).
+function Engine.plan(profile, s, max)
+  local fresh = setmetatable({ manaLevel = "high", manaPct = 100, inCombat = false, fightTime = 0,
+    target = { exists = false, key = "plan" } }, { __index = s })
+  return Engine.chain(profile, fresh, max or 6)
+end
+
+-- Spell names of a plan, in order, for a /castsequence. Steps in `skip` are
+-- left out. When the filler is a spell you cast (not a wand or melee), it is
+-- added `tail` times so one key can carry the whole fight.
+function Engine.sequence(plan, skip, tail)
+  local names = {}
+  for _, st in ipairs(plan) do
+    if not (skip and skip[st.key]) then
+      if not st.filler then
+        names[#names + 1] = st.label
+      elseif not st.melee and st.key ~= "Shoot" then
+        for _ = 1, tail or 0 do names[#names + 1] = st.label end
+      end
+    end
+  end
+  return names
+end
+
 function Engine.macros(profile, s)
   local out = {}
+  local plan = Engine.plan(profile, s)
+  local function build(v)
+    if type(v) ~= "function" then return v end
+    local fine, result = pcall(v, s, plan)
+    return fine and result or nil
+  end
   for _, def in ipairs(profile.macros or {}) do
-    local body = text(def.body, s)
+    local body = build(def.body)
     if type(body) == "string" and body ~= "" and #body <= 255 then
-      out[#out + 1] = { name = def.name, body = body, about = text(def.about, s) }
+      out[#out + 1] = { name = def.name, body = body, about = build(def.about) }
     end
   end
   return out
@@ -372,7 +404,7 @@ local function evaluate(entry, s)
     local fine, result = pcall(entry.check, s)
     isMissing = fine and result == true
   end
-  if isMissing then return { text = text(entry.label, s), hint = text(entry.hint, s) } end
+  if isMissing then return { text = text(entry.label, s), hint = text(entry.hint, s), icon = entry.icon } end
 end
 
 -- Before the pull: only what matters for the next fight. Entries marked
@@ -401,6 +433,13 @@ end
 -- The journey: everything outside the fight that makes leveling smoother
 ---------------------------------------------------------------------------
 
+local ICON = {
+  talent = "Interface\\Icons\\Ability_Marksmanship", food = "Interface\\Icons\\INV_Misc_Food_15",
+  rest = "Interface\\Icons\\Spell_Nature_Sleep", sleep = "Interface\\Icons\\INV_Misc_Bag_10",
+  repair = "Interface\\Icons\\Trade_BlackSmithing", bags = "Interface\\Icons\\INV_Misc_Bag_08",
+  trainer = "Interface\\Icons\\INV_Misc_Book_09",
+}
+
 -- A buff whose name starts with `prefix` (names differ a little between
 -- foods and clients). nil when buffs can't be read.
 local function buffStarting(s, prefix)
@@ -420,12 +459,13 @@ function Engine.journey(profile, s, options)
   options = options or {}
   local j = s.journey or {}
   local out = { lines = {} }
-  local function add(kind, line, hint) out.lines[#out.lines + 1] = { kind = kind, text = line, hint = hint } end
+  -- icon: a texture path, or { spell = key } for that spell's own icon
+  local function add(kind, line, hint, icon) out.lines[#out.lines + 1] = { kind = kind, text = line, hint = hint, icon = icon } end
 
   if j.talentPoints and j.talentPoints > 0 then
     local pick = Engine.talentFor(profile, s.level)
     add("do", j.talentPoints == 1 and "1 talent point to spend" or (j.talentPoints .. " talent points to spend"),
-      pick and ("Suggested: " .. pick .. ".") or "Open your talents (N) and spend it.")
+      pick and ("Suggested: " .. pick .. ".") or "Open your talents (N) and spend it.", ICON.talent)
   end
 
   if s.bookReady then
@@ -435,19 +475,19 @@ function Engine.journey(profile, s, options)
     end
     if #untrained > 0 then
       table.sort(untrained)
-      add("do", "Not trained: " .. table.concat(untrained, ", "), "Visit your class trainer: you can learn it now.")
+      add("do", "Not trained: " .. table.concat(untrained, ", "), "Visit your class trainer: you can learn it now.", { spell = untrained[1] })
     end
   end
 
   for _, entry in ipairs(profile.checklist) do
     if entry.tip then
       local item = evaluate(entry, s)
-      if item then add("do", item.text, item.hint) end
+      if item then add("do", item.text, item.hint, item.icon) end
     end
   end
 
   if options.food and s.level >= 5 and buffStarting(s, "Well Fed") == false then
-    add("do", "No food buff", "Eat cooked food for 10 seconds: +5% XP from kills for 15 minutes.")
+    add("do", "No food buff", "Eat cooked food for 10 seconds: +5% XP from kills for 15 minutes.", ICON.food)
   end
 
   local xp = j.xp
@@ -456,30 +496,32 @@ function Engine.journey(profile, s, options)
     local rested = xp.rested or 0
     out.xp.restedPct = rested / xp.max * 100
     if xp.resting then
-      add("info", "In a rest area", "Log out here: rested XP builds while you are away, and doubles XP from kills.")
+      add("info", "In a rest area", "Log out here: rested XP builds while you are away, and doubles XP from kills.", ICON.rest)
     elseif rested <= 0 then
       add("do", "No rested XP", j.hasItem and j.hasItem("Camp Tent")
         and "Pitch your Camp Tent at a campfire (once an hour), or log out in an inn or city."
-        or "Log out in an inn or city: rested XP doubles XP from kills. A Camp Tent (Leatherworking 20) tops it up on the road.")
+        or "Log out in an inn or city: rested XP doubles XP from kills. A Camp Tent (Leatherworking 20) tops it up on the road.", ICON.rest)
     elseif out.xp.restedPct < 5 and j.hasItem and j.hasItem("Camp Tent") then
       add("info", ("Rested XP low (%d%% of a level)"):format(math.floor(out.xp.restedPct)),
-        "Your Camp Tent tops it up to 5% at a campfire, once an hour.")
+        "Your Camp Tent tops it up to 5% at a campfire, once an hour.", ICON.rest)
     end
   end
 
   if j.hasItem and j.hasItem("Cozy Sleeping Bag") and buffStarting(s, "Cozy") == false and s.level < 60 then
-    add("do", "Sleeping bag buff missing", "Lie on your Cozy Sleeping Bag for up to 3 minutes: up to +3% XP.")
+    add("do", "Sleeping bag buff missing", "Lie on your Cozy Sleeping Bag for up to 3 minutes: up to +3% XP.", ICON.sleep)
   end
 
   if j.durability and j.durability < 25 then
-    add("do", ("Gear at %d%% durability"):format(math.floor(j.durability)), "Repair at any vendor with an anvil icon before it breaks.")
+    add("do", ("Gear at %d%% durability"):format(math.floor(j.durability)), "Repair at any vendor with an anvil icon before it breaks.", ICON.repair)
   end
   if j.freeSlots and j.freeSlots <= 2 then
-    add("do", j.freeSlots == 0 and "Bags full" or ("Bags nearly full (%d free)"):format(j.freeSlots), "Sell grey items at a vendor.")
+    add("do", j.freeSlots == 0 and "Bags full" or ("Bags nearly full (%d free)"):format(j.freeSlots), "Sell grey items at a vendor.", ICON.bags)
   end
 
   local nextLevel = Engine.nextTraining(profile, s.level)
-  if nextLevel then add("info", ("New spells at level %d"):format(nextLevel)) end
+  if nextLevel then
+    add("info", ("New spells at level %d"):format(nextLevel), profile.trainer[nextLevel] and ("Your trainer will teach: " .. profile.trainer[nextLevel] .. ".") or nil, ICON.trainer)
+  end
   return out
 end
 

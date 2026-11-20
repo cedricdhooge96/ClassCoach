@@ -72,7 +72,7 @@ local CHECKLIST = {
       local best = s:known("Windfury Weapon") and "Windfury Weapon" or "Rockbiter Weapon"
       return "Put " .. best .. " on your weapon: it lasts 30 minutes."
     end },
-  { tip = true, item = 17030, needs = "Reincarnation", label = "No Ankh", hint = "Buy Ankhs at a reagent vendor so Reincarnation works." },
+  { tip = true, item = 17030, needs = "Reincarnation", label = "No Ankh", icon = "Interface\\Icons\\INV_Jewelry_Talisman_06", hint = "Buy Ankhs at a reagent vendor so Reincarnation works." },
 }
 
 ---------------------------------------------------------------------------

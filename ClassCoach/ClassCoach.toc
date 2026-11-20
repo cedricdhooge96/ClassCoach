@@ -2,7 +2,7 @@
 ## Title: ClassCoach
 ## Notes: A beginner's coach for any class: mana coach, pre-fight checklist, next-ability hint, fight summary and level-up tips. It never presses anything for you.
 ## Author: Cedric
-## Version: 0.4.0
+## Version: 0.4.1
 ## Category: Combat
 ## SavedVariables: ClassCoachDB
 ## SavedVariablesPerCharacter: ClassCoachCharDB

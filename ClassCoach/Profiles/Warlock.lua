@@ -140,9 +140,9 @@ ns.RegisterProfile({
   checklist = {
     -- tip = true: advice for the journey panel, not something to fix before every pull
     { tip = true, check = function(s) return s.level < 10 and not s:known("Summon Imp") end,
-      label = "No Imp yet", hint = "Your class trainer has a short quest for your first helper, the Imp. Do it first." },
+      label = "No Imp yet", icon = "Interface\\Icons\\Spell_Shadow_SummonImp", hint = "Your class trainer has a short quest for your first helper, the Imp. Do it first." },
     { tip = true, check = function(s) return s.level >= 10 and s:known("Summon Imp") and not s:known("Summon Voidwalker") end,
-      label = "No Voidwalker yet", hint = "Do the level 10 class quest: the Voidwalker takes the hits for you." },
+      label = "No Voidwalker yet", icon = "Interface\\Icons\\Spell_Shadow_SummonVoidWalker", hint = "Do the level 10 class quest: the Voidwalker takes the hits for you." },
     { pet = true, needs = DEMONS, label = "No demon",
       hint = function(s)
         if s:known("Summon Voidwalker") then return "Summon your Voidwalker (costs a Soul Shard): it takes the hits for you." end
@@ -152,9 +152,9 @@ ns.RegisterProfile({
       label = "Imp is out", hint = "Solo, your Voidwalker is safer: it takes the hits. The Imp is the pick for groups." },
     { buff = { "Demon Skin", "Demon Armor" }, label = "No armor",
       hint = function(s) return "Cast " .. (s:known("Demon Armor") and "Demon Armor" or "Demon Skin") .. ": it lasts 30 minutes." end },
-    { tip = true, item = 6265, needs = "Drain Soul", label = "No Soul Shard",
+    { tip = true, item = 6265, needs = "Drain Soul", label = "No Soul Shard", icon = "Interface\\Icons\\INV_Misc_Gem_Amethyst_02",
       hint = "Channel Drain Soul on a dying enemy to get a shard for summons and Healthstones." },
-    { tip = true, slot = 18, needs = "Shoot", minLevel = 5, label = "No wand",
+    { tip = true, slot = 18, needs = "Shoot", minLevel = 5, label = "No wand", icon = "Interface\\Icons\\INV_Wand_01",
       hint = "Get a wand (Lesser Magic Wand, level 5): your free damage while leveling." },
   },
 
@@ -202,22 +202,23 @@ ns.RegisterProfile({
   -- /coach macros builds these from the spells you know.
   macros = {
     { name = "CC Pull",
-      about = function(s)
-        local count = #names(s, { "Bane of Agony", "Corruption", "Immolate" })
-        local presses = count > 0 and ("Press it %d time%s, one spell each"):format(count, count == 1 and "" or "s")
-          or "One spell per press"
-        return presses .. ", then use CC Wand. With the Voidwalker out, the first press only sends it in."
+      about = function(s, plan)
+        local dots = #ns.Engine.sequence(plan)
+        local said = ("Follows the coach's pull plan, one spell per press (%d press%s)"):format(dots, dots == 1 and "" or "es")
+        if s:known("Shoot") then said = said .. ", then use CC Wand" end
+        if s:known("Summon Voidwalker") then said = said .. ". With the Voidwalker out, the first press only sends it in" end
+        return said .. "."
       end,
-      body = function(s)
-        local order = names(s, { "Bane of Agony", "Corruption", "Immolate" })
-        if #order < 2 then order = names(s, { "Shadow Bolt", "Immolate" }) end
+      body = function(s, plan)
+        -- without a wand the filler spell is added, so this one key carries the whole fight
+        local order = ns.Engine.sequence(plan, nil, 3)
         if #order == 0 then return nil end
         local lines = { "#showtooltip" }
         if s:have(DEMONS) then
           lines[#lines + 1] = "/petattack [harm,nodead]"
           if s:known("Summon Voidwalker") then lines[#lines + 1] = "/stopmacro [pet:Voidwalker,nocombat]" end
         end
-        lines[#lines + 1] = "/castsequence reset=target/combat " .. table.concat(order, ", ")
+        lines[#lines + 1] = (#order == 1 and "/cast " or "/castsequence reset=target/combat ") .. table.concat(order, ", ")
         return table.concat(lines, "\n")
       end },
     { name = "CC Wand", about = "Starts your wand and keeps your demon on the enemy.",

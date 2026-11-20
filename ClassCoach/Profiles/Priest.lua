@@ -92,7 +92,7 @@ ns.RegisterProfile({
   checklist = {
     { buff = "Power Word: Fortitude", label = "No Fortitude", hint = "Cast Power Word: Fortitude on yourself." },
     { buff = "Inner Fire", label = "No Inner Fire", hint = "Cast Inner Fire before the pull." },
-    { tip = true, slot = 18, needs = "Shoot", minLevel = 5, label = "No wand",
+    { tip = true, slot = 18, needs = "Shoot", minLevel = 5, label = "No wand", icon = "Interface\\Icons\\INV_Wand_01",
       hint = "Get a wand (Lesser Magic Wand, level 5): your free damage while leveling." },
   },
 
@@ -124,18 +124,13 @@ ns.RegisterProfile({
 
   -- /coach macros builds these from the spells you know.
   macros = {
-    { name = "CC Pull", about = "Your opening spells in order, one per press. Then use CC Wand.",
-      body = function(s)
-        local order = {}
-        for _, k in ipairs({ "Mind Blast", "Shadow Word: Pain" }) do
-          if s:known(k) then order[#order + 1] = s.spells[k].name end
-        end
-        if #order == 0 then
-          if not s:known("Smite") then return nil end
-          return "#showtooltip\n/cast " .. s.spells["Smite"].name
-        end
-        if #order == 1 then return "#showtooltip\n/cast " .. order[1] end
-        return "#showtooltip\n/castsequence reset=target/combat " .. table.concat(order, ", ")
+    { name = "CC Pull",
+      about = function(s) return "Follows the coach's pull plan, one spell per press." .. (s:known("Shoot") and " Then use CC Wand." or "") end,
+      body = function(s, plan)
+        -- the shield has its own key: it targets you, the rest target the enemy
+        local order = ns.Engine.sequence(plan, { ["Power Word: Shield"] = true }, 3)
+        if #order == 0 then return nil end
+        return "#showtooltip\n" .. (#order == 1 and "/cast " or "/castsequence reset=target/combat ") .. table.concat(order, ", ")
       end },
     { name = "CC Shield", about = "Shields you without dropping your target.",
       body = function(s)

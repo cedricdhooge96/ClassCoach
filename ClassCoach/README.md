@@ -50,15 +50,16 @@ The profile is picked from your talent points (the tree with the most points); b
 ## Two panels
 
 - **Coach** (top): only the fight. The carousel, your timers, mana, and before a pull the few things that matter for that fight (shield, weapon buff, demon, low health or mana).
-- **Journey** (below it, hidden in combat): your XP and rested XP, and a short to-do list from the leveling guides: unspent talent points, spells you can train, a missing food buff (+5% XP from kills), no rested XP, your Cozy Sleeping Bag or Camp Tent if you own one, gear that needs repair, full bags, and the level your trainer next has something new. `!` marks something worth doing now; the grey line under the list explains the first one.
+- **Journey** (its own panel, hidden in combat): your XP and rested XP, and a short to-do list with an icon per item (hover one for the full advice). The list covers from the leveling guides: unspent talent points, spells you can train, a missing food buff (+5% XP from kills), no rested XP, your Cozy Sleeping Bag or Camp Tent if you own one, gear that needs repair, full bags, and the level your trainer next has something new. `!` marks something worth doing now; the grey line under the list explains the first one.
 
-Drag either panel where you like. `/coach journey off` hides the second one; `/coach journey reset` puts it back under the first.
+The two panels move independently: drag each where you like. `/coach journey off` hides the second one; `/coach reset` puts both back.
 
 ## Macros
 
 `/coach macros` (out of combat) creates this class's macros on your character's macro tab, named `CC ...`. Open `/macro` and drag them to your bar. They rewrite themselves when you train new spells, and a macro on your bar lends its key to the spells inside it on the panel.
 
-- One press still casts one spell: the game allows nothing else. `CC Pull` steps through your opening spells in order, one per press.
+- One press still casts one spell: the game allows nothing else, and an addon may not press keys or change a macro during combat. `CC Pull` is written from the coach's own pull plan and steps through it, one spell per press. It rewrites itself between fights when the plan changes (new spells, or kills getting shorter).
+- Without a wand, the filler spell (Shadow Bolt, Smite) is added to the end, so that one key carries the whole fight.
 - Warlock `CC Pull` also sends your demon in. With the Voidwalker out, the first press only sends it; the spells start once it is fighting.
 - Macros cannot think. Keep watching the panel: it knows when a spell is still running, the macro does not.
 
