@@ -1,0 +1,24 @@
+## Interface: 16001
+## Title: ClassCoach
+## Notes: A beginner's coach for any class: mana coach, pre-fight checklist, next-ability hint, fight summary and level-up tips. It never presses anything for you.
+## Author: Cedric
+## Version: 0.2.0
+## Category: Combat
+## SavedVariables: ClassCoachDB
+## SavedVariablesPerCharacter: ClassCoachCharDB
+
+# Engine (no class knowledge in here)
+Core\API.lua
+Core\Mana.lua
+Core\Tracker.lua
+Core\Profiles.lua
+Core\Engine.lua
+
+# One file per class. Add new classes here.
+Profiles\Generic.lua
+Profiles\Shaman.lua
+Profiles\Priest.lua
+Profiles\Warlock.lua
+
+UI\Panel.lua
+ClassCoach.lua
