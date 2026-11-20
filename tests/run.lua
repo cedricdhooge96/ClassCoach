@@ -451,6 +451,19 @@ elseif SCENARIO == "warlock" then
   })
   local ns = load()
   check("warlock profile chosen", ns.C.profile.spec == "Affliction", ns.C.profile.spec)
+  -- Icons: the picture the game shows wins over the spell id's own picture
+  local agony = function() return ns.C.spells["Bane of Agony"].icon end
+  check("icon: the spell id's own when nothing better is known", agony() == "Interface\\Icons\\spell_980", tostring(agony()))
+  M.P.bookIcons = { [980] = 136139 }
+  M.fire("SPELLS_CHANGED"); M.advance(1)
+  check("icon: the spellbook's picture comes before the id's", agony() == 136139, tostring(agony()))
+  M.P.barIcons = { [980] = 237514 }
+  M.P.actions[7] = 980; M.P.bindings.ACTIONBUTTON7 = "7"
+  M.fire("ACTIONBAR_SLOT_CHANGED", 7); M.advance(1)
+  check("icon: the action bar button's picture comes first", agony() == 237514, tostring(agony()))
+  M.P.actions[7] = nil; M.P.bindings.ACTIONBUTTON7 = nil; M.P.barIcons, M.P.bookIcons = nil, nil
+  M.fire("SPELLS_CHANGED"); M.advance(1)
+  check("icon: back to the id's own when both are gone", agony() == "Interface\\Icons\\spell_980", tostring(agony()))
   local f = tick(ns)
   check("checklist: no demon, fixed by the Voidwalker", missing(ns):find("No demon") ~= nil and f.missing[1].spell == "Summon Voidwalker", missing(ns) .. " / " .. tostring(f.missing[1].spell))
   M.P.pet = { family = "Voidwalker" }

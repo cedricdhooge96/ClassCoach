@@ -259,6 +259,18 @@ function API.texture(id)
   return plain(try(C_Spell.GetSpellTexture, id)) or plain(select(3, try(GetSpellInfo, id)))
 end
 
+-- The icon the game itself shows for a spell. Its own id can carry different
+-- art from what you see in game, so the picture on your action bar button comes
+-- first, then the one in your spellbook, and only then the id's own.
+API.barIcons, API.bookIcons = {}, {}
+local function picture(v)
+  v = plain(v)
+  if (type(v) == "number" and v == v and v > 0) or (type(v) == "string" and v ~= "") then return v end
+end
+function API.iconFor(name, id)
+  return (name and (API.barIcons[name] or API.bookIcons[name])) or API.texture(id)
+end
+
 function API.cost(id)
   local costs = try(C_Spell.GetSpellPowerCost, id) or try(GetSpellPowerCost, id)
   if type(costs) ~= "table" then return nil end
@@ -274,10 +286,12 @@ end
 
 -- Every spell in the spellbook by (localized) name: { id, ids = {all ranks} }.
 function API.scanSpellbook()
-  local byName = {}
-  local function add(id, name)
+  local byName, icons = {}, {}
+  API.bookIcons = icons
+  local function add(id, name, icon)
     id, name = plain(id), plain(name)
     if not id or not name then return end
+    icons[name] = picture(icon) or icons[name]
     local entry = byName[name]
     if not entry then entry = { ids = {} }; byName[name] = entry end
     entry.ids[#entry.ids + 1] = id
@@ -293,7 +307,8 @@ function API.scanSpellbook()
         local item = C_SpellBook.GetSpellBookItemInfo(i, bank)
         local id = field(item, "spellID")
         if id and not field(item, "isPassive") and isKnownId(id) then
-          add(id, field(item, "name") or API.spellName(id))
+          add(id, field(item, "name") or API.spellName(id),
+            field(item, "iconID") or try(C_SpellBook.GetSpellBookItemTexture, i, bank))
         end
       end
     end
@@ -669,7 +684,8 @@ end
 
 -- name -> key text, for every spell placed on a bound action button
 function API.scanKeys()
-  local keys = {}
+  local keys, icons = {}, {}
+  API.barIcons = icons
   for slot = 1, 180 do
     local binding = bindingForSlot(slot)
     if binding then
@@ -679,6 +695,7 @@ function API.scanKeys()
         local name = API.spellName(id)
         if name and keys[name] == nil then
           keys[name] = shortKey(plain(try(GetBindingKey, binding))) or false
+          icons[name] = picture(try(GetActionTexture, slot))
         end
       elseif kind == "item" and id then
         if keys["item:" .. id] == nil then keys["item:" .. id] = shortKey(plain(try(GetBindingKey, binding))) or false end

@@ -126,7 +126,7 @@ C_SpellBook = {
   GetSpellBookSkillLineInfo = function() return { itemIndexOffset = 0, numSpellBookItems = #P.book } end,
   GetSpellBookItemInfo = function(i)
     local id = P.book[i]
-    return id and { spellID = id, name = P.spells[id].name, isPassive = false } or nil
+    return id and { spellID = id, name = P.spells[id].name, isPassive = false, iconID = P.bookIcons and P.bookIcons[id] } or nil
   end,
 }
 C_Spell = {
@@ -178,6 +178,10 @@ function GetActionInfo(slot)
   if type(a) == "table" and a.item then return "item", a.item end
   if type(a) == "table" then return "macro", GetMacroIndexByName(a.macro) end
   if a then return "spell", a end
+end
+function GetActionTexture(slot)
+  local a = P.actions[slot]
+  if type(a) == "number" then return P.barIcons and P.barIcons[a] end
 end
 function GetActionText(slot) local a = P.actions[slot]; if type(a) == "table" then return a.macro end end
 function ClearCursor() M.cursor = nil end

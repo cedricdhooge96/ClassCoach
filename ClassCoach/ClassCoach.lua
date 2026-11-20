@@ -60,6 +60,13 @@ local function chooseProfile()
   C.profile, C.profileWhy, C.class = profile, why, class
 end
 
+-- Shows each spell with the picture the game shows for it (see API.iconFor).
+local function refreshIcons()
+  for _, sp in pairs(C.spells or {}) do
+    sp.icon = API.iconFor(sp.name, sp.id) or sp.icon
+  end
+end
+
 local function rescan()
   if API.inCombat() then C.rescanDue = true return end
   C.rescanDue = false
@@ -91,6 +98,7 @@ local function rescan()
   table.sort(probes, function(a, b) return a.cost < b.cost end)
   C.spells, C.idToKey, C.costById, C.probes, C.book = spells, idToKey, costById, probes, book
   C.keys = API.scanKeys()
+  refreshIcons()
   C.hasWand = API.equipped(18)
   C.usesMana = API.usesMana()
   C.syncMacros(true)
@@ -101,6 +109,7 @@ end
 local function rescanKeys()
   if API.inCombat() then C.rescanDue = true return end
   C.keys = API.scanKeys()
+  refreshIcons()
   C.lendMacroKeys()
 end
 
@@ -776,6 +785,10 @@ local function check()
     local usable, short = API.usable(sp.id)
     names[#names + 1] = ("%s id %s cost %s ready %s usable %s short %s key %s"):format(key, tostring(sp.id), tostring(sp.cost),
       tostring(API.ready(sp.id)), tostring(usable), tostring(short), tostring(C.keys[sp.name]))
+    local own, book, bar = API.texture(sp.id), API.bookIcons[sp.name], API.barIcons[sp.name]
+    if (book and book ~= own) or (bar and bar ~= own) then
+      names[#names] = names[#names] .. (" | icon: id %s, spellbook %s, bar %s"):format(tostring(own), tostring(book), tostring(bar))
+    end
   end
   table.sort(names)
   for _, l in ipairs(names) do add("%s", l) end
