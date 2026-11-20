@@ -3,7 +3,8 @@
 A beginner coach addon for **World of Warcraft Forever** (client 1.60.1). One compact panel that shows:
 
 - the next ability to press, with its keybind,
-- an estimate of your mana (Forever hides exact values in combat),
+- the chain of steps that follows it, using only spells you have learned,
+- your real mana (drawn by the game, since Forever hides the number from addons in combat),
 - a pre-fight checklist (buffs, demon/pet, shards, wand, food, drink),
 - a short report after each fight with what to improve,
 - what to train and which talent to take when you level up.

@@ -1,5 +1,6 @@
 -- Shaman profiles. Spell ids are the Classic ranks, lowest first; if Forever
 -- changed an id, the addon falls back to the English spell name.
+-- `learn` = the level the trainer sells it; `cd` = it has a cooldown.
 local _, ns = ...
 
 local function n(summary, key) return summary.castCount[key] or 0 end
@@ -7,10 +8,10 @@ local function n(summary, key) return summary.castCount[key] or 0 end
 -- Spells shared by every Shaman spec ------------------------------------
 local SHAMAN_SPELLS = {
   ["Lightning Bolt"]   = { ids = { 403, 529, 548, 915, 943, 6041, 10391, 10392, 15207, 15208 } },
-  ["Earth Shock"]      = { ids = { 8042, 8044, 8045, 8046, 10412, 10413, 10414 } },
-  ["Flame Shock"]      = { ids = { 8050, 8052, 8053, 10447, 10448, 29228 }, debuff = 12 },
-  ["Frost Shock"]      = { ids = { 8056, 8058, 10472, 10473 } },
-  ["Lightning Shield"] = { ids = { 324, 325, 905, 945, 8134, 10431, 10432 } },
+  ["Earth Shock"]      = { ids = { 8042, 8044, 8045, 8046, 10412, 10413, 10414 }, cd = "shock", learn = 4 },
+  ["Flame Shock"]      = { ids = { 8050, 8052, 8053, 10447, 10448, 29228 }, debuff = 12, cd = "shock", learn = 10 },
+  ["Frost Shock"]      = { ids = { 8056, 8058, 10472, 10473 }, cd = "shock" },
+  ["Lightning Shield"] = { ids = { 324, 325, 905, 945, 8134, 10431, 10432 }, learn = 8 },
   ["Water Shield"]     = {},  -- new in Forever (Restoration talent): looked up by name
   ["Rockbiter Weapon"] = { ids = { 8017, 8018, 8019, 10399, 16314, 16315, 16316 } },
   ["Flametongue Weapon"] = { ids = { 8024, 8027, 8030, 16339, 16341, 16342 } },
@@ -38,31 +39,39 @@ local function spells(extra)
   return t
 end
 
--- What the trainer teaches (from WoW Forever leveling guides).
+-- What the trainer teaches at each level (Forever client data, The Forever Era).
 local TRAINER = {
   [1] = "Lightning Bolt, Rockbiter Weapon, Healing Wave",
-  [4] = "Earth Shock (also do your Earth totem quest)",
+  [4] = "Earth Shock, Stoneskin Totem (and your Earth totem quest)",
   [6] = "Earthbind Totem",
-  [8] = "Stoneclaw Totem, Lightning Shield",
-  [10] = "Flame Shock, Strength of Earth Totem, Flametongue Weapon (and the Fire totem quest)",
+  [8] = "Lightning Shield, Stoneclaw Totem",
+  [10] = "Flame Shock, Searing Totem, Flametongue Weapon, Strength of Earth Totem (and the Fire totem quest)",
   [12] = "Fire Nova, Purge, Ancestral Spirit",
   [16] = "Cure Poison",
   [18] = "Tremor Totem",
-  [20] = "Ghost Wolf, Lesser Healing Wave, Frost Shock, Call of the Elements (and the Water totem quest)",
-  [22] = "Cure Disease, Poison Cleansing Totem, Totemic Call",
-  [26] = "Magma Totem, Mana Spring Totem",
-  [28] = "Flametongue Totem",
-  [30] = "Windfury Weapon, Reincarnation, Astral Recall, Grounding Totem (and the Air totem quest)",
+  [20] = "Ghost Wolf, Lesser Healing Wave, Frost Shock, Frostbrand Weapon, Healing Stream Totem, Call of the Elements (and the Water totem quest)",
+  [22] = "Cure Disease, Poison Cleansing Totem, Totemic Call, Water Breathing",
+  [24] = "Frost Resistance Totem",
+  [26] = "Magma Totem, Mana Spring Totem, Far Sight",
+  [28] = "Flametongue Totem, Fire Resistance Totem, Water Walking",
+  [30] = "Windfury Weapon, Grounding Totem, Astral Recall, Nature Resistance Totem (and the Air totem quest)",
   [32] = "Chain Lightning, Windfury Totem",
+  [34] = "Sentry Totem",
+  [36] = "Windwall Totem",
   [38] = "Disease Cleansing Totem",
   [40] = "Chain Heal, Mail armour, riding and Dual Specialization",
+  [42] = "Grace of Air Totem",
 }
 
 -- Shared checks before a pull.
 local CHECKLIST = {
-  { buff = { "Lightning Shield", "Water Shield" }, label = "No shield", hint = "Cast Lightning Shield (or Water Shield) before the pull." },
+  { buff = { "Lightning Shield", "Water Shield" }, label = "No shield",
+    hint = function(s) return "Cast " .. (s:have({ "Lightning Shield" }) or "Water Shield") .. " before the pull." end },
   { weapon = { "Windfury Weapon", "Flametongue Weapon", "Rockbiter Weapon" }, label = "No weapon buff",
-    hint = "Put your weapon buff on: Rockbiter early, Windfury from level 30." },
+    hint = function(s)
+      local best = s:known("Windfury Weapon") and "Windfury Weapon" or "Rockbiter Weapon"
+      return "Put " .. best .. " on your weapon: it lasts 30 minutes."
+    end },
   { item = 17030, needs = "Reincarnation", label = "No Ankh", hint = "Buy Ankhs at a reagent vendor so Reincarnation works." },
 }
 
@@ -74,14 +83,17 @@ ns.RegisterProfile({
   freeDamage = "your melee swings",
   mana = { low = 25, medium = 55 },
   spells = spells({
-    ["Stormstrike"] = { ids = { 17364 }, core = true },
-    ["Rage of the Farseer"] = {},   -- Forever talent (level 40): by name
+    ["Stormstrike"] = { ids = { 17364 }, core = true, cd = true },
+    ["Rage of the Farseer"] = { cd = true },   -- Forever talent (level 40): by name
   }),
 
   -- In combat: first entry that is known, ready, affordable and allowed wins.
+  --   1-3   Lightning Bolt to pull, then melee
+  --   4-9   the same, plus an Earth Shock while mana is high
+  --   10+   Flame Shock to pull, Searing Totem on longer fights, melee
+  --   25+   Stormstrike every time it is ready
   priority = {
-    { spell = "Rage of the Farseer", when = function(s) return s.target.elite end,
-      why = "Big cooldown: use it on elites and tough fights." },
+    { spell = "Rage of the Farseer", why = "Your big cooldown: press it when it is ready." },
     { spell = "Stormstrike", why = "Your main attack. Press it every time it lights up." },
     { spell = "Flame Shock", mana = "medium", when = function(s) return not s:debuffUp("Flame Shock") end,
       why = "Put Flame Shock on the enemy once." },
@@ -97,15 +109,21 @@ ns.RegisterProfile({
 
   -- Out of combat, enemy targeted: how to pull.
   opener = {
-    { spell = "Lightning Bolt", mana = "medium", when = function(s) return s.level < 20 end,
-      why = "Pull with one Lightning Bolt, then melee." },
+    { spell = "Flame Shock", mana = "medium", why = "Pull with Flame Shock (instant), then melee." },
+    { spell = "Lightning Bolt", mana = "medium", why = "Pull with Lightning Bolt from max range, then melee." },
   },
 
   checklist = CHECKLIST,
 
   advice = {
-    low = "Mana low: melee only. Earth Shock only to interrupt a caster.",
-    medium = "Stormstrike and Flame Shock only. Skip extra shocks.",
+    low = function(s)
+      return "Mana low: melee only." .. (s:known("Earth Shock") and " Earth Shock only to interrupt a caster." or "")
+    end,
+    medium = function(s)
+      local main = s:have({ "Stormstrike", "Flame Shock" })
+      if not main then return "Mana half: melee, and skip the extra spells." end
+      return main .. " only. Skip extra shocks."
+    end,
   },
 
   -- After-fight coaching. Return a sentence or nil.

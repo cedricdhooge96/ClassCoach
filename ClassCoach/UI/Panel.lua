@@ -1,11 +1,12 @@
--- The one compact panel: next ability, mana, what's missing or what to do,
--- and a message area for fight reports and level-up tips.
+-- The one compact panel: next ability, the chain that follows it, mana,
+-- what's missing or what to do, and a message area for reports and tips.
 local _, ns = ...
 
 local Panel = {}
 ns.Panel = Panel
 
 local WIDTH = 320
+local CHAIN_SLOTS, CHAIN_ICON = 4, 24
 local COLORS = {
   high = { 0.32, 0.62, 1.00 }, medium = { 1.00, 0.78, 0.25 }, low = { 1.00, 0.35, 0.30 },
   warn = { 1.00, 0.70, 0.28 }, ok = { 0.55, 0.85, 0.55 }, dim = { 0.62, 0.62, 0.66 }, text = { 0.95, 0.93, 0.88 },
@@ -83,12 +84,41 @@ function Panel.create(charDB, db)
   why:SetWordWrap(true)
   f.why = why
 
+  -- Chain strip: the steps that follow, as small icons with their keys
+  local chainLabel = font(f, "GameFontDisableSmall")
+  chainLabel:SetPoint("TOPLEFT", 10, -72)
+  f.chainLabel = chainLabel
+  f.chain = {}
+  for i = 1, CHAIN_SLOTS do
+    local slot = CreateFrame("Frame", nil, f)
+    slot:SetSize(CHAIN_ICON, CHAIN_ICON)
+    slot:SetPoint("TOPLEFT", 52 + (i - 1) * (CHAIN_ICON + 20), -66)
+    local tex = slot:CreateTexture(nil, "ARTWORK")
+    tex:SetAllPoints()
+    tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    slot.icon = tex
+    local k = font(slot, "NumberFontNormalSmall", 1, 1, 1)
+    k:SetPoint("BOTTOMRIGHT", 1, 0)
+    k:SetJustifyH("RIGHT")
+    slot.key = k
+    local arrow = font(slot, "GameFontDisable")
+    arrow:SetPoint("LEFT", slot, "RIGHT", 6, 0)
+    arrow:SetText(">")
+    slot.arrow = arrow
+    f.chain[i] = slot
+  end
+  local chainText = font(f, "GameFontHighlightSmall", unpack(COLORS.dim))
+  chainText:SetWidth(WIDTH - 20)
+  chainText:SetWordWrap(true)
+  f.chainText = chainText
+
   -- Mana bar
   local bar = CreateFrame("StatusBar", nil, f)
   bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
   bar:SetMinMaxValues(0, 100)
   bar:SetSize(WIDTH - 20, 12)
   bar:SetPoint("TOPLEFT", 10, -60)
+  pcall(bar.SetStatusBarColor, bar, unpack(COLORS.high))
   local barBg = bar:CreateTexture(nil, "BACKGROUND")
   barBg:SetAllPoints()
   barBg:SetColorTexture(0, 0, 0, 0.5)
@@ -138,16 +168,63 @@ function Panel.render(view)
     f.why:SetText(view.idleWhy or "")
   end
 
-  if view.usesMana and view.manaPct then
+  -- Chain: with a step showing above, the steps after it; otherwise the plan for the next pull.
+  local steps, from = view.chain or {}, n and 2 or 1
+  local shown, names = 0, {}
+  for i = 1, CHAIN_SLOTS do
+    local slot, st = f.chain[i], steps[from + i - 1]
+    if st then
+      shown = shown + 1
+      slot.icon:SetTexture(st.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+      slot.key:SetText(st.keybind or "")
+      slot:Show()
+      names[#names + 1] = st.label or "?"
+    else
+      slot:Hide()
+    end
+  end
+  for i = 1, CHAIN_SLOTS do
+    if i < shown then f.chain[i].arrow:Show() else f.chain[i].arrow:Hide() end
+  end
+  local y = -62
+  if shown > 0 then
+    y = -66
+    f.chainLabel:SetText(n and "Then" or "Pull")
+    f.chainLabel:Show()
+    f.chainText:SetText(table.concat(names, " > "))
+    f.chainText:ClearAllPoints()
+    f.chainText:SetPoint("TOPLEFT", 10, y - CHAIN_ICON - 4)
+    f.chainText:Show()
+    y = y - CHAIN_ICON - 8 - (f.chainText:GetStringHeight() or 12)
+  else
+    f.chainLabel:Hide()
+    f.chainText:SetText("")
+    f.chainText:Hide()
+  end
+
+  -- Mana: the game draws the true value. If it ever refuses, show our guess and say so.
+  if view.usesMana then
+    f.bar:ClearAllPoints()
+    f.bar:SetPoint("TOPLEFT", 10, y)
     f.bar:Show()
-    f.bar:SetValue(view.manaPct)
-    local c = COLORS[view.manaLevel or "high"] or COLORS.high
-    f.bar:SetStatusBarColor(c[1], c[2], c[3])
-    f.barText:SetText((view.manaExact and "Mana %d%%" or "Mana ~%d%% (estimate)"):format(math.floor(view.manaPct + 0.5)))
+    local drawn = not Panel.manaRefused and view.drawMana and view.drawMana(f.bar, f.barText)
+    if not drawn then
+      if view.drawMana then Panel.manaRefused = true end
+      if view.manaPct then
+        f.bar:SetMinMaxValues(0, 100)
+        f.bar:SetValue(view.manaPct)
+        f.barText:SetText((view.manaExact and "Mana %d%%" or "Mana about %d%% (a guess)"):format(math.floor(view.manaPct + 0.5)))
+      else
+        f.bar:Hide()
+      end
+    end
+    if f.bar:IsShown() then y = y - 18 end
   else
     f.bar:Hide()
   end
 
+  f.status:ClearAllPoints()
+  f.status:SetPoint("TOPLEFT", 10, y)
   f.status:SetText(view.status or "")
   setColor(f.status, view.statusKind == "warn" and COLORS.warn or view.statusKind == "ok" and COLORS.ok or COLORS.text)
 
@@ -157,7 +234,7 @@ function Panel.render(view)
     f.msg:SetText("")
   end
   -- grow to fit
-  local h = 84 + (f.status:GetStringHeight() or 12)
+  local h = -y + 6 + (f.status:GetStringHeight() or 12)
   if Panel.msgUntil then h = h + 6 + (f.msg:GetStringHeight() or 12) end
   f:SetHeight(h + 8)
 end

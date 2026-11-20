@@ -88,6 +88,8 @@ local function readMana(now, inCombat)
     C.lastMana = cur
     return cur / C.manaMax * 100, true
   end
+  local pct = API.manaPct()
+  if pct then return pct, true end
   if not inCombat then return nil, false end
   if C.manaAt and now - C.manaAt < 0.25 then return C.manaPct, false end
   C.manaAt = now
@@ -97,7 +99,7 @@ local function readMana(now, inCombat)
     if short ~= nil then probes[#probes + 1] = { cost = p.cost, affordable = not short } end
   end
   local fight = C.tracker.fight
-  local _, pct = Mana.estimate(fight and fight.manaStart, C.tracker:spent(), C.manaMax, probes)
+  local _, pct = Mana.estimate(fight and fight.manaStart, C.tracker:spent() - (fight and fight.restored or 0), C.manaMax, probes)
   C.manaPct = pct
   return pct, false
 end
@@ -131,7 +133,7 @@ local function buildState(now)
     usesMana = C.usesMana, manaPct = manaPct, manaExact = exact, manaLevel = C.manaLevel,
     healthPct = (not inCombat) and API.healthPct() or nil, hasPet = petState(inCombat),
     target = API.target(), hasWand = C.hasWand, buffs = buffs, mainHandBuff = mainHand,
-    keys = C.keys, spells = C.spells, tracker = C.tracker, fightTime = C.tracker:fightTime(now),
+    keys = C.keys, spells = C.spells, bookReady = next(C.spells) ~= nil, tracker = C.tracker, fightTime = C.tracker:fightTime(now),
     check = { ready = API.ready, usable = API.usable },
     itemCount = API.itemCount, equipped = API.equipped,
   })
@@ -147,6 +149,8 @@ local function tick()
     usesMana = s.usesMana, manaPct = s.manaPct, manaExact = s.manaExact, manaLevel = s.manaLevel,
   }
   view.next = Engine.next(profile, s)
+  view.chain = Engine.chain(profile, s, 4)
+  view.drawMana = API.drawMana
   if s.inCombat then
     view.status = Engine.advice(profile, s)
     view.statusKind = s.manaLevel == "low" and "warn" or nil
@@ -344,6 +348,8 @@ local function check()
   local costs = {}
   for _, p in ipairs(C.probes) do costs[#costs + 1] = p.cost end
   add("mana probes: %s", table.concat(costs, " "))
+  add("mana bar drawn by the game: %s; percent function %s, readable %s", tostring(not ns.Panel.manaRefused),
+    tostring(UnitPowerPercent ~= nil), tostring(API.manaPct() ~= nil))
   add("buffs readable %s, weapon buff %s, wand %s", tostring(C.buffs ~= nil), tostring(API.mainHandBuff()), tostring(C.hasWand))
   add("events refused: %s", #C.refused > 0 and table.concat(C.refused, " ") or "none")
   add("errors logged: %d (see ClassCoachDB.log after /reload)", ClassCoachDB.log and #ClassCoachDB.log or 0)

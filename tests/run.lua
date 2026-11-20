@@ -77,15 +77,19 @@ if SCENARIO == "shaman" then
 
   M.P.target = { name = "Rockjaw Trogg", level = 11, hostile = true, guid = "Creature-1" }
   f = tick(ns)
-  check("opener is Lightning Bolt", f.name.text == "Lightning Bolt", f.name.text)
-  check("opener keybind", f.key.text == "1", f.key.text)
+  check("opener is Flame Shock", f.name.text == "Flame Shock", f.name.text)
+  check("opener keybind", f.key.text == "S3", f.key.text)
+  check("chain after the opener", f.chainText.text == "Searing Totem > Melee", f.chainText.text)
+  check("chain label", f.chainLabel.text == "Then", f.chainLabel.text)
+  check("mana bar exact out of combat", f.bar.value == 300 and f.barText.text == "Mana 100%", f.barText.text)
 
   -- Fight (the game already hides the enemy's name when combat starts)
   M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED")
   cast(529)
   M.advance(1.5); f = tick(ns)
   check("in combat: Flame Shock next", f.name.text == "Flame Shock", f.name.text)
-  check("mana shown as estimate", f.barText.text:find("estimate") ~= nil, f.barText.text)
+  check("mana bar is handed the real hidden value", f.bar.value == M.SECRET)
+  check("mana text written by the game", f.barText.secretText == true and f.barText.text == "Mana %.0f%%", f.barText.text)
   cast(8050)
   M.advance(1.5); f = tick(ns)
   check("then Searing Totem (mana high)", f.name.text == "Searing Totem", f.name.text .. " / " .. f.barText.text)
@@ -97,11 +101,14 @@ if SCENARIO == "shaman" then
   check("shock on cooldown: melee", f.name.text == "Melee", f.name.text)
   M.advance(6); cast(8044); M.advance(4); cast(8044); M.advance(2)
   f = tick(ns)
-  check("mana now medium or low", f.bar.value and f.bar.value < 55, f.bar.value)
+  check("mana now medium or low", ns.C.lastState.manaPct < 55 and ns.C.lastState.manaLevel ~= "high", ns.C.lastState.manaPct)
   check("advice shown in combat", f.status.text ~= "" , f.status.text)
   M.P.mana = 20
   M.advance(2); f = tick(ns)
-  check("low mana: probes pull the estimate down", f.bar.value and f.bar.value < 25, f.bar.value)
+  check("low mana: probes pull the level down", ns.C.lastState.manaLevel == "low", ns.C.lastState.manaPct)
+  M.percentReadable = true; M.P.mana = 240; M.advance(1); f = tick(ns)
+  check("readable percent wins over the guess", ns.C.lastState.manaExact == true and ns.C.lastState.manaPct == 80, ns.C.lastState.manaPct)
+  M.percentReadable = false; M.P.mana = 20; M.advance(1); f = tick(ns)
   check("low mana advice", f.status.text:find("melee only") ~= nil, f.status.text)
   check("low mana: melee", f.name.text == "Melee", f.name.text)
 
@@ -147,11 +154,12 @@ elseif SCENARIO == "priest" then
   M.fire("UNIT_AURA", "player")
   M.P.target = { name = "Kobold", level = 13, hostile = true, guid = "Creature-2" }
   f = tick(ns)
+  check("shield before the pull", f.name.text == "Power Word: Shield", f.name.text)
+  check("priest chain", f.chainText.text == "Shadow Word: Pain > Mind Blast > Smite", f.chainText.text)
+  cast(17); M.advance(1.5); f = tick(ns)
   check("opener Mind Blast", f.name.text == "Mind Blast", f.name.text)
   M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
   f = tick(ns)
-  check("shield first", f.name.text == "Power Word: Shield", f.name.text)
-  cast(17); M.advance(1.5); f = tick(ns)
   check("then Shadow Word: Pain", f.name.text == "Shadow Word: Pain", f.name.text)
   cast(589); M.advance(1.5); f = tick(ns)
   check("then Mind Blast", f.name.text == "Mind Blast", f.name.text)
@@ -200,6 +208,8 @@ elseif SCENARIO == "warlock" then
   M.P.target = { name = "Gnoll", level = 11, hostile = true, guid = "Creature-5" }
   f = tick(ns)
   check("opener Bane of Agony", f.name.text == "Bane of Agony", f.name.text)
+  check("opener mentions the demon when it is out", f.why.text:find("demon") ~= nil, f.why.text)
+  check("warlock chain", f.chainText.text == "Corruption > Immolate > Shoot", f.chainText.text)
   M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
   f = tick(ns)
   check("bane first", f.name.text == "Bane of Agony", f.name.text)
@@ -225,6 +235,135 @@ elseif SCENARIO == "warlock" then
   check("no-demon tip", tips:find("demon") ~= nil, tips)
   check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
   check("no tick error", ns.C.lastError == nil, ns.C.lastError)
+
+---------------------------------------------------------------------------
+-- Every level 1-60: only suggest what the character has at that level.
+elseif SCENARIO == "sweep" then
+  local CLASSES = {
+    WARLOCK = { name = "Warlock", wand = true, pet = true, learn = {
+      ["Shadow Bolt"] = 1, ["Demon Skin"] = 1, ["Immolate"] = 1, ["Summon Imp"] = 1, ["Shoot"] = 1, ["Corruption"] = 4,
+      ["Life Tap"] = 6, ["Bane of Agony"] = 8, ["Fear"] = 8, ["Drain Soul"] = 10, ["Summon Voidwalker"] = 10,
+      ["Drain Life"] = 14, ["Demon Armor"] = 20, ["Curse of the Elements"] = 20, ["Summon Succubus"] = 20,
+      ["Summon Felhunter"] = 30, ["Siphon Life"] = 37, ["Wrack"] = 47 } },
+    SHAMAN = { name = "Shaman", learn = {
+      ["Lightning Bolt"] = 1, ["Rockbiter Weapon"] = 1, ["Healing Wave"] = 1, ["Earth Shock"] = 4, ["Stoneskin Totem"] = 4,
+      ["Lightning Shield"] = 8, ["Flame Shock"] = 10, ["Searing Totem"] = 10, ["Flametongue Weapon"] = 10,
+      ["Strength of Earth Totem"] = 10, ["Frost Shock"] = 20, ["Lesser Healing Wave"] = 20, ["Healing Stream Totem"] = 20,
+      ["Stormstrike"] = 25, ["Mana Spring Totem"] = 26, ["Windfury Weapon"] = 30, ["Reincarnation"] = 30,
+      ["Windfury Totem"] = 32, ["Chain Heal"] = 40, ["Rage of the Farseer"] = 40 } },
+    PRIEST = { name = "Priest", wand = true, learn = {
+      ["Smite"] = 1, ["Lesser Heal"] = 1, ["Power Word: Fortitude"] = 1, ["Shoot"] = 1, ["Shadow Word: Pain"] = 4,
+      ["Power Word: Shield"] = 6, ["Renew"] = 8, ["Mind Blast"] = 10, ["Inner Fire"] = 12, ["Flash Heal"] = 20,
+      ["Holy Fire"] = 20, ["Penance"] = 30 } },
+  }
+  local WANT = SWEEP_CLASS
+  local def = CLASSES[WANT]
+  M.player({ class = WANT, className = def.name, level = 1, spells = {}, book = {} })
+  local ns = load()
+  local profile = ns.C.profile
+  check(WANT .. " has a profile", profile.class == WANT, profile.class)
+  for key in pairs(def.learn) do check(WANT .. " test knows " .. key, profile.spells[key] ~= nil) end
+  for key in pairs(profile.spells) do
+    if key ~= "Water Shield" and key ~= "Summon Incubus" then check(WANT .. " learn level for " .. key, def.learn[key] ~= nil) end
+  end
+  local idOf, fake = {}, 90000
+  for key, meta in pairs(profile.spells) do
+    fake = fake + 1
+    idOf[key] = meta.ids and meta.ids[1] or fake
+  end
+
+  local samples = {}
+  local function setup(level, opts)
+    local spells, book = {}, {}
+    for key, at in pairs(def.learn) do
+      if level >= at and not (opts.noImp and key == "Summon Imp") and key ~= opts.skip then
+        spells[idOf[key]] = { name = key, cost = (key == "Shoot" or key == "Life Tap") and 0 or 20 }
+        book[#book + 1] = idOf[key]
+      end
+    end
+    M.player({ class = WANT, className = def.name, level = level, mana = opts.mana, maxMana = 300, spells = spells, book = book,
+      equipped = opts.wand and { [18] = 5240 } or {}, pet = opts.pet and {} or nil })
+    M.P.buffs = { ["Well Fed"] = true }
+    M.fire("PLAYER_LEVEL_UP", level); M.fire("SPELLS_CHANGED"); M.fire("PLAYER_EQUIPMENT_CHANGED"); M.advance(1)
+    ns.Panel.msgUntil = nil
+    return spells
+  end
+  local function look(level, opts, spells, where)
+    local f = tick(ns)
+    local tag = ("%s L%d %s wand=%s pet=%s mana=%d"):format(WANT, level, where, tostring(opts.wand), tostring(opts.pet), opts.mana)
+    local shown = { f.name.text, f.why.text, f.status.text, f.chainText.text }
+    for key in pairs(profile.spells) do
+      if not spells[idOf[key]] then
+        for _, t in ipairs(shown) do
+          if t:find(key, 1, true) then check(tag .. ": mentions " .. key .. " before it is learned", false, t) end
+        end
+      end
+    end
+    if not opts.pet and def.pet then
+      check(tag .. ": no demon talk without one", not (f.why.text:find("demon") or f.chainText.text:find("demon")), f.why.text)
+    end
+    if not opts.wand then
+      check(tag .. ": no Shoot without a wand", f.name.text ~= "Shoot" and not f.chainText.text:find("Shoot"), f.name.text)
+    end
+    check(tag .. ": no error", ns.C.lastError == nil, ns.C.lastError)
+    return f
+  end
+
+  for level = 1, 60 do
+    for _, wand in ipairs(def.wand and { false, true } or { false }) do
+      for _, pet in ipairs(def.pet and { false, true } or { false }) do
+        for _, mana in ipairs({ 300, 120, 30 }) do
+          local opts = { wand = wand and level >= 5, pet = pet, mana = mana, noImp = def.pet and not pet and level < 10 }
+          local spells = setup(level, opts)
+          local f = look(level, opts, spells, "idle")
+          check(("%s L%d: a pull plan is shown"):format(WANT, level), f.chainLabel.text == "Pull" and f.chainText.text ~= "", f.chainText.text)
+          if opts.noImp then
+            check(("%s L%d: points at the Imp quest, not at a missing demon"):format(WANT, level),
+              f.status.text:find("No Imp yet") ~= nil and not f.status.text:find("No demon"), f.status.text)
+          end
+          M.P.target = { name = "Boar", level = level, hostile = true, guid = ("Creature-%d-%s-%s-%d"):format(level, tostring(wand), tostring(pet), mana) }
+          f = look(level, opts, spells, "pull")
+          if mana == 300 then
+            check(("%s L%d: pulls with a spell, not melee"):format(WANT, level), f.name.text ~= "Melee", f.name.text)
+          end
+          local line = { f.name.text }
+          M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
+          local reachedFiller = false
+          for _ = 1, 5 do
+            local id
+            for key in pairs(profile.spells) do if key == f.name.text then id = idOf[key] end end
+            if id then cast(id) end
+            M.advance(1.5)
+            f = look(level, opts, spells, "fight")
+            line[#line + 1] = f.name.text
+            if f.name.text == "Melee" or f.name.text == "Shoot" then reachedFiller = true break end
+            if not id then break end
+          end
+          M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
+          M.P.target = nil
+          if mana == 300 then samples[#samples + 1] = ("L%-2d wand=%-5s pet=%-5s  %s"):format(level, tostring(opts.wand), tostring(pet), table.concat(line, " > ")) end
+        end
+      end
+    end
+  end
+  if WANT == "WARLOCK" then
+    setup(4, { mana = 300, pet = true, skip = "Corruption" })
+    local f = tick(ns)
+    check("trainer reminder for an unlearned spell", f.status.text:find("Not trained: Corruption") ~= nil, f.status.text)
+    check("and it is not suggested", not f.chainText.text:find("Corruption"), f.chainText.text)
+    setup(12, { mana = 60, pet = true })
+    f = tick(ns)
+    check("low mana out of combat: Life Tap hint", f.status.text:find("Mana 20%%") ~= nil, f.status.text)
+  end
+  check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
+  if SWEEP_PRINT then
+    local last = {}
+    for _, l in ipairs(samples) do
+      local variant, body = l:sub(5, 26), l:sub(27)
+      if last[variant] ~= body then print_real(WANT .. " " .. l) end
+      last[variant] = body
+    end
+  end
 
 ---------------------------------------------------------------------------
 elseif SCENARIO == "template" then

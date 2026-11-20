@@ -74,6 +74,38 @@ function API.mana()
   return cur, max
 end
 
+-- Exact mana percent, when this client lets addons read it. In combat the
+-- game usually hides it; then this returns nil.
+function API.manaPct()
+  local curve = CurveConstants and CurveConstants.ScaleTo100
+  if not UnitPowerPercent or not curve then return nil end
+  local v = plain(try(UnitPowerPercent, "player", 0, false, curve))
+  if type(v) ~= "number" then return nil end
+  return v
+end
+
+-- Draws your real mana on a status bar. The addon may not read the hidden
+-- number in combat, but the game accepts it for drawing: the bar is always
+-- true. Returns false if the game refuses.
+function API.drawMana(bar, label)
+  local drawn = pcall(function()
+    bar:SetMinMaxValues(0, UnitPowerMax("player", 0))
+    bar:SetValue(UnitPower("player", 0))
+  end)
+  if not drawn then return false end
+  if label then
+    local curve = CurveConstants and CurveConstants.ScaleTo100
+    local written = false
+    if UnitPowerPercent and curve then
+      written = pcall(function()
+        label:SetFormattedText("Mana %.0f%%", UnitPowerPercent("player", 0, false, curve))
+      end)
+    end
+    if not written then label:SetText("Mana") end
+  end
+  return true
+end
+
 function API.inCombat()
   local c = plain(try(UnitAffectingCombat, "player"))
   if c == nil then c = plain(try(InCombatLockdown)) end

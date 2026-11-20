@@ -64,6 +64,18 @@ function State:buff(keyOrName)
   return self.buffs[name] == true or self.buffs[keyOrName] == true
 end
 
+-- The names of the spells in `keys` you know, e.g. "Corruption and Immolate".
+function State:have(keys)
+  local names = {}
+  for _, k in ipairs(keys) do
+    local sp = self.spells[k]
+    if sp then names[#names + 1] = sp.name end
+  end
+  if #names == 0 then return nil end
+  if #names == 1 then return names[1] end
+  return table.concat(names, ", ", 1, #names - 1) .. " and " .. names[#names]
+end
+
 function State:manaAtLeast(level)
   if level == nil or level == "any" then return true end
   if not self.usesMana then return true end
@@ -77,54 +89,147 @@ end
 
 local ATTACK_ICON = "Interface\\Icons\\INV_Sword_04"
 
-local function pick(list, profile, s)
+-- Profile texts may be a string or a function(s) returning one.
+local function text(v, s)
+  if type(v) == "function" then
+    local fine, result = pcall(v, s)
+    return fine and result or nil
+  end
+  return v
+end
+Engine.text = text
+
+-- The spell behind an entry when it is known, ready, affordable and allowed.
+local function allowed(entry, s)
+  local sp = s.spells[entry.spell]
+  if not sp then return nil end
+  if entry.minLevel and s.level < entry.minLevel then return nil end
+  if entry.maxLevel and s.level > entry.maxLevel then return nil end
+  if not s:manaAtLeast(entry.mana) then return nil end
+  if s:ready(entry.spell) == false or s:usable(entry.spell) == false then return nil end
+  if entry.when then
+    local fine, result = pcall(entry.when, s)
+    if not (fine and result) then return nil end
+  end
+  return sp
+end
+
+local function step(entry, sp, s)
+  return { key = entry.spell, label = sp.name, icon = sp.icon, keybind = s.keys and s.keys[sp.name],
+    why = text(entry.why, s) }
+end
+
+local function pick(list, s)
   for _, entry in ipairs(list) do
-    local sp = s.spells[entry.spell]
-    local ok = sp ~= nil
-      and (not entry.minLevel or s.level >= entry.minLevel)
-      and s:manaAtLeast(entry.mana)
-      and s:ready(entry.spell) ~= false
-      and s:usable(entry.spell) ~= false
-    if ok and entry.when then
-      local fine, result = pcall(entry.when, s)
-      ok = fine and result and true or false
-    end
-    if ok then
-      return { key = entry.spell, label = sp.name, icon = sp.icon, keybind = s.keys and s.keys[sp.name],
-        why = entry.why }
-    end
+    local sp = allowed(entry, s)
+    if sp then return step(entry, sp, s) end
   end
 end
 
 local function filler(profile, s)
   for _, f in ipairs(profile.filler or {}) do
-    local sp = f.spell and s.spells[f.spell]
-    local fine, ok = true, true
-    if f.when then fine, ok = pcall(f.when, s) end
-    if (not f.spell or sp) and fine and ok then
-      return { key = f.spell or "attack", label = f.label or (sp and sp.name), icon = (sp and sp.icon) or f.icon or ATTACK_ICON,
-        keybind = sp and s.keys and s.keys[sp.name], why = f.why, filler = true }
+    if f.spell then
+      local sp = allowed(f, s)
+      if sp then
+        local out = step(f, sp, s)
+        out.filler = true
+        return out
+      end
+    else
+      local fine, ok = true, true
+      if f.when then fine, ok = pcall(f.when, s) end
+      if fine and ok then
+        return { key = "attack", label = f.label or "Melee", icon = f.icon or ATTACK_ICON, why = text(f.why, s),
+          filler = true, melee = true }
+      end
     end
   end
-  return { key = "attack", label = "Melee", icon = ATTACK_ICON, why = "Auto attack costs no mana.", filler = true }
+  return { key = "attack", label = "Melee", icon = ATTACK_ICON, why = "Auto attack costs no mana.", filler = true, melee = true }
+end
+
+local function opening(profile, s)
+  local open = pick(profile.opener, s)
+  if open then
+    open.why = open.why or "Pull with this."
+    return open
+  end
+  local f = filler(profile, s)
+  if f.melee then f.why = "Walk in and attack." end
+  return f
 end
 
 -- In combat: the priority list. Out of combat with an enemy targeted: the opener.
 function Engine.next(profile, s)
   if s.inCombat then
-    return pick(profile.priority, profile, s) or filler(profile, s)
+    return pick(profile.priority, s) or filler(profile, s)
   end
   if s.target and s.target.exists and s.target.hostile and not s.target.dead then
-    local open = pick(profile.opener, profile, s)
-    if open then
-      open.why = open.why or "Pull with this."
-      return open
-    end
-    local f = filler(profile, s)
-    f.why = "Walk in and attack."
-    return f
+    return opening(profile, s)
   end
   return nil
+end
+
+---------------------------------------------------------------------------
+-- The chain: what follows, assuming you press each step
+---------------------------------------------------------------------------
+
+local Sim = {}
+function Sim:pressed(key)
+  local meta = self.profile.spells[key]
+  self.virtual[key] = (self.virtual[key] or 0) + 1
+  if meta and meta.totem then self.virtualTotems[meta.totem] = true end
+  if meta and meta.cd then self.virtualCd[meta.cd == true and key or meta.cd] = true end
+  self.fightTime = self.fightTime + 1.5
+end
+function Sim:debuffUp(key)
+  local meta = self.profile.spells[key]
+  if self.virtual[key] and meta and meta.debuff then return true end
+  return self.base:debuffUp(key)
+end
+function Sim:totemUp(element)
+  if self.virtualTotems[element] then return true end
+  return self.base:totemUp(element)
+end
+function Sim:sinceCast(key)
+  if self.virtual[key] then return 0 end
+  return self.base:sinceCast(key)
+end
+function Sim:castsOnTarget(key)
+  return self.base:castsOnTarget(key) + (self.virtual[key] or 0)
+end
+function Sim:ready(key)
+  local meta = self.profile.spells[key]
+  if meta and meta.cd and self.virtualCd[meta.cd == true and key or meta.cd] then return false end
+  return self.base:ready(key)
+end
+
+local function simulate(profile, s)
+  local sim = { base = s, profile = profile, virtual = {}, virtualTotems = {}, virtualCd = {},
+    inCombat = true, fightTime = s.inCombat and (s.fightTime or 0) or 0 }
+  return setmetatable(sim, { __index = function(_, k)
+    local own = Sim[k]
+    if own ~= nil then return own end
+    return s[k]
+  end })
+end
+
+-- Up to `max` steps. Step 1 is what Engine.next shows; with nothing targeted
+-- out of combat it is the plan for your next pull.
+function Engine.chain(profile, s, max)
+  max = max or 4
+  local steps = {}
+  local first = Engine.next(profile, s) or opening(profile, s)
+  local sim = simulate(profile, s)
+  local current = first
+  while current and #steps < max do
+    steps[#steps + 1] = current
+    if current.filler then break end
+    sim:pressed(current.key)
+    local nextStep = pick(profile.priority, sim) or filler(profile, sim)
+    if nextStep.key == current.key then break end   -- would repeat: nothing new to show
+    current = nextStep
+  end
+  return steps
 end
 
 ---------------------------------------------------------------------------
@@ -185,7 +290,19 @@ function Engine.checklist(profile, s, options)
         local fine, result = pcall(entry.check, s)
         isMissing = fine and result == true
       end
-      if isMissing then missing[#missing + 1] = { text = entry.label, hint = entry.hint } end
+      if isMissing then missing[#missing + 1] = { text = text(entry.label, s), hint = text(entry.hint, s) } end
+    end
+  end
+  -- Spells the trainer already sells at this level.
+  if s.bookReady then
+    local untrained = {}
+    for key, meta in pairs(profile.spells) do
+      if meta.learn and s.level >= meta.learn and not s:known(key) then untrained[#untrained + 1] = key end
+    end
+    if #untrained > 0 then
+      table.sort(untrained)
+      missing[#missing + 1] = { text = "Not trained: " .. table.concat(untrained, ", "),
+        hint = "Visit your class trainer: you can learn " .. table.concat(untrained, ", ") .. " now." }
     end
   end
   -- Generic checks every class gets.
@@ -193,7 +310,7 @@ function Engine.checklist(profile, s, options)
     missing[#missing + 1] = { text = ("Health %d%%"):format(math.floor(s.healthPct)), hint = "Eat or bandage before the next pull." }
   end
   if s.usesMana and s.manaPct and s.manaPct < (options.drinkAt or 60) then
-    missing[#missing + 1] = { text = ("Mana %d%%"):format(math.floor(s.manaPct)), hint = profile.restHint or "Drink before the next pull." }
+    missing[#missing + 1] = { text = ("Mana %d%%"):format(math.floor(s.manaPct)), hint = text(profile.restHint, s) or "Drink before the next pull." }
   end
   if options.food and s.level >= 5 and s.buffs and not s.buffs["Well Fed"] then
     missing[#missing + 1] = { text = "No food buff", hint = "Eat buff food: +5% XP from kills." }

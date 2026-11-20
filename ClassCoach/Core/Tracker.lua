@@ -31,6 +31,8 @@ function Tracker:cast(now, name, cost, meta, targetKey)
   local f = self.fight
   if not f then return end
   f.casts[name] = (f.casts[name] or 0) + 1
+  -- Spells that give mana back (Life Tap): a rough share of your maximum.
+  if meta.restores and f.manaMax then f.restored = (f.restored or 0) + meta.restores * f.manaMax end
   if cost and cost > 0 then
     f.spent = f.spent + cost
     f.spentBy[name] = (f.spentBy[name] or 0) + cost

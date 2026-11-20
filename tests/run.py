@@ -5,11 +5,15 @@ from lupa import luajit21
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 failed = 0
-for scenario in ("shaman", "priest", "warlock", "template", "warrior"):
+SCENARIOS = [("shaman", None), ("priest", None), ("warlock", None), ("template", None), ("warrior", None),
+             ("sweep", "WARLOCK"), ("sweep", "SHAMAN"), ("sweep", "PRIEST")]
+for scenario, sweep_class in SCENARIOS:
     lua = luajit21.LuaRuntime(unpack_returned_tuples=True)
     g = lua.globals()
     g.ROOT = ROOT
     g.SCENARIO = scenario
+    g.SWEEP_CLASS = sweep_class
+    g.SWEEP_PRINT = "--print" in sys.argv
     g.print_real = lambda *a: print(*a)
     with open(os.path.join(ROOT, "tests", "run.lua"), encoding="utf-8") as fh:
         code = fh.read()

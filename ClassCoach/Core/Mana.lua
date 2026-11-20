@@ -1,7 +1,8 @@
 -- Works out roughly how much mana you have during combat.
 --
--- Out of combat the game tells us the exact number. In combat it hides it,
--- so we combine two clues:
+-- The mana BAR on the panel is always true: the game draws it for us. But the
+-- addon may not read the number in combat, so to decide what to suggest
+-- (high / medium / low) we combine two clues:
 --   1. mana at the start of the fight minus the cost of every spell you cast;
 --   2. which of your spells the game says you can still afford, which brackets
 --      the real value between the dearest affordable and cheapest unaffordable spell.
@@ -39,6 +40,7 @@ function Mana.estimate(start, spent, max, probes)
   else
     est = max
   end
+  if est and max and est > max then est = max end
   if est and ceiling and est >= ceiling then est = ceiling - 1 end
   if est and est < floor then est = floor end
   if est and est < 0 then est = 0 end

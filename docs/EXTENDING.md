@@ -51,6 +51,9 @@ spells = {
   so `s:debuffUp("Flame Shock")` works in combat.
 - `totem = "fire" | "earth" | "water" | "air"`, `lasts = seconds`: for `s:totemUp("fire")`.
 - `core = true`: a main spell. The generic "most of your mana went on X" tip skips it.
+- `learn = 8`: the level the trainer sells it. From that level the checklist says "Not trained: X" until it is learned.
+- `cd = true`: it has a cooldown, so the chain preview won't show it twice in a row. Spells sharing one cooldown use the same name: `cd = "shock"`.
+- `restores = 0.15`: it gives mana back (Life Tap): a rough share of maximum mana, for the mana level.
 
 ### priority, opener, filler
 
@@ -89,6 +92,19 @@ Unknown values (the game hiding something) count as "fine", so advice never free
 
 Never read game functions inside a profile: use `s`. That keeps profiles safe
 from Forever's hidden values and lets the tests run them.
+
+`why`, `label` and `hint` may be a string or a `function(s)` returning one. Use a
+function whenever the text names a spell, a pet or a wand the character may not
+have yet: `s:have({ "A", "B" })` returns the names of the ones that are known
+("A and B", or `nil`). The level sweep in `tests/run.lua` fails if any text
+names a spell before it is learned.
+
+Entries also take `minLevel` / `maxLevel`. A `filler` entry with a `spell` follows
+the same rules as a priority entry (known, ready, affordable, `mana`, `when`).
+
+The panel's chain strip is built from `priority`, `opener` and `filler`
+automatically (`Engine.chain`): it presses each step in a simulation and asks
+what comes next.
 
 ### checklist
 

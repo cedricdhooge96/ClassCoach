@@ -3,7 +3,8 @@
 A beginner's coach for WoW Forever that works for any class. One small panel shows:
 
 - **What to press next**: the spell, its key, and why. Out of combat with an enemy targeted, it shows how to pull.
-- **Mana**: exact out of combat, a careful estimate in combat (the game hides the real number from addons during fights). When mana gets low the advice changes, e.g. "melee only" or "wand until it dies".
+- **The chain**: small icons for the steps that follow ("Then: Corruption > Immolate > Shoot"), or your pull plan when nothing is targeted. Only spells your character has learned are shown.
+- **Mana**: the bar is your real mana, drawn by the game itself. When mana gets low the advice changes, e.g. "melee only" or "wand until it dies".
 - **Before you pull**: missing buffs, weapon buff, wand, reagents, food, and "drink first" when mana is low.
 - **After each fight**: time, casts, mana spent, and up to two tips on what to do better.
 - **Level-ups**: which new spells to train and which talent to take.
@@ -42,9 +43,14 @@ ClassCoach only shows advice. It never presses buttons for you, which keeps it w
 
 The profile is picked from your talent points (the tree with the most points); before level 10 the class's default spec is used. Adding a class or spec is one file: see `docs/EXTENDING.md` in the project.
 
-## How the mana estimate works
+## How mana works
 
-Out of combat the addon reads your exact mana. In combat Forever hides it, so ClassCoach takes your mana at the start of the fight, subtracts the cost of every spell you cast, and then checks which of your spells the game still lets you afford. That bracket keeps the estimate honest. It shows "~45% (estimate)" while it's guessing.
+Forever hides your mana number from addons during combat, but lets them hand it to the game to draw. So:
+
+- **The bar and its percentage are real.** The game draws them; ClassCoach never sees the number in a fight.
+- **The advice level (high / medium / low) is worked out**, because the addon has to decide something without the number. It uses your mana when the fight started, minus what your casts cost, corrected by which spells the game says you can still afford. It can be off by a little in long fights; the bar is the truth.
+
+`/coach check` reports whether the game accepted the bar on your client.
 
 ## Known limits
 

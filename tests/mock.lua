@@ -54,6 +54,13 @@ function UnitClass(u) if u == "player" then return P.className, P.class end end
 function UnitLevel(u) if u == "player" then return P.level end return P.target and P.target.level end
 function UnitPowerType() return P.powerType end
 function UnitPower(_, kind) if kind == 0 or kind == nil then return hidden(P.powerType == 0 and P.mana or 0) end end
+-- The percent is hidden in combat too, unless a test says this client shows it.
+CurveConstants = { ScaleTo100 = "ScaleTo100" }
+function UnitPowerPercent()
+  local pct = P.maxMana > 0 and P.mana / P.maxMana * 100 or 0
+  if M.percentReadable then return pct end
+  return hidden(pct)
+end
 function UnitPowerMax(_, kind) if kind == 0 or kind == nil then return hidden(P.powerType == 0 and P.maxMana or 0) end end
 function UnitAffectingCombat(u) if u == "player" then return P.combat end end
 function InCombatLockdown() return P.combat end
@@ -132,6 +139,10 @@ local function widget()
     CreateTexture = function() return widget() end,
     CreateFontString = function() return widget() end,
     SetText = function(self, t) self.text = t end,
+    SetFormattedText = function(self, fmt, v)
+      if v == SECRET then self.text, self.secretText = fmt, true else self.text, self.secretText = fmt:format(v), false end
+    end,
+    SetMinMaxValues = function(self, lo, hi) self.min, self.max = lo, hi end,
     GetText = function(self) return self.text end,
     GetStringHeight = function() return 12 end,
     IsShown = function(self) return self.shown end,
