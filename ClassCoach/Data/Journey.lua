@@ -36,6 +36,17 @@ ns.JourneyData = {
     },
   },
 
+  -- What innkeepers and food vendors sell, by the level you can use it: { level, name }.
+  -- Names from Classic; Forever keeps the old world's vendors.
+  drinks = {
+    { 1, "Refreshing Spring Water" }, { 5, "Ice Cold Milk" }, { 15, "Melon Juice" }, { 25, "Sweet Nectar" },
+    { 35, "Moonberry Juice" }, { 45, "Morning Glory Dew" },
+  },
+  foods = {
+    { 1, "Tough Hunk of Bread" }, { 5, "Freshly Baked Bread" }, { 15, "Moist Cornbread" }, { 25, "Mulgore Spice Bread" },
+    { 35, "Soft Banana Bread" }, { 45, "Homemade Cherry Pie" },
+  },
+
   -- Dungeons by level range: { from, to, name }.
   dungeons = {
     Alliance = {

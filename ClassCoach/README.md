@@ -26,7 +26,8 @@ ClassCoach only shows advice. It never presses buttons for you, which keeps it w
 
 | Command | What it does |
 |---|---|
-| `/coach` | Opens the settings screen |
+| `/coach set compact on` | Changes one setting from chat; `/coach set` lists them |
+| `/coach pages` | Stops Shift+number from switching your main bar to an empty page |
 | `/coach macros` | Creates or refreshes this class's helper macros (out of combat) |
 | `/coach smart` | Shows the smart key's steps and keys; `/coach smart next 1` binds a key |
 | `/coach bar` | Lays out the fight, react and prepare bars on empty buttons; `preview` only lists, `replace` overwrites |
@@ -51,7 +52,7 @@ The profile is picked from your talent points (the tree with the most points); b
 
 ## Settings
 
-Type `/coach`, or go to Esc > Options > AddOns > ClassCoach, or click ClassCoach in the minimap's addon menu. Everything is on one page and applies at once:
+Press Esc, then Options > AddOns > ClassCoach. Everything is on one page and applies at once. (`/coach set` changes a single setting from chat, for example `/coach set compact on`. The addon never opens the game's settings panel itself: an addon doing that is a known way to upset action bars in combat.)
 
 - **Coach panel**: show or hide, size, compact (icons only), the left "already cast" icons, the timers line, the mana bar.
 - **Journey panel**: show or hide, size, and which reminders you want (food, rested XP, trainer and talents, repairs and bags).
@@ -89,6 +90,13 @@ The two panels move independently: drag each where you like. `/coach reset` puts
 - `/coach bar preview` only lists the plan. `/coach bar replace` puts everything on its own button, overwriting what is there.
 - A bar that is switched off is skipped, and the addon tells you to turn it on (Esc > Options > Action Bars).
 - Optional setting: put newly learned spells on their button automatically. It never overwrites.
+- The prepare bar also gets **CC Rest** (one press drinks and eats the best you carry; it rewrites itself when your bags change), your best **bandage** and your **Hearthstone**. Warlocks get their **Healthstone** on the react bar. A used-up or weaker item on one of these buttons is swapped for the better one.
+
+### If your bars seem to vanish
+
+- The panels are drawn below the action bars and grow away from the nearest screen edge, so they cannot cover your buttons.
+- Shift+number switches the main bar to another, usually empty, page. The coach flags it ("Main bar is on page 2") and `/coach pages` stops Shift+number from doing that.
+- If the game blocks an action and blames this addon, it is recorded: `/coach check` lists it.
 
 ## Macros
 

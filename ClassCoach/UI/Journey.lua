@@ -55,7 +55,7 @@ function Journey.create(charDB, db)
   local f = CreateFrame("Frame", "ClassCoachJourney", UIParent)
   Journey.frame, Journey.charDB, Journey.db = f, charDB, db
   f:SetSize(WIDTH, 60)
-  f:SetFrameStrata("MEDIUM")
+  f:SetFrameStrata("LOW")   -- below the action bars, like the coach panel
   f:SetClampedToScreen(true)
   ns.Style.skin(f)
   ns.Style.apply(f, db, db.journeyScale)
@@ -66,8 +66,13 @@ function Journey.create(charDB, db)
   f:SetScript("OnDragStart", function(self) if not db.locked then self:StartMoving() end end)
   f:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
-    local point, _, relPoint, x, y = self:GetPoint()
-    charDB.journeyPos = { point, relPoint, x, y }
+    local pinned = ns.Style.pin(self)
+    if pinned then
+      charDB.journeyPos = pinned
+    else
+      local point, _, relPoint, x, y = self:GetPoint()
+      charDB.journeyPos = { point, relPoint, x, y }
+    end
   end)
 
   local title = font(f, "GameFontDisableSmall")
@@ -108,6 +113,7 @@ function Journey.place()
   if not f then return end
   f:ClearAllPoints()
   local pos = Journey.charDB.journeyPos
+  Journey.repin = ns.Style.unpinned(pos)
   if pos then
     f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4])
   else
@@ -126,6 +132,10 @@ function Journey.render(view)
   end
   if Journey.visible ~= true then f:Show(); Journey.visible = true end
   ns.Style.apply(f, Journey.db, Journey.db.journeyScale)
+  if Journey.repin then
+    local pinned = ns.Style.pin(f)
+    if pinned then Journey.charDB.journeyPos = pinned; Journey.repin = false end
+  end
 
   f.title:SetText(view.title or "Journey")
   local y = -22

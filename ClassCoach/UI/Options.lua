@@ -146,9 +146,16 @@ function Options.build(db, charDB, actions)
   return true
 end
 
-function Options.open()
-  if not Options.category then return false end
-  if InCombatLockdown and InCombatLockdown() then return false, "combat" end
-  local id = Options.category.GetID and Options.category:GetID() or Options.category.ID
-  return pcall(Settings.OpenToCategory, id) and true or false
+-- For /coach set: look an option up by its key (case-insensitive).
+function Options.find(key)
+  key = tostring(key):lower()
+  for _, o in ipairs(layout()) do
+    if o.key and o.key:lower() == key then return o end
+  end
+end
+
+function Options.keys()
+  local list = {}
+  for _, o in ipairs(layout()) do if o.key then list[#list + 1] = o.key end end
+  return list
 end

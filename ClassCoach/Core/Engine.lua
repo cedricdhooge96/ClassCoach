@@ -144,7 +144,10 @@ local function allowed(entry, s)
   if entry.maxLevel and s.level > entry.maxLevel then return nil end
   if not s:manaAtLeast(entry.mana) then return nil end
   if s:immune(entry.spell) then return nil end
-  if s:ready(entry.spell) == false or s:usable(entry.spell) == false then return nil end
+  -- A spell that repeats by itself (your wand) reads as "on cooldown" while it
+  -- is firing. That is it working, not a reason to stop suggesting it.
+  local repeats = s.meta and s.meta[entry.spell] and s.meta[entry.spell].auto
+  if not repeats and (s:ready(entry.spell) == false or s:usable(entry.spell) == false) then return nil end
   if entry.when then
     local fine, result = pcall(entry.when, s)
     if not (fine and result) then return nil end
@@ -158,8 +161,14 @@ local function allowed(entry, s)
 end
 
 local function step(entry, sp, s)
-  return { key = entry.spell, label = sp.name, icon = sp.icon, keybind = s.keys and s.keys[sp.name],
+  local out = { key = entry.spell, label = sp.name, icon = sp.icon, keybind = s.keys and s.keys[sp.name],
     why = text(entry.why, s) }
+  if s.check and s.check.repeating and s.meta and s.meta[entry.spell] and s.meta[entry.spell].auto
+    and s.check.repeating(sp.id) == true then
+    out.running = true
+    out.why = "Firing. Leave it running until something else comes up."
+  end
+  return out
 end
 
 local function pick(list, s)
@@ -332,8 +341,9 @@ end
 --   prep   Action Bar 3: buffs, summons and other things for between fights
 -- profile.bars = { fight = {...}, react = {...}, prep = {...} }: up to 12
 -- entries each, one per button. An entry is a list of candidates, best first:
--- a spell key, "macro:CC Pull", or "book:Ghost Wolf" for a spell that is not
--- part of the rotation. Positions are fixed, so a button keeps its place as
+-- a spell key, "macro:CC Pull", "book:Ghost Wolf" for a spell that is not
+-- part of the rotation, or "item:bandage" / "item:healthstone" / "item:hearth"
+-- for the best such item in your bags. Positions are fixed, so a button keeps its place as
 -- you level and gaps fill in when you learn the spell.
 Engine.BAR_GROUPS = { "fight", "react", "prep" }
 
@@ -346,9 +356,13 @@ function Engine.bars(profile, s, has)
     local list = {}
     for index, candidates in ipairs(layout[group] or {}) do
       for _, c in ipairs(type(candidates) == "table" and candidates or { candidates }) do
-        local macro, book = c:match("^macro:(.+)$"), c:match("^book:(.+)$")
+        local macro, book, item = c:match("^macro:(.+)$"), c:match("^book:(.+)$"), c:match("^item:(.+)$")
         local entry
-        if macro then
+        if item then
+          -- "item:bandage": the best one of that kind in your bags
+          local found = has.item and has.item(item)
+          if found then entry = { index = index, label = found.name or item, item = found.id, kindOfItem = item } end
+        elseif macro then
           if has.macro(macro) then entry = { index = index, label = macro, macro = macro } end
         elseif book then
           local id = has.book(book)
@@ -438,6 +452,25 @@ function Engine.sequence(plan, skip, tail)
   return names
 end
 
+-- Macros every class gets.
+Engine.GENERIC_MACROS = {
+  -- One key to rest: drinks and eats the best you carry. It rewrites itself
+  -- when your bags change, so the button on your bar is always current.
+  { name = "CC Rest", about = "Drinks and eats the best you carry, in one press.",
+    body = function(s)
+      local sup = s.journey and s.journey.supplies
+      local best = sup and sup.best
+      if not best then return nil end
+      local lines = { "#showtooltip" }
+      if s.usesMana and best.drink then lines[#lines + 1] = "/use item:" .. best.drink.id end
+      if best.food and not (best.drink and best.food.id == best.drink.id and s.usesMana) then
+        lines[#lines + 1] = "/use item:" .. best.food.id
+      end
+      if #lines == 1 then return nil end
+      return table.concat(lines, "\n")
+    end },
+}
+
 function Engine.macros(profile, s)
   local out = {}
   local plan = Engine.plan(profile, s)
@@ -446,7 +479,10 @@ function Engine.macros(profile, s)
     local fine, result = pcall(v, s, plan)
     return fine and result or nil
   end
-  for _, def in ipairs(profile.macros or {}) do
+  local defs = {}
+  for _, def in ipairs(profile.macros or {}) do defs[#defs + 1] = def end
+  for _, def in ipairs(Engine.GENERIC_MACROS) do defs[#defs + 1] = def end
+  for _, def in ipairs(defs) do
     local body = build(def.body)
     if type(body) == "string" and body ~= "" and #body <= 255 then
       out[#out + 1] = { name = def.name, body = body, about = build(def.about), smart = def.smart }
@@ -491,7 +527,7 @@ local ICON = {
   trainer = "Interface\\Icons\\INV_Misc_Book_09", drink = "Interface\\Icons\\INV_Drink_07",
   skull = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull", elite = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
   grey = "Interface\\Icons\\INV_Misc_Bone_HumanSkull_01", map = "Interface\\Icons\\INV_Misc_Map_01",
-  dungeon = "Interface\\Icons\\INV_Misc_Key_03", quest = "Interface\\Icons\\INV_Misc_Note_01",
+  page = "Interface\\Icons\\INV_Misc_Book_11", dungeon = "Interface\\Icons\\INV_Misc_Key_03", quest = "Interface\\Icons\\INV_Misc_Note_01",
 }
 
 -- The spell that fixes a checklist entry: `fix` on the entry (a key, or a
@@ -585,6 +621,10 @@ function Engine.checklist(profile, s, options)
   options = options or {}
   local missing = {}
   if s.inCombat then return missing end
+  if s.barPage and s.barPage ~= 1 then
+    missing[#missing + 1] = { kind = "danger", text = "Main bar is on page " .. s.barPage, badge = "P" .. s.barPage, icon = ICON.page,
+      hint = "Your spells are on page 1. Press Shift+1 to go back. /coach pages stops Shift+number from switching pages." }
+  end
   if options.threat ~= false then
     local threat = Engine.threat(s)
     if threat then missing[#missing + 1] = threat end
@@ -698,16 +738,31 @@ function Engine.journey(profile, s, options)
   -- Supplies: shout at a vendor, stay quiet elsewhere unless you are out.
   local sup = options.supplies ~= false and j.supplies
   if sup and s.level >= 5 then
-    local function stock(count, what, icon, low)
+    -- what vendors usually sell for your level: { level, name }
+    local function forLevel(list)
+      local pick
+      for _, row in ipairs(list or {}) do if s.level >= row[1] then pick = row end end
+      return pick
+    end
+    local data = options.data or {}
+    local function stock(count, what, icon, low, suggestion)
       if count == nil then return end
+      local buy = suggestion and (" For your level: " .. suggestion .. ".") or ""
       if j.atVendor and count < low then
-        add("do", ("Buy %s: %d left"):format(what, count), "You are at a vendor. If this one doesn't sell it, an innkeeper does.", icon)
+        add("do", ("Buy %s: %d left"):format(what, count), "You are at a vendor. If this one doesn't sell it, an innkeeper does." .. buy, icon)
       elseif count == 0 then
-        add("do", "Out of " .. what, "Buy some at the next innkeeper or general goods vendor.", icon)
+        add("do", "Out of " .. what, "Buy some at the next innkeeper or general goods vendor." .. buy, icon)
       end
     end
-    if s.usesMana then stock(sup.drink, "water", ICON.drink, 5) end
-    stock(sup.food, "food", ICON.food, 5)
+    local water, bread = forLevel(data.drinks), forLevel(data.foods)
+    if s.usesMana then stock(sup.drink, "water", ICON.drink, 5, water and water[2]) end
+    stock(sup.food, "food", ICON.food, 5, bread and (bread[2] .. " fills you up; cooked food also gives the XP buff"))
+    -- carrying water far below your level: say what would be better
+    local best = sup.best and sup.best.drink
+    if s.usesMana and best and water and sup.drink > 0 and best.level < water[1] and water[1] - best.level >= 10 then
+      add(j.atVendor and "do" or "info", "Better water exists for your level",
+        ("You carry %s. %s restores much more."):format(best.name or "low-level water", water[2]), ICON.drink)
+    end
     for _, want in ipairs(profile.supplies or {}) do
       if (not want.needs or s:known(want.needs)) and s.itemCount then
         local count = s.itemCount(want.item)
@@ -780,6 +835,9 @@ local GENERIC_ADVICE = {
 }
 
 function Engine.advice(profile, s)
+  if s.inCombat and s.barPage and s.barPage ~= 1 then
+    return ("Your main bar is on page %d, so your buttons look gone. Press Shift+1 to get them back."):format(s.barPage)
+  end
   local missed = s.inCombat and s:justMissed()
   if missed and missed.immune then
     local sp = s.spells[missed.name]

@@ -26,7 +26,7 @@ local WARLOCK_SPELLS = {
   ["Summon Succubus"] = { ids = { 712 }, summons = "Succubus" },          -- class quest, level 20
   ["Summon Incubus"] = { summons = "Incubus" },                           -- class quest, level 20 (by name)
   ["Summon Felhunter"] = { ids = { 691 }, summons = "Felhunter" },        -- class quest, level 30
-  ["Shoot"]          = { ids = { 5019 }, core = true },
+  ["Shoot"]          = { ids = { 5019 }, core = true, auto = true },
 }
 
 local DEMONS = { "Summon Imp", "Summon Voidwalker", "Summon Succubus", "Summon Incubus", "Summon Felhunter" }
@@ -277,7 +277,7 @@ ns.RegisterProfile({
       { "book:Curse of Recklessness" },
       { "book:Shadow Ward" },
       { "book:Drain Mana" },
-      { "book:Searing Pain" },
+      { "item:healthstone" },
       { "book:Rain of Fire" },
       { "book:Hellfire" },
     },
@@ -291,9 +291,9 @@ ns.RegisterProfile({
       { "book:Create Soulstone" },
       { "book:Unending Breath" },
       { "book:Ritual of Summoning" },
-      { "book:Detect Invisibility" },
-      { "book:Eye of Kilrogg" },
-      { "book:Summon Felsteed" },
+      { "macro:CC Rest" },
+      { "item:bandage" },
+      { "item:hearth" },
     },
   },
 

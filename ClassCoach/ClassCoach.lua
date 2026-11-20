@@ -157,9 +157,19 @@ function C.setupBar(mode, quiet)
   if not s then report("Still loading: try again in a moment.") return end
   if API.inCombat() then report("The action bars can only be changed out of combat.") return end
   if mode ~= "preview" and not quiet then C.syncMacros(false) end   -- the layout uses the CC macros
+  local supplies = s.journey and s.journey.supplies
+  -- A button of ours holding an item that is used up, or a weaker one of the
+  -- same kind (old water, a smaller bandage), may be refreshed.
+  local function stale(slot, e)
+    local old = e.item and API.slotItem(slot)
+    if not old or old == e.item then return false end
+    local count = API.itemCount(old)
+    return count == 0 or (supplies and supplies.kindOf[old] == e.kindOfItem)
+  end
   local plan = Engine.bars(C.profile, s, {
     macro = API.macroExists,
     book = function(name) local entry = C.book and C.book[name]; return entry and entry.ids[#entry.ids] or nil end,
+    item = function(kind) return supplies and supplies.best[kind] end,
   })
   local total, off = 0, {}
   for _, group in ipairs(Engine.BAR_GROUPS) do
@@ -175,10 +185,10 @@ function C.setupBar(mode, quiet)
         local waiting = {}
         for _, e in ipairs(entries) do
           local slot = info.first + e.index - 1
-          local onBar = C.keys and C.keys[e.macro and ("macro:" .. e.macro) or e.label] ~= nil
+          local onBar = C.keys and C.keys[e.item and ("item:" .. e.item) or e.macro and ("macro:" .. e.macro) or e.label] ~= nil
           if mode ~= "replace" and onBar then
             already[#already + 1] = e.label
-          elseif mode == "replace" or API.slotEmpty(slot) then
+          elseif mode == "replace" or API.slotEmpty(slot) or stale(slot, e) then
             if API.placeAction(slot, e) then placed[#placed + 1] = ("%d %s"):format(e.index, e.label) end
           else
             waiting[#waiting + 1] = e
@@ -256,7 +266,7 @@ function C.journeyData(now)
   local j = C.journey
   if j and now - j.at < 2 then return j end
   j = { at = now, xp = API.xp(), talentPoints = API.unspentTalents(), durability = API.durability(),
-    freeSlots = API.freeBagSlots(), hasItem = API.hasItem, supplies = API.supplies(),
+    freeSlots = API.freeBagSlots(), hasItem = API.hasItem, supplies = API.supplies(C.level or API.level()),
     atVendor = C.atVendor == true, canRepair = C.atVendor and API.canRepair() or false }
   C.journey = j
   return j
@@ -288,7 +298,7 @@ local function buildState(now)
     healthPct = (not inCombat) and API.healthPct() or nil, hasPet = hasPet,
     target = currentTarget(), hasWand = C.hasWand, buffs = buffs, mainHandBuff = mainHand,
     keys = C.keys, spells = C.spells, bookReady = next(C.spells) ~= nil, tracker = C.tracker, fightTime = C.tracker:fightTime(now),
-    check = { ready = API.ready, usable = API.usable },
+    check = { ready = API.ready, usable = API.usable, repeating = API.repeating }, barPage = API.barPage(),
     itemCount = API.itemCount, equipped = API.equipped, faction = C.faction, journey = (not inCombat) and C.journeyData(now) or nil,
   })
 end
@@ -307,6 +317,13 @@ local function tick()
     title = ("%s · %s · level %d"):format(profile.spec, profile.class == "ANY" and (C.class or "") or profile.class:sub(1, 1) .. profile.class:sub(2):lower(), s.level),
     usesMana = s.usesMana, manaPct = s.manaPct, manaExact = s.manaExact, manaLevel = s.manaLevel,
   }
+  if C.bagsChanged and not s.inCombat then
+    C.bagsChanged = false
+    C.journey = nil
+    s.journey = C.journeyData(now)
+    pcall(C.syncMacros, true)
+    C.barPending = true
+  end
   if C.barPending and not s.inCombat then
     C.barPending = false
     if ClassCoachDB.autoBar then pcall(C.setupBar, nil, true) end
@@ -343,7 +360,7 @@ local function tick()
   view.otherDotted = C.tracker:otherDotted(key or "none", now)
   if s.inCombat then
     view.status = Engine.advice(profile, s)
-    view.statusKind = s.manaLevel == "low" and "warn" or nil
+    view.statusKind = (s.manaLevel == "low" or (s.barPage and s.barPage ~= 1)) and "warn" or nil
   else
     local missing = Engine.checklist(profile, s, { drinkAt = ClassCoachDB.drinkAt, threat = ClassCoachDB.threat })
     view.missing = missing
@@ -491,6 +508,28 @@ function handlers.PLAYER_REGEN_ENABLED()
   end)
 end
 
+-- The game blocked something and blames an addon. If it blames us, keep the
+-- details: this is how a "my bars vanished" report gets a cause.
+local function blocked(kind, addon, func)
+  addon, func = tostring(API.plain(addon)), tostring(API.plain(func))
+  C.blocked = C.blocked or {}
+  local line = ("%s: %s -> %s"):format(kind, addon, func)
+  if #C.blocked < 20 then C.blocked[#C.blocked + 1] = line end
+  if addon == ADDON then
+    log("%s", line)
+    if not C.blockedSaid then
+      C.blockedSaid = true
+      say("The game blocked an action and blames this addon (" .. func .. "). Type /coach check and send the result, please.")
+    end
+  end
+end
+function handlers.ADDON_ACTION_BLOCKED(addon, func) blocked("blocked", addon, func) end
+function handlers.ADDON_ACTION_FORBIDDEN(addon, func) blocked("forbidden", addon, func) end
+
+-- Bags changed (bought water, used the last bandage): the rest macro and the
+-- item buttons follow on the next refresh out of combat.
+function handlers.BAG_UPDATE_DELAYED() C.bagsChanged = true end
+
 -- At a vendor the journey panel checks your supplies.
 function handlers.MERCHANT_SHOW() C.atVendor = true; C.journey = nil end
 function handlers.MERCHANT_CLOSED() C.atVendor = false; C.journey = nil end
@@ -618,6 +657,9 @@ local function check()
   local st = ns.Smart.status()
   add("smart key: button %s, %s steps, at step %s, keys next=%s again=%s restart=%s", tostring(ns.Smart.button ~= nil), st.count,
     tostring(st.step), tostring(st.keys.next), tostring(st.keys.again), tostring(st.keys.restart))
+  add("main bar page %s; Shift+1..6 switch pages: %s", tostring(API.barPage()),
+    tostring(API.plain(API.try(GetBindingAction, "SHIFT-2")) == "ACTIONPAGE2"))
+  add("actions the game blocked this session: %s", C.blocked and table.concat(C.blocked, " | ") or "none")
   add("resists seen: %s matched to a cast, %s not", C.stats and C.stats.resists or 0, C.stats and C.stats.unmatched or 0)
   add("mana bar drawn by the game: %s; percent function %s, readable %s", tostring(not ns.Panel.manaRefused),
     tostring(UnitPowerPercent ~= nil), tostring(API.manaPct() ~= nil))
@@ -629,7 +671,8 @@ local function check()
 end
 
 local HELP = {
-  "/coach — open the settings screen (also: Esc > Options > AddOns > ClassCoach)",
+  "/coach set — change a setting from chat (the full page: Esc > Options > AddOns > ClassCoach)",
+  "/coach pages — stop Shift+number from switching your main bar to an empty page",
   "/coach macros — create or refresh this class's helper macros (out of combat)",
   "/coach bar — lay out three bars by purpose: fight (main bar), react (Action Bar 2), prepare (Action Bar 3). Empty buttons only; \"preview\" just lists, \"replace\" overwrites",
   "/coach smart — the smart key: one key that walks the coach's plan (shows its steps and keys)",
@@ -639,12 +682,11 @@ local HELP = {
   "/coach check — what the addon can read on this client (for bug reports)",
 }
 
+-- The settings page is opened by you, through the game's own menu. The addon
+-- never opens it itself: an addon showing one of the game's panels is a known
+-- way to make protected frames (action bars, the pet bar) misbehave in combat.
 local function openSettings()
-  local opened, why = ns.Options.open()
-  if opened then return end
-  if why == "combat" then say("The settings screen can't open in combat. Try again after the fight.") return end
-  say("Settings: Esc > Options > AddOns > ClassCoach. Commands:")
-  for _, l in ipairs(HELP) do print("  " .. l) end
+  say("Settings: press Esc, then Options > AddOns > ClassCoach. Or type /coach set to change one here.")
 end
 
 -- The minimap's addon menu (the client looks these up by name)
@@ -663,7 +705,33 @@ SlashCmdList.CLASSCOACH = function(msg)
   local cmd, arg = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
   cmd = (cmd or ""):lower()
   local db = ClassCoachDB
-  if cmd == "" or cmd == "options" or cmd == "config" or cmd == "settings" then openSettings()
+  if cmd == "" or cmd == "options" or cmd == "config" or cmd == "settings" then
+    openSettings()
+    for _, l in ipairs(HELP) do print("  " .. l) end
+  elseif cmd == "set" then
+    -- /coach set compact on     /coach set opacity 40     /coach set (lists them)
+    local key, value = arg:match("^(%S+)%s*(.*)$")
+    local option = key and ns.Options.find(key)
+    if not option then
+      say("Options: " .. table.concat(ns.Options.keys(), ", ") .. ". Example: /coach set compact on")
+    else
+      local store = option.perChar and ClassCoachCharDB or db
+      local v = value:lower()
+      if option.kind == "check" then
+        if v == "" then store[option.key] = not store[option.key] else store[option.key] = (v == "on" or v == "1" or v == "true" or v == "yes") end
+      elseif option.kind == "slider" then
+        local n = tonumber(v)
+        if n then store[option.key] = math.max(option.min, math.min(option.max, n)) end
+      elseif value ~= "" then
+        store[option.key] = value
+      end
+      say(("%s = %s"):format(option.name, tostring(store[option.key])))
+    end
+  elseif cmd == "pages" then
+    if API.inCombat() then say("Key bindings can only be changed out of combat.") return end
+    local freed = API.freePageKeys()
+    if #freed > 0 then say("Shift+number no longer switches bar pages (" .. table.concat(freed, ", ") .. "), and your main bar is back on page 1.")
+    else say("Shift+number was not switching pages (or you already changed those keys). Main bar set to page 1.") end
   elseif cmd == "lock" then db.locked = true; say("Panels locked.")
   elseif cmd == "unlock" then db.locked = false; say("Panels unlocked: drag each where you like.")
   elseif cmd == "scale" and tonumber(arg) then db.scale = math.max(0.6, math.min(1.6, tonumber(arg)))

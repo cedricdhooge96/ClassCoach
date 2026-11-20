@@ -55,6 +55,7 @@ spells = {
 - `cd = true`: it has a cooldown, so the chain preview won't show it twice in a row. Spells sharing one cooldown use the same name: `cd = "shock"`.
 - `debuff = 18`: it leaves damage over time on the enemy for about that long. The real length is read from the spell's description when possible; this is the fallback. The coach then tracks it per enemy and stops suggesting it on enemies about to die (add `always = true` to a priority entry to opt out).
 - `harm = true`: it damages or hinders the enemy, so it can be resisted. (Spells with `debuff` count already.) Add `travel = true` when it flies to the enemy, so its result arrives later.
+- `auto = true`: it repeats by itself once started (a wand). It is never treated as "on cooldown".
 - `summons = "Voidwalker"`: casting it brings out that pet (`s.demon`).
 - `restores = 0.15`: it gives mana back (Life Tap): a rough share of maximum mana, for the mana level.
 

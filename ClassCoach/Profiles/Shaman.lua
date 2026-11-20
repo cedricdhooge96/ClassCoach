@@ -214,9 +214,9 @@ ns.RegisterProfile({
       { "book:Astral Recall" },
       { "book:Call of the Elements" },
       { "book:Totemic Recall" },
-      { "book:Water Breathing" },
-      { "book:Water Walking" },
-      { "book:Far Sight" },
+      { "macro:CC Rest" },
+      { "item:bandage" },
+      { "item:hearth" },
     },
   },
 

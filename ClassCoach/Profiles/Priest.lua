@@ -16,7 +16,7 @@ local PRIEST_SPELLS = {
   ["Renew"]              = { ids = { 139, 6074, 6075, 6076, 6077, 6078, 10927, 10928, 10929, 25315 } },
   ["Lesser Heal"]        = { ids = { 2050, 2052, 2053 } },
   ["Flash Heal"]         = { ids = { 2061, 9472, 9473, 9474, 10915, 10916, 10917 } },
-  ["Shoot"]              = { ids = { 5019 }, core = true },
+  ["Shoot"]              = { ids = { 5019 }, core = true, auto = true },
 }
 
 -- What the trainer teaches at each level (Forever client data, The Forever Era).
@@ -189,10 +189,10 @@ ns.RegisterProfile({
       { "book:Resurrection" },
       { "book:Levitate" },
       { "book:Mind Vision" },
-      { "book:Mind Soothe" },
-      { "book:Lightwell" },
       { "book:Prayer of Fortitude" },
-      { "book:Prayer of Spirit" },
+      { "macro:CC Rest" },
+      { "item:bandage" },
+      { "item:hearth" },
     },
   },
 

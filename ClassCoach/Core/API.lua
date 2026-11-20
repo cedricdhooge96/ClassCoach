@@ -318,6 +318,17 @@ function API.resolveSpell(spec, book)
   }
 end
 
+-- Is this auto-repeating spell (wand, auto shot) firing right now? true / false / nil
+function API.repeating(id)
+  local on = plain(try(C_Spell and C_Spell.IsAutoRepeatSpell, id))
+  if on == nil then
+    local name = API.spellName(id)
+    on = name and plain(try(IsAutoRepeatSpell, name))
+  end
+  if type(on) ~= "boolean" then return nil end
+  return on
+end
+
 -- usable: true/false/nil, short: true when "not enough mana"
 function API.usable(id)
   local usable, short = try(C_Spell.IsSpellUsable, id)
@@ -448,12 +459,22 @@ function API.faction()
   return type(f) == "string" and f or nil
 end
 
--- Food and drink in your bags: { food = n, drink = n }. The game marks both
--- as "Food & Drink"; the item's use ("Food" / "Drink") tells them apart on
--- English clients, otherwise an item counts as both.
-function API.supplies()
+-- What you carry for the road. Returns
+--   { food = n, drink = n, best = { food = item, drink = item, bandage = item, healthstone = item, hearth = item },
+--     kindOf = { [itemID] = kind } }       item = { id, name, level }
+-- "best" is the strongest one you can use at your level. The game marks food
+-- and water alike as "Food & Drink"; the item's use ("Food" / "Drink") tells
+-- them apart on English clients, otherwise an item counts as both.
+local HEARTHSTONE = 6948
+function API.supplies(playerLevel)
   if not C_Container or not C_Container.GetContainerNumSlots then return nil end
-  local food, drink, any = 0, 0, false
+  local out = { food = 0, drink = 0, best = {}, kindOf = {} }
+  local any = false
+  local function consider(kind, id, name, level)
+    out.kindOf[id] = out.kindOf[id] or kind
+    local best = out.best[kind]
+    if not best or level > best.level then out.best[kind] = { id = id, name = name, level = level } end
+  end
   for bag = 0, 4 do
     local slots = plain(try(C_Container.GetContainerNumSlots, bag))
     for slot = 1, type(slots) == "number" and slots or 0 do
@@ -462,17 +483,27 @@ function API.supplies()
       if id then
         any = true
         local _, _, _, _, _, classID, subID = try(C_Item.GetItemInfoInstant, id)
-        if plain(classID) == 0 and plain(subID) == 5 then
+        classID, subID = plain(classID), plain(subID)
+        local name, _, _, _, minLevel = try(C_Item.GetItemInfo, id)
+        name, minLevel = plain(name), plain(minLevel) or 0
+        local usable = not playerLevel or minLevel <= playerLevel
+        if id == HEARTHSTONE then
+          consider("hearth", id, name or "Hearthstone", 0)
+        elseif classID == 0 and subID == 5 then
           local use = plain(try(C_Item.GetItemSpell, id)) or plain(try(GetItemSpell, id))
-          if use == "Food" then food = food + count
-          elseif use == "Drink" then drink = drink + count
-          else food = food + count; drink = drink + count end
+          local isFood, isDrink = use ~= "Drink", use ~= "Food"
+          if isFood then out.food = out.food + count; if usable then consider("food", id, name, minLevel) end end
+          if isDrink then out.drink = out.drink + count; if usable then consider("drink", id, name, minLevel) end end
+        elseif classID == 0 and subID == 7 then
+          if usable then consider("bandage", id, name, minLevel) end
+        elseif type(name) == "string" and name:find("Healthstone$") then
+          consider("healthstone", id, name, minLevel)
         end
       end
     end
   end
   if not any then return nil end
-  return { food = food, drink = drink }
+  return out
 end
 
 function API.canRepair()
@@ -496,10 +527,6 @@ function API.barShown(bar)
   if bar == 1 then return true end
   local info = BARS[bar]
   if not info then return false end
-  if Settings and Settings.GetValue then
-    local v = plain(try(Settings.GetValue, "PROXY_SHOW_ACTIONBAR_" .. bar))
-    if type(v) == "boolean" then return v end
-  end
   local toggles = { try(GetActionBarToggles) }
   local v = plain(toggles[bar - 1])
   if type(v) == "boolean" then return v end
@@ -511,6 +538,36 @@ function API.barShown(bar)
   return nil
 end
 
+-- Which page your main bar shows (1 is the normal one). Shift+number and the
+-- small arrows next to the bar switch pages; pages 2-6 are usually empty.
+function API.barPage()
+  local page = plain(try(GetActionBarPage))
+  return type(page) == "number" and page or nil
+end
+
+-- Stops Shift+1..6 from switching bar pages (only those still on the game's
+-- default). Returns the keys it freed. Out of combat only.
+function API.freePageKeys()
+  local freed = {}
+  if API.inCombat() then return freed end
+  for i = 1, 6 do
+    local key = "SHIFT-" .. i
+    if plain(try(GetBindingAction, key)) == "ACTIONPAGE" .. i then
+      try(SetBinding, key)
+      freed[#freed + 1] = key
+    end
+  end
+  if #freed > 0 then try(SaveBindings, plain(try(GetCurrentBindingSet)) or 1) end
+  try(ChangeActionBarPage, 1)
+  return freed
+end
+
+-- The item on an action button, if it holds one.
+function API.slotItem(slot)
+  local kind, id = try(GetActionInfo, slot)
+  if plain(kind) == "item" then return plain(id) end
+end
+
 function API.slotEmpty(slot)
   return plain((try(GetActionInfo, slot))) == nil
 end
@@ -520,7 +577,9 @@ end
 function API.placeAction(slot, what)
   if API.inCombat() then return false end
   try(ClearCursor)
-  if what.macro then
+  if what.item then
+    if C_Item and C_Item.PickupItem then try(C_Item.PickupItem, what.item) else try(PickupItem, what.item) end
+  elseif what.macro then
     try(PickupMacro, what.macro)
   elseif C_Spell and C_Spell.PickupSpell then
     try(C_Spell.PickupSpell, what.spell)
@@ -598,6 +657,8 @@ function API.scanKeys()
         if name and keys[name] == nil then
           keys[name] = shortKey(plain(try(GetBindingKey, binding))) or false
         end
+      elseif kind == "item" and id then
+        if keys["item:" .. id] == nil then keys["item:" .. id] = shortKey(plain(try(GetBindingKey, binding))) or false end
       elseif kind == "macro" then
         -- remembered as "macro:<name>" so the key can stand in for the spells inside it
         local name = plain(try(GetActionText, slot))

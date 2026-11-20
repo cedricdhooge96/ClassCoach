@@ -130,6 +130,7 @@ C_SpellBook = {
   end,
 }
 C_Spell = {
+  IsAutoRepeatSpell = function(id) return P.repeating == id end,
   PickupSpell = function(id) M.cursor = { spell = id } end,
   GetSpellDescription = function(id) return P.spells[id] and P.spells[id].text end,
   GetSpellName = function(id) return P.spells[id] and P.spells[id].name or M.names[id] end,
@@ -161,6 +162,10 @@ function GetWeaponEnchantInfo() return hidden(P.mainHand) end
 function GetTotemInfo(slot) return hidden(P.totems[slot] == true) end
 C_Item = {
   GetItemCount = function(id) return P.items[id] or 0 end,   -- by id or by name
+  GetItemInfo = function(id)
+    for _, it in ipairs(P.bag or {}) do if it.id == id then return it.name or ("item " .. id), "", 1, it.min or 1, it.min or 1 end end
+  end,
+  PickupItem = function(id) M.cursor = { item = id } end,
   GetItemInfoInstant = function(id)
     for _, it in ipairs(P.bag or {}) do if it.id == id then return id, "", "", "", 0, it.class, it.sub end end
   end,
@@ -170,17 +175,22 @@ function GetTalentTabInfo(tab) return tab, "Tree" .. tab, "", "icon", P.talents[
 -- An action button holds a spell id, or { macro = name }.
 function GetActionInfo(slot)
   local a = P.actions[slot]
+  if type(a) == "table" and a.item then return "item", a.item end
   if type(a) == "table" then return "macro", GetMacroIndexByName(a.macro) end
   if a then return "spell", a end
 end
 function GetActionText(slot) local a = P.actions[slot]; if type(a) == "table" then return a.macro end end
 function ClearCursor() M.cursor = nil end
+function GetActionBarPage() return P.page or 1 end
+function ChangeActionBarPage(n) P.page = n end
+function GetBindingAction(key) return P.keyActions and P.keyActions[key] or "" end
+function SetBinding(key, action) P.keyActions = P.keyActions or {}; P.keyActions[key] = action end
 function PickupMacro(name) M.cursor = { macro = name } end
 function PlaceAction(slot)
   assert(not P.combat, "the action bar cannot change in combat")
   local held = M.cursor
   M.cursor = P.actions[slot]          -- what was there ends up on the cursor
-  if held then P.actions[slot] = held.spell or held end
+  if held then P.actions[slot] = held.spell or held end   -- a spell id, { macro = name } or { item = id }
 end
 function UnitClassification(u) if u == "target" and P.target then return P.target.elite and "elite" or "normal" end end
 -- Secure environment
@@ -251,6 +261,15 @@ local function widget()
     GetPoint = function() return "CENTER", nil, "CENTER", 0, 0 end,
     SetValue = function(self, v) self.value = v end,
     SetTexture = function(self, t) self.texture = t end,
+    -- geometry, for panel placement: a test sets .left / .bottom / .top
+    GetLeft = function(self) return rawget(self, "left") end,
+    GetBottom = function(self) return rawget(self, "bottom") end,
+    GetTop = function(self) return rawget(self, "top") end,
+    GetHeight = function(self) return rawget(self, "height") end,
+    GetScale = function(self) return rawget(self, "scale") or 1 end,
+    SetScale = function(self, v) rawset(self, "scale", v) end,
+    SetFrameStrata = function(self, v) rawset(self, "strata", v) end,
+    SetPoint = function(self, ...) rawset(self, "point", { ... }) end,
     -- secure buttons: attributes may not change in combat, like the real thing
     SetAttribute = function(self, k, v)
       assert(not (P.combat and not M.inSecure), "attributes cannot change in combat")
@@ -266,6 +285,7 @@ local function widget()
   return setmetatable(w, { __index = function(_, k) return methods[k] or function() end end })
 end
 UIParent = widget()
+UIParent.height = 768
 function CreateFrame()
   local f = widget()
   M.frames[#M.frames + 1] = f

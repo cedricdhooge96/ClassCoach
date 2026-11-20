@@ -31,6 +31,28 @@ function Style.skin(f)
   f.skinAccent = accent
 end
 
+-- Pins a panel by the edge that faces the middle of the screen. A panel in
+-- the lower half is held by its bottom edge and grows upward; one in the upper
+-- half is held by its top and grows downward. Either way it grows away from
+-- the screen edge, where your action bars are, instead of over them.
+-- Returns the position to save, or nil when the frame has no place yet.
+function Style.pin(f)
+  local left, bottom, top = f:GetLeft(), f:GetBottom(), f:GetTop()
+  local screen, scale = UIParent:GetHeight(), f:GetScale()
+  if type(left) ~= "number" or type(bottom) ~= "number" or type(top) ~= "number" or type(screen) ~= "number" then return nil end
+  if type(scale) ~= "number" or scale <= 0 then scale = 1 end
+  local lower = (bottom + top) / 2 * scale < screen / 2
+  local pos = lower and { "BOTTOMLEFT", "BOTTOMLEFT", left, bottom } or { "TOPLEFT", "BOTTOMLEFT", left, top }
+  f:ClearAllPoints()
+  f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4])
+  return pos
+end
+
+-- A saved position from before panels were pinned (it let them grow both ways).
+function Style.unpinned(pos)
+  return pos ~= nil and not (pos[2] == "BOTTOMLEFT" and (pos[1] == "BOTTOMLEFT" or pos[1] == "TOPLEFT"))
+end
+
 -- Cheap to call every render: only touches the frame when a value changed.
 function Style.apply(f, db, scale)
   local alpha = (db.opacity or 75) / 100

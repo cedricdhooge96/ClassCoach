@@ -256,6 +256,68 @@ if SCENARIO == "shaman" then
   check("bar replace: every known entry on its own button", M.P.actions[3] == 8044 and M.P.actions[4] == 8050 and M.P.actions[6] == 529
     and M.P.actions[50] == 8017 and M.P.actions[61] == 331, tostring(M.P.actions[3]))
   M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(1); tick(ns)
+  -- Food, water, bandage and Hearthstone
+  M.P.bag = {
+    { id = 159, count = 4, class = 0, sub = 5, use = "Drink", name = "Refreshing Spring Water", min = 1 },
+    { id = 1179, count = 10, class = 0, sub = 5, use = "Drink", name = "Ice Cold Milk", min = 5 },
+    { id = 1645, count = 5, class = 0, sub = 5, use = "Drink", name = "Moonberry Juice", min = 35 },
+    { id = 4540, count = 8, class = 0, sub = 5, use = "Food", name = "Tough Hunk of Bread", min = 1 },
+    { id = 1251, count = 6, class = 0, sub = 7, name = "Linen Bandage", min = 1 },
+    { id = 6948, count = 1, class = 15, sub = 0, name = "Hearthstone", min = 0 },
+  }
+  M.fire("BAG_UPDATE_DELAYED"); M.advance(1); tick(ns); M.advance(1); tick(ns)
+  SlashCmdList.CLASSCOACH("bar")
+  local rest = M.macros[GetMacroIndexByName("CC Rest")]
+  check("rest macro: the best water you can use, then food", rest and rest.body == "#showtooltip\n/use item:1179\n/use item:4540", rest and rest.body)
+  check("rest macro, bandage and Hearthstone on the prepare bar", type(M.P.actions[58]) == "table" and M.P.actions[58].macro == "CC Rest"
+    and M.P.actions[59].item == 1251 and M.P.actions[60].item == 6948, tostring(M.P.actions[58]))
+  -- bags change: the macro follows, and a used-up or weaker item button is refreshed
+  M.P.bag[2].count = 0; table.remove(M.P.bag, 2)
+  M.P.bag[#M.P.bag + 1] = { id = 3530, count = 6, class = 0, sub = 7, name = "Wool Bandage", min = 1.5 }
+  M.P.items[1251] = 6
+  ClassCoachDB.autoBar = true
+  M.fire("BAG_UPDATE_DELAYED"); M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(1); tick(ns); M.advance(1); tick(ns)
+  rest = M.macros[GetMacroIndexByName("CC Rest")]
+  check("rest macro rewrites itself when your bags change", rest.body == "#showtooltip\n/use item:159\n/use item:4540", rest.body)
+  check("a better bandage replaces the old one on its button", M.P.actions[59].item == 3530, tostring(M.P.actions[59].item))
+  ClassCoachDB.autoBar = false
+  M.P.bag = { { id = 159, count = 2, class = 0, sub = 5, use = "Drink", name = "Refreshing Spring Water", min = 1 } }
+  M.P.level = 16; M.fire("PLAYER_LEVEL_UP", 16); M.fire("MERCHANT_SHOW"); M.fire("BAG_UPDATE_DELAYED"); M.advance(3); tick(ns)
+  check("vendor proposal: what to buy for your level", ns.C.lastJourney.lines and (function()
+    for _, l in ipairs(ns.C.lastJourney.lines) do
+      if l.text == "Buy water: 2 left" and l.hint:find("For your level: Melon Juice") then return true end
+    end end)() == true)
+  check("proposal: better water exists", journey(ns):find("Better water exists for your level") ~= nil, journey(ns))
+  M.fire("MERCHANT_CLOSED"); M.P.bag = nil; M.P.level = 12; M.fire("PLAYER_LEVEL_UP", 12); M.advance(3); tick(ns)
+
+  -- The panels must never grow over the action bars
+  local pf, jf = ns.Panel.frame, ns.Journey.frame
+  check("panels draw below the action bars", pf.strata == "LOW" and jf.strata == "LOW", tostring(pf.strata))
+  pf.left, pf.bottom, pf.top = 500, 120, 300
+  pf.scripts.OnDragStop(pf)
+  check("lower half of the screen: held by its bottom edge, so it grows upward", ClassCoachCharDB.pos[1] == "BOTTOMLEFT" and ClassCoachCharDB.pos[4] == 120
+    and pf.point[1] == "BOTTOMLEFT", ClassCoachCharDB.pos[1])
+  pf.left, pf.bottom, pf.top = 500, 500, 700
+  pf.scripts.OnDragStop(pf)
+  check("upper half: held by its top edge, so it grows downward", ClassCoachCharDB.pos[1] == "TOPLEFT" and ClassCoachCharDB.pos[4] == 700, ClassCoachCharDB.pos[1])
+  ClassCoachCharDB.pos = { "CENTER", "CENTER", 0, -180 }; ns.Panel.repin = ns.Style.unpinned(ClassCoachCharDB.pos)
+  pf.left, pf.bottom, pf.top = 480, 110, 290; tick(ns)
+  check("an old saved position is pinned on the next refresh", ClassCoachCharDB.pos[1] == "BOTTOMLEFT" and ns.Panel.repin == false, ClassCoachCharDB.pos[1])
+
+  -- The main bar on another page looks like "my bars are gone"
+  M.P.keyActions = { ["SHIFT-2"] = "ACTIONPAGE2", ["SHIFT-3"] = "ACTIONPAGE3" }
+  M.P.page = 2; M.advance(1); f = tick(ns)
+  check("bar page: flagged before a pull", missing(ns):find("Main bar is on page 2") ~= nil, missing(ns))
+  M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true; f = tick(ns)
+  check("bar page: said in a fight too", f.status.text:find("page 2") ~= nil and f.status.text:find("Shift%+1") ~= nil, f.status.text)
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
+  SlashCmdList.CLASSCOACH("pages")
+  check("/coach pages: Shift+number freed and back on page 1", M.P.page == 1 and M.P.keyActions["SHIFT-2"] == nil and M.P.keyActions["SHIFT-3"] == nil)
+  -- the game blaming the addon is recorded
+  M.fire("ADDON_ACTION_BLOCKED", "ClassCoach", "MultiBarBottomLeft:SetShown()")
+  check("a blocked action blamed on us is kept for the report", ns.C.blocked[1] == "blocked: ClassCoach -> MultiBarBottomLeft:SetShown()", ns.C.blocked and ns.C.blocked[1])
+  ClassCoachDB.log = nil
+
   -- new spells find their button by themselves when you ask for that
   ClassCoachDB.autoBar = true
   M.P.spells[8024] = { name = "Flametongue Weapon", cost = 30 }; M.P.book[#M.P.book + 1] = 8024; M.P.knownIds[8024] = true
@@ -268,15 +330,20 @@ if SCENARIO == "shaman" then
   check("settings page registered with the game", S.category ~= nil and S.category.name == "ClassCoach")
   local count = 0
   for _ in pairs(S.list) do count = count + 1 end
-  check("every option made it onto the page", count == 26 and #ns.Options.registered == 26, count)
+  check("every option made it onto the page", count == 26 and #ns.Options.registered == 26 and #ns.Options.keys() == 26, count)
   check("sections and action buttons", #S.headers == 5 and #S.buttons == 3, #S.headers .. "/" .. #S.buttons)
   check("options write to the saved settings", S.list.compact.tbl == ClassCoachDB and S.list.specChoice.tbl == ClassCoachCharDB)
   check("slider shows its unit", S.list.opacity.opts.format(75) == "75%" and S.list.scale.opts.format(1.1) == "1.10x")
   local specs = S.list.specChoice.getOptions()
   check("profile choices for this class", #specs == 2 and specs[1].value == "auto" and specs[2].value == "Enhancement", #specs)
   SlashCmdList.CLASSCOACH("")
-  check("/coach opens the settings", S.opened == 77, tostring(S.opened))
   ClassCoach_OnAddonCompartmentClick()
+  check("the addon never opens the game's settings panel itself", S.opened == nil, tostring(S.opened))
+  SlashCmdList.CLASSCOACH("set compact on")
+  check("/coach set: a switch", ClassCoachDB.compact == true)
+  SlashCmdList.CLASSCOACH("set compact off"); SlashCmdList.CLASSCOACH("set opacity 400")
+  check("/coach set: a number, kept in range", ClassCoachDB.compact == false and ClassCoachDB.opacity == 100, tostring(ClassCoachDB.opacity))
+  SlashCmdList.CLASSCOACH("set opacity 75"); SlashCmdList.CLASSCOACH("set")
   -- Changing an option shows on the next refresh, with no reload.
   target({ name = "Trogg", level = 11, hostile = true, guid = "Creature-20" })
   M.P.mana = 300; M.advance(1); f = tick(ns)
@@ -347,6 +414,12 @@ elseif SCENARIO == "priest" then
   check("then wand", f.name.text == "Shoot", f.name.text)
   M.P.mana = 60; M.advance(3); f = tick(ns)
   check("low mana advice: wand", f.status.text:find("wand") ~= nil, f.status.text)
+  -- While the wand fires, the game reports Shoot as on cooldown. It must not flip to melee.
+  M.P.cooldowns[5019] = M.now + 60; M.P.repeating = 5019
+  f = tick(ns)
+  check("wanding: still the wand, not melee", f.name.text == "Shoot", f.name.text)
+  check("wanding: says to leave it running", f.why.text:find("Leave it running") ~= nil, f.why.text)
+  M.P.cooldowns[5019] = nil; M.P.repeating = nil
   M.advance(10)
   M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
   local tips = table.concat(ns.C.lastReport.tips, " | ")

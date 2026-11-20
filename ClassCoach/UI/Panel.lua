@@ -12,6 +12,7 @@ ns.Panel = Panel
 local WIDTH = 320
 local SIDE, MAIN, GAP = 28, 46, 16
 local ROW_TOP = -24
+local DEFAULT_BOTTOM = 260   -- how far above the bottom of the screen the panel starts
 local MISSING_SLOTS, MISSING_SIZE = 6, 26
 local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
 local COLORS = {
@@ -54,7 +55,8 @@ function Panel.create(charDB, db)
   local f = CreateFrame("Frame", "ClassCoachPanel", UIParent)
   Panel.frame, Panel.charDB, Panel.db = f, charDB, db
   f:SetSize(WIDTH, 120)
-  f:SetFrameStrata("MEDIUM")
+  -- Below the action bars: if the two ever overlap, your buttons stay on top.
+  f:SetFrameStrata("LOW")
   f:SetClampedToScreen(true)
   ns.Style.skin(f)
   ns.Style.apply(f, db, db.scale)
@@ -62,15 +64,22 @@ function Panel.create(charDB, db)
   -- Position
   local pos = charDB.pos
   f:ClearAllPoints()
-  if pos then f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4]) else f:SetPoint("CENTER", UIParent, "CENTER", 0, -180) end
+  -- Held by its bottom edge, well above the action bars: it grows upward.
+  if pos then f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4]) else f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, DEFAULT_BOTTOM) end
+  Panel.repin = ns.Style.unpinned(pos)
   f:SetMovable(true)
   f:EnableMouse(true)
   f:RegisterForDrag("LeftButton")
   f:SetScript("OnDragStart", function(self) if not db.locked then self:StartMoving() end end)
   f:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
-    local point, _, relPoint, x, y = self:GetPoint()
-    charDB.pos = { point, relPoint, x, y }
+    local pinned = ns.Style.pin(self)
+    if pinned then
+      charDB.pos = pinned
+    else
+      local point, _, relPoint, x, y = self:GetPoint()
+      charDB.pos = { point, relPoint, x, y }
+    end
   end)
 
   local title = font(f, "GameFontDisableSmall")
@@ -243,6 +252,11 @@ function Panel.render(view)
   end
   if not wanted then return end
   ns.Style.apply(f, db, db.scale)
+  -- A position saved by an older version let the panel grow over the action bars: pin it once.
+  if Panel.repin then
+    local pinned = ns.Style.pin(f)
+    if pinned then Panel.charDB.pos = pinned; Panel.repin = false end
+  end
   local compact = db.compact == true
   f.title:SetText(view.title or "")
   local steps = view.chain or {}
@@ -402,6 +416,7 @@ function Panel.resetPosition()
   local f = Panel.frame
   if not f then return end
   f:ClearAllPoints()
-  f:SetPoint("CENTER", UIParent, "CENTER", 0, -180)
+  f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, DEFAULT_BOTTOM)
   Panel.charDB.pos = nil
+  Panel.repin = false
 end
