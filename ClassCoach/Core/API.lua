@@ -18,6 +18,17 @@ local function plain(v)
 end
 API.plain = plain
 
+-- A count the game gave us, made safe to loop over: a whole number between
+-- 0 and `most`. A hidden value, text, a negative, "not a number" or an absurdly
+-- large value all become something a loop finishes at once.
+local function upTo(n, most)
+  n = plain(n)
+  if type(n) ~= "number" or n ~= n or n < 0 then return 0 end
+  if n > most then return most end
+  return math.floor(n)
+end
+API.upTo = upTo
+
 -- Calls a game function; returns nothing if it is missing or errors.
 local function try(fn, ...)
   if type(fn) ~= "function" then return nil end
@@ -106,10 +117,13 @@ function API.drawMana(bar, label)
   return true
 end
 
+-- In combat, or the game has locked protected things (bars, macros, secure
+-- buttons). Either one counts: the two can differ for a moment at the start
+-- and end of a fight, and with a pet fighting, and touching protected things
+-- in that moment is what makes the game block an addon.
 function API.inCombat()
-  local c = plain(try(UnitAffectingCombat, "player"))
-  if c == nil then c = plain(try(InCombatLockdown)) end
-  return c == true
+  if plain(try(InCombatLockdown)) == true then return true end
+  return plain(try(UnitAffectingCombat, "player")) == true
 end
 
 function API.inGroup() return plain(try(IsInGroup)) == true end
@@ -198,12 +212,20 @@ end
 ---------------------------------------------------------------------------
 
 -- Returns "created", "updated", "same", "full", "combat" or nil on failure.
+local written = {}   -- what we last stored in each macro
 function API.saveMacro(name, body, onlyExisting)
   if API.inCombat() then return "combat" end
   local index = plain(try(GetMacroIndexByName, name)) or 0
   if index > 0 then
-    if plain(try(GetMacroBody, index)) == body then return "same" end
+    -- The game may hand a macro back slightly differently from how it was
+    -- stored. Going by our own record as well keeps us from rewriting the same
+    -- macro over and over, which makes the buttons holding it flicker.
+    if written[name] == body or plain(try(GetMacroBody, index)) == body then
+      written[name] = body
+      return "same"
+    end
     local done = try(EditMacro, index, name, nil, body)
+    if done then written[name] = body end
     return done and "updated" or nil
   end
   if onlyExisting then return nil end
@@ -211,6 +233,7 @@ function API.saveMacro(name, body, onlyExisting)
   perChar = plain(perChar)
   if type(perChar) == "number" and perChar >= (MAX_CHARACTER_MACROS or 18) then return "full" end
   local done = try(CreateMacro, name, "INV_MISC_QUESTIONMARK", body, true)
+  if done then written[name] = body end
   return done and "created" or nil
 end
 
@@ -262,10 +285,10 @@ function API.scanSpellbook()
   end
   local ok = pcall(function()
     local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player or 0
-    for line = 1, C_SpellBook.GetNumSpellBookSkillLines() do
+    for line = 1, upTo(C_SpellBook.GetNumSpellBookSkillLines(), 40) do
       local info = C_SpellBook.GetSpellBookSkillLineInfo(line)
-      local first = field(info, "itemIndexOffset") or 0
-      local count = field(info, "numSpellBookItems") or 0
+      local first = upTo(field(info, "itemIndexOffset"), 5000)
+      local count = upTo(field(info, "numSpellBookItems"), 1000)
       for i = first + 1, first + count do
         local item = C_SpellBook.GetSpellBookItemInfo(i, bank)
         local id = field(item, "spellID")
@@ -278,8 +301,9 @@ function API.scanSpellbook()
   if not ok or not next(byName) then
     -- Older client API as a fallback.
     pcall(function()
-      for tab = 1, (GetNumSpellTabs() or 0) do
+      for tab = 1, upTo(GetNumSpellTabs(), 12) do
         local _, _, offset, num = GetSpellTabInfo(tab)
+        offset, num = upTo(offset, 5000), upTo(num, 1000)
         for i = offset + 1, offset + num do
           local kind, id = GetSpellBookItemInfo(i, "spell")
           if kind == "SPELL" and id then add(id, API.spellName(id)) end
@@ -476,8 +500,7 @@ function API.supplies(playerLevel)
     if not best or level > best.level then out.best[kind] = { id = id, name = name, level = level } end
   end
   for bag = 0, 4 do
-    local slots = plain(try(C_Container.GetContainerNumSlots, bag))
-    for slot = 1, type(slots) == "number" and slots or 0 do
+    for slot = 1, upTo(try(C_Container.GetContainerNumSlots, bag), 200) do
       local info = try(C_Container.GetContainerItemInfo, bag, slot)
       local id, count = plain(field(info, "itemID")), plain(field(info, "stackCount")) or 1
       if id then

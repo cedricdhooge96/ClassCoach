@@ -11,6 +11,15 @@ local EDGES = {
   { "TOPLEFT", "BOTTOMLEFT", false }, { "TOPRIGHT", "BOTTOMRIGHT", false },
 }
 
+-- Wraps a script handler (mouse-over, drag) so it can never raise an error
+-- into the game; a problem is noted in the addon's own log instead.
+function Style.guard(fn)
+  return function(...)
+    local ok, err = pcall(fn, ...)
+    if not ok and ns.API and ns.API.log then ns.API.log("panel: %s", tostring(err)) end
+  end
+end
+
 function Style.skin(f)
   local bg = f:CreateTexture(nil, "BACKGROUND")
   bg:SetAllPoints()

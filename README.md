@@ -44,5 +44,8 @@ tests/        offline tests against a fake game client
 
 ```
 pip install lupa
-python3 tests/run.py
+python3 tests/run.py            # everything
+python3 tests/run.py robust     # one scenario
 ```
+
+The `robust` scenario is the safety net: event storms, combat lockdown, a refresh that keeps failing, damaged saved settings, broken profiles, and 6000 steps in which every game function randomly returns nothing, a hidden value, rubbish or an error. It fails if anything escapes into the game, if a loop runs away, or if the addon leaves a stray global name behind.

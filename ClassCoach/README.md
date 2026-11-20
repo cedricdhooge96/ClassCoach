@@ -36,6 +36,7 @@ ClassCoach only shows advice. It never presses buttons for you, which keeps it w
 | `/coach reset` | Puts both panels back where they started |
 | `/coach spec Enhancement` | Picks a profile by hand; `/coach spec auto` goes back to automatic |
 | `/coach check` | Prints what the addon can read on your client. Useful when something looks wrong |
+| `/coach errors` | Lists problems ClassCoach caught in itself. `/coach errors on` makes the game show every addon's error on screen; `off` hides them again |
 
 Everything else is on the settings screen.
 
@@ -136,6 +137,19 @@ Forever hides your mana number from addons during combat, but lets them hand it 
 - **The advice level (high / medium / low) is worked out**, because the addon has to decide something without the number. It uses your mana when the fight started, minus what your casts cost, corrected by which spells the game says you can still afford. It can be off by a little in long fights; the bar is the truth.
 
 `/coach check` reports whether the game accepted the bar on your client.
+
+## Safety
+
+ClassCoach is built so that a mistake in it costs you a line of advice, never your game.
+
+- **Nothing it does can raise an error into the game.** Every refresh, game event, chat command, drag and mouse-over runs inside a guard. A problem is written to a small log (100 entries at most, repeats counted instead of repeated) that `/coach errors` prints.
+- **It slows itself down when something is wrong.** After ten failed refreshes in a row it retries only once every five seconds and says so on the panel, then goes back to normal by itself when the cause is gone. A refresh that keeps taking too long is run less often.
+- **It cannot loop.** Every list the game hands over (spellbook, bags, bars) is read up to a fixed size, whatever length the game reports. Rescans run at most once every two seconds, however many events ask for one.
+- **It rations its own writes.** At most 12 automatic macro updates and 3 automatic bar fills per minute; past that it stops and tells you, and the commands still work by hand.
+- **It leaves combat alone.** Macros, bar buttons, key bindings and the smart key are only changed out of combat, as the game requires.
+- **It repairs damaged settings.** A saved value of the wrong kind or out of range goes back to its default when you log in.
+
+If the game says "Your AddOns are experiencing a large number of errors", type `/coach errors on`, then `/reload`. The first error window names the addon and the line. `/coach errors` shows what ClassCoach caught in itself; an empty list means the errors come from another addon.
 
 ## Known limits
 

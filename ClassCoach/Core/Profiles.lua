@@ -9,24 +9,34 @@ local _, ns = ...
 local Profiles = { list = {} }
 ns.Profiles = Profiles
 
+-- A broken profile is left out and noted (see /coach errors). It must never
+-- stop the addon, or the game, from loading.
+Profiles.problems = {}
 local function fail(p, msg)
-  local who = tostring(p and p.class) .. " " .. tostring(p and p.spec)
-  error("ClassCoach profile " .. who .. ": " .. msg, 3)
+  local who = tostring(type(p) == "table" and p.class) .. " " .. tostring(type(p) == "table" and p.spec)
+  Profiles.problems[#Profiles.problems + 1] = "profile " .. who .. ": " .. msg
+  return nil
 end
 
 -- Called from each Profiles/<Class>.lua file.
 function ns.RegisterProfile(p)
-  if type(p) ~= "table" then fail(p, "must be a table") end
-  if type(p.class) ~= "string" then fail(p, "needs class (e.g. \"SHAMAN\", or \"ANY\")") end
-  if type(p.spec) ~= "string" then fail(p, "needs spec (e.g. \"Enhancement\")") end
-  p.spells = p.spells or {}
+  if type(p) ~= "table" then return fail(p, "must be a table") end
+  if type(p.class) ~= "string" then return fail(p, "needs class (e.g. \"SHAMAN\", or \"ANY\")") end
+  if type(p.spec) ~= "string" then return fail(p, "needs spec (e.g. \"Enhancement\")") end
+  if type(p.spells) ~= "table" then p.spells = {} end
   for key, data in pairs(p.spells) do
-    if type(data) ~= "table" then fail(p, "spell " .. key .. " must be a table") end
+    if type(data) ~= "table" then return fail(p, "spell " .. tostring(key) .. " must be a table") end
     data.name = data.name or key
   end
-  for i, entry in ipairs(p.priority or {}) do
-    if not entry.spell then fail(p, "priority entry " .. i .. " needs spell") end
-    if not p.spells[entry.spell] then fail(p, "priority entry " .. i .. " uses unknown spell " .. entry.spell) end
+  for _, listName in ipairs({ "priority", "opener", "filler" }) do
+    if p[listName] ~= nil and type(p[listName]) ~= "table" then return fail(p, listName .. " must be a list") end
+    for i, entry in ipairs(p[listName] or {}) do
+      if type(entry) ~= "table" then return fail(p, listName .. " entry " .. i .. " must be a table") end
+      if listName == "priority" and not entry.spell then return fail(p, "priority entry " .. i .. " needs spell") end
+      if entry.spell and not p.spells[entry.spell] then
+        return fail(p, listName .. " entry " .. i .. " uses unknown spell " .. tostring(entry.spell))
+      end
+    end
   end
   p.priority = p.priority or {}
   p.opener = p.opener or {}
@@ -63,13 +73,13 @@ function Profiles.choose(class, points, override)
   if #mine == 0 then return generic(), "generic" end
   if override then
     for _, p in ipairs(mine) do
-      if p.spec:lower() == override:lower() then return p, "chosen" end
+      if type(override) == "string" and p.spec:lower() == override:lower() then return p, "chosen" end
     end
   end
   if points then
     local bestTab, bestPoints = nil, 0
     for tab, n in pairs(points) do
-      if n > bestPoints then bestTab, bestPoints = tab, n end
+      if type(n) == "number" and n > bestPoints then bestTab, bestPoints = tab, n end
     end
     if bestTab then
       for _, p in ipairs(mine) do

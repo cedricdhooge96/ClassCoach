@@ -210,6 +210,13 @@ tips = {
 `startPct`, `endPct`, `spentPct`, `swings`, `casts` (list sorted by mana).
 Return a sentence or `nil`. At most two tips show, profile tips first.
 
+## What happens when a profile is wrong
+
+A profile that is not a table, has no class, or lists a spell it never defined is skipped with a note
+instead of stopping the addon: `/coach errors` shows which one and why. Your `when`, `why`, `advice`
+and `tips` functions are called inside a guard too, so an error in one costs that line, not the panel.
+Counts you read from the game should go through `ns.API.upTo(n, most)` before you loop over them.
+
 ## Testing a new profile
 
 Add a scenario to `tests/run.lua` (copy the Shaman one): give the fake player the spells,

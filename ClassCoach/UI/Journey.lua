@@ -35,18 +35,18 @@ local function row(parent)
   label:SetWordWrap(false)
   r.label = label
   r:EnableMouse(true)
-  r:SetScript("OnEnter", function(self)
+  r:SetScript("OnEnter", ns.Style.guard(function(self)
     if not self.title or not GameTooltip then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText(self.title, 1, 0.82, 0.2)
     if self.hint then GameTooltip:AddLine(self.hint, 0.9, 0.9, 0.9, true) end
     GameTooltip:Show()
-  end)
-  r:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+  end))
+  r:SetScript("OnLeave", ns.Style.guard(function() if GameTooltip then GameTooltip:Hide() end end))
   -- dragging a row drags the panel
   r:RegisterForDrag("LeftButton")
-  r:SetScript("OnDragStart", function() local s = parent:GetScript("OnDragStart"); if s then s(parent) end end)
-  r:SetScript("OnDragStop", function() local s = parent:GetScript("OnDragStop"); if s then s(parent) end end)
+  r:SetScript("OnDragStart", ns.Style.guard(function() local s = parent:GetScript("OnDragStart"); if s then s(parent) end end))
+  r:SetScript("OnDragStop", ns.Style.guard(function() local s = parent:GetScript("OnDragStop"); if s then s(parent) end end))
   return r
 end
 
@@ -63,8 +63,8 @@ function Journey.create(charDB, db)
   f:SetMovable(true)
   f:EnableMouse(true)
   f:RegisterForDrag("LeftButton")
-  f:SetScript("OnDragStart", function(self) if not db.locked then self:StartMoving() end end)
-  f:SetScript("OnDragStop", function(self)
+  f:SetScript("OnDragStart", ns.Style.guard(function(self) if not db.locked then self:StartMoving() end end))
+  f:SetScript("OnDragStop", ns.Style.guard(function(self)
     self:StopMovingOrSizing()
     local pinned = ns.Style.pin(self)
     if pinned then
@@ -73,7 +73,7 @@ function Journey.create(charDB, db)
       local point, _, relPoint, x, y = self:GetPoint()
       charDB.journeyPos = { point, relPoint, x, y }
     end
-  end)
+  end))
 
   local title = font(f, "GameFontDisableSmall")
   title:SetPoint("TOPLEFT", 10, -8)

@@ -66,7 +66,16 @@ function Tracker:cast(now, name, cost, meta, targetKey, duration)
   local dotKey = targetKey .. "|" .. name
   local before = self.dots[dotKey]            -- kept so a resisted recast can be undone
   if before and now >= before.expires then before = nil end
-  if lasts then self.dots[dotKey] = { target = targetKey, name = name, expires = now + lasts, duration = lasts } end
+  if lasts then
+    self.dots[dotKey] = { target = targetKey, name = name, expires = now + lasts, duration = lasts }
+    -- outside a fight nothing clears old timers: drop the ones that ran out
+    self.dotCount = (self.dotCount or 0) + 1
+    if self.dotCount > 40 then
+      self.dotCount = 0
+      for key, d in pairs(self.dots) do if now >= d.expires then self.dots[key] = nil end end
+      for key in pairs(self.immune) do self.immune[key] = nil end
+    end
+  end
   if meta.totem then self.totems[meta.totem] = { name = name, expires = now + (meta.lasts or 60) } end
   local c = { name = name, cost = cost, meta = meta, target = targetKey, at = now, dotKey = lasts and dotKey or nil, before = before }
   local list = self.recentCasts

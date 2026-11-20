@@ -137,13 +137,18 @@ end
 
 -- Where the key is right now: readable at any time, also in combat.
 -- { ready, count, nextLabel, lastLabel, keys = { next, again, restart } }
+local keyCache, keysAt = {}, -100
 function Smart.status()
   local b, steps = Smart.button, Smart.steps
-  local keys = {}
-  for what, binding in pairs(BIND) do
-    local found, key = pcall(GetBindingKey, binding)
-    keys[what] = found and shortKey(key) or nil
+  local now = GetTime and GetTime() or 0
+  if now - keysAt > 2 or now < keysAt then
+    keysAt, keyCache = now, {}
+    for what, binding in pairs(BIND) do
+      local found, key = pcall(GetBindingKey, binding)
+      keyCache[what] = found and shortKey(key) or nil
+    end
   end
+  local keys = keyCache
   local out = { ready = b ~= nil and steps ~= nil and #steps > 0, count = steps and #steps or 0, keys = keys }
   if out.ready then
     local fine, step, last = pcall(function() return b:GetAttribute("cc-step"), b:GetAttribute("cc-last") end)
@@ -163,6 +168,7 @@ function Smart.bind(what, key)
     SetBindingClick(key, NAME, CLICKS[what])
     SaveBindings(GetCurrentBindingSet())
   end)
+  keysAt = -100   -- read the keys again
   return ok
 end
 

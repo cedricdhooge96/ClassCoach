@@ -70,8 +70,8 @@ function Panel.create(charDB, db)
   f:SetMovable(true)
   f:EnableMouse(true)
   f:RegisterForDrag("LeftButton")
-  f:SetScript("OnDragStart", function(self) if not db.locked then self:StartMoving() end end)
-  f:SetScript("OnDragStop", function(self)
+  f:SetScript("OnDragStart", ns.Style.guard(function(self) if not db.locked then self:StartMoving() end end))
+  f:SetScript("OnDragStop", ns.Style.guard(function(self)
     self:StopMovingOrSizing()
     local pinned = ns.Style.pin(self)
     if pinned then
@@ -80,7 +80,7 @@ function Panel.create(charDB, db)
       local point, _, relPoint, x, y = self:GetPoint()
       charDB.pos = { point, relPoint, x, y }
     end
-  end)
+  end))
 
   local title = font(f, "GameFontDisableSmall")
   title:SetPoint("TOPLEFT", 10, -8)
@@ -173,18 +173,18 @@ function Panel.create(charDB, db)
     edge:SetColorTexture(COLORS.warn[1], COLORS.warn[2], COLORS.warn[3], 0.9)
     s.edge = edge
     s:EnableMouse(true)
-    s:SetScript("OnEnter", function(self)
+    s:SetScript("OnEnter", ns.Style.guard(function(self)
       if not self.title or not GameTooltip then return end
       GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
       GameTooltip:SetText(self.title, 1, 0.82, 0.2)
       if self.spell then GameTooltip:AddLine("Cast " .. self.spell .. (self.bind and (" (" .. self.bind .. ")") or ""), 1, 1, 1) end
       if self.hint then GameTooltip:AddLine(self.hint, 0.9, 0.9, 0.9, true) end
       GameTooltip:Show()
-    end)
-    s:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    end))
+    s:SetScript("OnLeave", ns.Style.guard(function() if GameTooltip then GameTooltip:Hide() end end))
     s:RegisterForDrag("LeftButton")
-    s:SetScript("OnDragStart", function() local d = f:GetScript("OnDragStart"); if d then d(f) end end)
-    s:SetScript("OnDragStop", function() local d = f:GetScript("OnDragStop"); if d then d(f) end end)
+    s:SetScript("OnDragStart", ns.Style.guard(function() local d = f:GetScript("OnDragStart"); if d then d(f) end end))
+    s:SetScript("OnDragStop", ns.Style.guard(function() local d = f:GetScript("OnDragStop"); if d then d(f) end end))
     f.missing[i] = s
   end
 

@@ -22,6 +22,7 @@ local function load(extra)
     local chunk = assert(loadfile(path))
     chunk("ClassCoach", ns)
   end
+  if not KEEP_LIMITS then ns.C.rescanGap, ns.C.macroGap = 0, 0 end   -- the rate limits have their own test
   M.fire("ADDON_LOADED", "ClassCoach")
   M.fire("PLAYER_ENTERING_WORLD")
   M.advance(1)
@@ -561,6 +562,14 @@ elseif SCENARIO == "warlock" then
     pull and pull.body)
   check("wand and demon macros", GetMacroIndexByName("CC Wand") > 0 and GetMacroIndexByName("CC Demon") > 0)
   check("macros fit the game's limit", #pull.body <= 255)
+  -- A client that hands macro text back changed must not make us rewrite it forever.
+  local realBody, edits = GetMacroBody, 0
+  local realEdit = EditMacro
+  GetMacroBody = function(i) return (realBody(i) or "") .. "\n" end
+  EditMacro = function(...) edits = edits + 1; return realEdit(...) end
+  for _ = 1, 3 do M.fire("SPELLS_CHANGED"); M.advance(1); tick(ns) end
+  check("unchanged macros are not rewritten", edits == 0, edits)
+  GetMacroBody, EditMacro = realBody, realEdit
   -- The macro follows the coach: short kills drop the long spell, and it rewrites itself after a fight.
   ClassCoachCharDB.kill = { avg = 7, n = 5 }
   target({ name = "Boar", level = 11, hostile = true, guid = "Creature-12" })
@@ -612,6 +621,8 @@ elseif SCENARIO == "warlock" then
   target(nil); M.advance(1); tick(ns)
 
   -- The smart key: one key walks the plan, inside the game's secure code.
+  check("no secure button until you ask for the smart key", ns.Smart.button == nil)
+  SlashCmdList.CLASSCOACH("errors")
   SlashCmdList.CLASSCOACH("smart")
   local b = ns.Smart.button
   check("smart key: secure button made and loaded", b ~= nil and b:GetAttribute("cc-count") == 4, b and b:GetAttribute("cc-count"))
@@ -791,6 +802,222 @@ elseif SCENARIO == "sweep" then
       last[variant] = body
     end
   end
+
+---------------------------------------------------------------------------
+-- Robustness: whatever the game does, the addon must never raise an error
+-- into it, never loop, and never do protected things in combat.
+elseif SCENARIO == "robust" then
+  KEEP_LIMITS = true
+  local before = {}
+  for k in pairs(_G) do before[k] = true end
+  M.player({
+    class = "WARLOCK", className = "Warlock", level = 12, mana = 300, maxMana = 300,
+    spells = {
+      [686] = { name = "Shadow Bolt", cost = 25 }, [348] = { name = "Immolate", cost = 25 },
+      [172] = { name = "Corruption", cost = 35 }, [980] = { name = "Bane of Agony", cost = 25 },
+      [1454] = { name = "Life Tap", cost = 0 }, [687] = { name = "Demon Skin", cost = 50 },
+      [688] = { name = "Summon Imp", cost = 60 }, [5019] = { name = "Shoot", cost = 0 },
+    },
+    book = { 686, 348, 172, 980, 1454, 687, 688, 5019 },
+    equipped = { [18] = 11287 }, pet = { family = "Imp" }, talents = { 3, 0, 0 },
+    actions = { [1] = 686 }, bindings = { ACTIONBUTTON1 = "1" },
+  })
+  -- a broken profile file must not stop anything
+  local nsProbe = {}
+  local ns = load("tests/broken_profile.lua")
+  check("a broken profile is skipped and noted, not an error", #ns.Profiles.problems >= 3, #ns.Profiles.problems)
+  check("the real profile still loads", ns.C.profile.spec == "Affliction", ns.C.profile.spec)
+  local driver = ns.C.driver
+  local escaped = 0
+  local function guarded(what, fn, ...)
+    local ok, err = pcall(fn, ...)
+    if not ok then escaped = escaped + 1; print_real("ESCAPED from " .. what .. ": " .. tostring(err)) end
+  end
+  local function refresh(dt) guarded("refresh", driver.scripts.OnUpdate, driver, dt or 1) end
+  refresh(); M.advance(3); refresh()
+
+  -- 1. An event storm: a sequence macro changing its button a hundred times a second
+  local scans, realScan = 0, ns.API.scanKeys
+  ns.API.scanKeys = function(...) scans = scans + 1; return realScan(...) end
+  local spellScans, realBook = 0, ns.API.scanSpellbook
+  ns.API.scanSpellbook = function(...) spellScans = spellScans + 1; return realBook(...) end
+  for i = 1, 1000 do
+    M.fire("ACTIONBAR_SLOT_CHANGED", (i % 12) + 1); M.fire("UPDATE_MACROS")
+    if i % 100 == 0 then M.advance(1); refresh() end
+  end
+  check("1000 bar events in 10 seconds: keys read at most once every two seconds", scans >= 1 and scans <= 6, scans)
+  check("and the spellbook not at all", spellScans == 0, spellScans)
+  for i = 1, 300 do M.fire("SPELLS_CHANGED"); if i % 30 == 0 then M.advance(1); refresh() end end
+  check("300 spell events in 10 seconds: at most one full rescan every two seconds", spellScans >= 1 and spellScans <= 6, spellScans)
+  ns.API.scanKeys, ns.API.scanSpellbook = realScan, realBook
+
+  -- 2. A client that keeps reporting macros as different: rewrites are rationed, then stop
+  SlashCmdList.CLASSCOACH("macros")
+  local edits, realEdit, realBody = 0, EditMacro, GetMacroBody
+  EditMacro = function(...) edits = edits + 1; return realEdit(...) end
+  for i = 1, 200 do
+    ClassCoachCharDB.kill = { avg = 6 + (i % 2) * 20, n = 5 }   -- the plan flips every time
+    M.fire("SPELLS_CHANGED"); M.advance(2.1); refresh()
+  end
+  check("automatic macro rewrites stop themselves", ns.C.macrosPaused == true and edits <= 14, edits)
+  EditMacro = realEdit; ClassCoachCharDB.kill = nil
+
+  -- 3. Nothing protected is touched in combat
+  M.P.target = { name = "Wolf", level = 12, hostile = true, guid = "Creature-1" }; M.fire("PLAYER_TARGET_CHANGED")
+  M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
+  local touched = 0
+  for _, name in ipairs({ "EditMacro", "CreateMacro", "PlaceAction", "SetBinding", "SetBindingClick", "ChangeActionBarPage" }) do
+    local real = _G[name]
+    _G[name] = function(...) touched = touched + 1; return real(...) end
+  end
+  for _, cmd in ipairs({ "macros", "bar", "bar replace", "smart", "smart next 1", "pages", "reset", "set scale 1.2", "check", "errors", "last" }) do
+    guarded("/coach " .. cmd, SlashCmdList.CLASSCOACH, cmd)
+  end
+  for _, e in ipairs({ "SPELLS_CHANGED", "ACTIONBAR_SLOT_CHANGED", "BAG_UPDATE_DELAYED", "UPDATE_BINDINGS", "PLAYER_EQUIPMENT_CHANGED" }) do
+    M.fire(e)
+  end
+  ClassCoachDB.autoBar = true
+  for _ = 1, 20 do M.advance(0.5); refresh() end
+  check("in combat: no macro, bar, binding or page call at all", touched == 0, touched)
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(3); refresh()
+  ClassCoachDB.autoBar = false
+
+  -- 4. Commands with nonsense
+  for _, cmd in ipairs({ "", " ", "set", "set nothing 1", "set scale banana", "set opacity -5", "spec", "spec Nope", "bar what",
+    "smart next", "smart nope F1", "journey", "errors on", "errors off", "%s%d%%", string.rep("x", 5000) }) do
+    guarded("/coach " .. cmd:sub(1, 20), SlashCmdList.CLASSCOACH, cmd)
+  end
+  guarded("/coach nil", SlashCmdList.CLASSCOACH, nil)
+  guarded("/coach number", SlashCmdList.CLASSCOACH, 42)
+  check("scale stayed a sane number", type(ClassCoachDB.scale) == "number" and ClassCoachDB.scale >= 0.6 and ClassCoachDB.scale <= 1.6, tostring(ClassCoachDB.scale))
+
+  -- 5. A refresh that keeps failing: caught, slowed down, said, and it recovers
+  local realNext = ns.Engine.next
+  ns.Engine.next = function() error("boom") end
+  local runs = 0
+  local realBuild = ns.Engine.newState
+  ns.Engine.newState = function(...) runs = runs + 1; return realBuild(...) end
+  for _ = 1, 12 do refresh(1) end
+  check("a failing refresh never reaches the game", escaped == 0, escaped)
+  check("after ten failures it tells you on the panel", ns.C.trouble ~= nil and ns.Panel.frame.status.text:find("/coach errors") ~= nil, ns.Panel.frame.status.text)
+  runs = 0
+  for _ = 1, 20 do refresh(1) end
+  check("and tries only once every five seconds", runs == 4, runs)
+  ns.Engine.next = realNext
+  for _ = 1, 6 do refresh(1) end
+  check("it recovers by itself when the cause is gone", ns.C.trouble == nil and ns.Panel.frame.name.text ~= "", tostring(ns.C.trouble))
+  ns.Engine.newState = realBuild
+  check("the same error is logged once, then counted", #ClassCoachDB.log < 12, #ClassCoachDB.log)
+
+  -- 6. Chaos: every game function returns nothing, something hidden, rubbish, or fails
+  local SECRET = M.SECRET
+  local names = {}
+  for name, v in pairs(_G) do
+    if type(v) == "function" and (name:match("^Unit") or name:match("^Get") or name:match("^Is") or name:match("^Can")
+      or name:match("^Set") or name:match("^Pickup") or name:match("^Place") or name:match("^Edit") or name:match("^Create")
+      or name:match("^Change") or name:match("^Save") or name:match("^Clear")) and name ~= "GetTime" and name ~= "CreateFrame" then
+      names[#names + 1] = name
+    end
+  end
+  table.sort(names)
+  local tables = {}
+  for _, tn in ipairs({ "C_Spell", "C_SpellBook", "C_Item", "C_Container", "C_UnitAuras", "C_Secrets", "C_NamePlate" }) do
+    if type(_G[tn]) == "table" then tables[#tables + 1] = tn end
+  end
+  local seed = 12345
+  local function rnd(n) seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n end
+  local junk = { function() return nil end, function() return SECRET end, function() return SECRET, SECRET, SECRET end,
+    function() error("the game refused") end, function() return {} end, function() return "text" end, function() return -1 end,
+    function() return 0 / 0 end, function() return true end, function() return math.huge end,
+    function() return { itemID = SECRET, stackCount = SECRET, isActive = SECRET, name = SECRET } end }
+  local originals = {}
+  local function wreck(tbl, key)
+    local real = tbl[key]
+    originals[#originals + 1] = { tbl, key, real }
+    tbl[key] = function(...)
+      local r = rnd(100)
+      if r < 55 then return real(...) end
+      return junk[rnd(#junk) + 1](...)
+    end
+  end
+  for _, name in ipairs(names) do wreck(_G, name) end
+  for _, tn in ipairs(tables) do
+    local keys = {}
+    for k, v in pairs(_G[tn]) do if type(v) == "function" then keys[#keys + 1] = k end end
+    table.sort(keys)
+    for _, k in ipairs(keys) do wreck(_G[tn], k) end
+  end
+  local EVENTS = { "SPELLS_CHANGED", "ACTIONBAR_SLOT_CHANGED", "UPDATE_BINDINGS", "UPDATE_MACROS", "BAG_UPDATE_DELAYED", "MERCHANT_SHOW",
+    "MERCHANT_CLOSED", "PLAYER_TARGET_CHANGED", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "PLAYER_SWING", "UNIT_AURA",
+    "UNIT_COMBAT", "UNIT_SPELLCAST_SUCCEEDED", "PLAYER_LEVEL_UP", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
+    "PLAYER_TALENT_UPDATE", "PLAYER_EQUIPMENT_CHANGED", "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "PLAYER_ENTERING_WORLD" }
+  local ARGS = { nil, SECRET, "player", "target", "RESIST", "IMMUNE", 980, 172, 5019, -1, 0 / 0, {}, true, "ClassCoach", 13, 60, 999 }
+  local COMMANDS = { "macros", "bar", "bar replace", "bar preview", "smart", "smart next 1", "pages", "reset", "check", "errors", "last",
+    "set compact", "set scale 1.3", "spec auto", "hide", "show" }
+  local began, steps = os.clock(), 0
+  for i = 1, 6000 do
+    local r = rnd(100)
+    if r < 45 then
+      guarded("event", M.fire, EVENTS[rnd(#EVENTS) + 1], ARGS[rnd(#ARGS) + 1], ARGS[rnd(#ARGS) + 1], ARGS[rnd(#ARGS) + 1])
+    elseif r < 85 then
+      M.now = M.now + 0.1 + rnd(20) / 10
+      refresh(0.5)
+    elseif r < 90 then
+      guarded("command", SlashCmdList.CLASSCOACH, COMMANDS[rnd(#COMMANDS) + 1])
+    elseif r < 95 then
+      guarded("timers", M.advance, rnd(30) / 10)
+    else
+      M.P.combat = rnd(2) == 0
+      M.P.target = rnd(3) > 0 and { name = "Thing", level = rnd(70) - 2, hostile = rnd(4) > 0, elite = rnd(5) == 0, guid = "Creature-" .. rnd(6) } or nil
+      M.P.mana = rnd(400); M.P.level = rnd(62) + 1; M.P.pet = rnd(2) == 0 and { family = ({ "Imp", "Voidwalker", "Cat" })[rnd(3) + 1] } or nil
+      -- the panels' own handlers
+      local pf, jf = ns.Panel.frame, ns.Journey.frame
+      pf.left, pf.bottom, pf.top = rnd(3000) - 500, rnd(2000) - 500, rnd(2000) - 500
+      guarded("drag", pf.scripts.OnDragStart, pf); guarded("drag", pf.scripts.OnDragStop, pf)
+      guarded("drag", jf.scripts.OnDragStop, jf)
+      for _, s in ipairs(pf.missing) do guarded("hover", s.scripts.OnEnter, s); guarded("hover", s.scripts.OnLeave, s) end
+      for _, rw in ipairs(jf.rows) do guarded("hover", rw.scripts.OnEnter, rw) end
+      guarded("menu", ClassCoach_OnAddonCompartmentClick); guarded("menu", ClassCoach_OnAddonCompartmentEnter, nil, pf)
+    end
+    steps = steps + 1
+  end
+  local seconds = os.clock() - began
+  for _, o in ipairs(originals) do o[1][o[2]] = o[3] end
+  check("chaos: 6000 hostile steps, nothing escaped into the game", escaped == 0, escaped)
+  check("chaos: it finished quickly (no runaway loop)", seconds < 20, seconds)
+  check("chaos: the log stayed small", #ClassCoachDB.log <= 100, #ClassCoachDB.log)
+  local dots, casts = 0, #ns.C.tracker.recentCasts
+  for _ in pairs(ns.C.tracker.dots) do dots = dots + 1 end
+  check("chaos: the trackers stayed small", dots <= 60 and casts <= 12, dots .. "/" .. casts)
+
+  -- 7. Back to a sane game: it works again without a reload
+  M.P.combat = false; M.P.level = 12; M.P.mana = 300; M.P.pet = { family = "Imp" }; M.P.target = nil
+  M.fire("PLAYER_REGEN_ENABLED"); M.fire("PLAYER_LEVEL_UP", 12); M.fire("PLAYER_TARGET_CHANGED")
+  for _ = 1, 30 do M.advance(1); refresh(1) end
+  check("after the chaos it runs normally again", ns.C.trouble == nil and ns.C.lastState ~= nil and ns.C.lastState.level == 12,
+    tostring(ns.C.trouble))
+
+  -- 8. Damaged saved settings are repaired
+  ClassCoachDB.scale, ClassCoachDB.opacity, ClassCoachDB.compact, ClassCoachDB.drinkAt = "big", 0 / 0, "yes", 9999
+  ClassCoachCharDB.pos, ClassCoachCharDB.journeyPos = { "CENTER", 5, "x" }, "nowhere"
+  ClassCoachCharDB.kill, ClassCoachCharDB.specChoice, ClassCoachDB.log = { avg = -3, n = "many" }, 77, "oops"
+  ns.Options.sanitize(ClassCoachDB, ClassCoachCharDB)
+  check("damaged settings go back to defaults", ClassCoachDB.scale == 1 and ClassCoachDB.opacity == 75 and ClassCoachDB.compact == false
+    and ClassCoachDB.drinkAt == 60 and ClassCoachCharDB.pos == nil and ClassCoachCharDB.journeyPos == nil
+    and ClassCoachCharDB.kill == nil and ClassCoachCharDB.specChoice == "auto" and ClassCoachDB.log == nil)
+  for _ = 1, 5 do M.advance(1); refresh(1) end
+  check("and nothing escaped at any point", escaped == 0, escaped)
+
+  -- 9. Good neighbour: no stray global names that could collide with the game or another addon
+  local stray = {}
+  for k in pairs(_G) do
+    if not before[k] and type(k) == "string" and not (k:match("^ClassCoach") or k:match("^SLASH_CLASSCOACH")
+      or k:match("^BINDING_[A-Z]+_CLASSCOACH") or k:match("^BINDING_NAME_CLICK ClassCoach")) then
+      stray[#stray + 1] = k
+    end
+  end
+  table.sort(stray)
+  check("no stray global names", #stray == 0, table.concat(stray, ", "))
 
 ---------------------------------------------------------------------------
 elseif SCENARIO == "template" then

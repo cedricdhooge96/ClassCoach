@@ -78,6 +78,36 @@ local function layout()
   }
 end
 
+-- Saved settings can be damaged (a crash while saving, an edit by hand, an
+-- older version). Anything of the wrong kind or out of range goes back to its
+-- default, so the panels never have to cope with it.
+function Options.sanitize(db, charDB)
+  for _, o in ipairs(layout()) do
+    if o.key then
+      local store = o.perChar and charDB or db
+      local v = store[o.key]
+      if type(v) ~= type(o.default) then
+        store[o.key] = o.default
+      elseif o.kind == "slider" then
+        if v ~= v or v < o.min or v > o.max then store[o.key] = o.default end   -- v ~= v: not a number
+      end
+    end
+  end
+  local function position(pos)
+    if type(pos) ~= "table" then return nil end
+    if type(pos[1]) ~= "string" or type(pos[2]) ~= "string" or type(pos[3]) ~= "number" or type(pos[4]) ~= "number" then return nil end
+    if pos[3] ~= pos[3] or pos[4] ~= pos[4] or math.abs(pos[3]) > 20000 or math.abs(pos[4]) > 20000 then return nil end
+    return pos
+  end
+  charDB.pos, charDB.journeyPos = position(charDB.pos), position(charDB.journeyPos)
+  local kill = charDB.kill
+  if type(kill) ~= "table" or type(kill.avg) ~= "number" or type(kill.n) ~= "number" or kill.avg ~= kill.avg or kill.avg <= 0 or kill.avg > 600 then
+    charDB.kill = nil
+  end
+  if type(charDB.demon) ~= "string" then charDB.demon = nil end
+  if type(db.log) ~= "table" then db.log = nil end
+end
+
 function Options.defaults()
   local d = {}
   for _, o in ipairs(layout()) do

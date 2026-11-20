@@ -12,15 +12,36 @@ ns.C = C
 local function say(text) print("|cff8fc7ffClassCoach:|r " .. text) end
 ns.say = say
 
+-- Notes a problem in the saved log (see /coach errors). The same problem
+-- repeating is counted, not stored again, so the log can never flood.
+local lastLogged, repeats = nil, 0
 local function log(fmt, ...)
   local db = ClassCoachDB
-  if not db then return end
-  db.log = db.log or {}
+  if type(db) ~= "table" then return end
+  if type(db.log) ~= "table" then db.log = {} end
   local ok, line = pcall(string.format, fmt, ...)
-  db.log[#db.log + 1] = (date and date("%H:%M:%S") or "") .. " " .. (ok and line or tostring(fmt))
-  while #db.log > 200 do table.remove(db.log, 1) end
+  line = ok and line or tostring(fmt)
+  if #line > 400 then line = line:sub(1, 400) .. "..." end
+  if line == lastLogged then
+    repeats = repeats + 1
+    if repeats == 10 or repeats == 100 or repeats == 1000 then
+      db.log[#db.log + 1] = ("  (the line above has now happened %d times)"):format(repeats)
+    end
+    return
+  end
+  lastLogged, repeats = line, 1
+  db.log[#db.log + 1] = (date and date("%H:%M:%S") or "") .. " " .. line
+  while #db.log > 100 do table.remove(db.log, 1) end
 end
 API.log = log
+
+-- Runs something of ours so that it can never raise an error in the game.
+local function safely(what, fn, ...)
+  local ok, err = pcall(fn, ...)
+  if not ok then log("%s: %s", what, tostring(err)) end
+  return ok, err
+end
+ns.safely = safely
 
 ---------------------------------------------------------------------------
 -- Profile and spell scanning
@@ -72,16 +93,38 @@ local function rescan()
   C.barPending = true   -- newly learned spells may want their place on your bars (see tick)
 end
 
-local rescanQueued = false
-local function rescanSoon()
-  if rescanQueued then return end
-  rescanQueued = true
-  C_Timer.After(0.5, function()
-    rescanQueued = false
-    local ok, err = pcall(rescan)
-    if not ok then log("rescan error: %s", tostring(err)) end
-  end)
+-- Only the keys on your bars changed: no need to read the spellbook again.
+local function rescanKeys()
+  if API.inCombat() then C.rescanDue = true return end
+  C.keys = API.scanKeys()
+  C.lendMacroKeys()
 end
+
+-- Events ask for a rescan here. However many ask, and however fast, the work
+-- runs at most once every two seconds: an event storm cannot slow the game.
+C.rescanGap = 2
+local rescanQueued, rescanWant, lastRescan = nil, nil, -100
+local function clockNow()
+  local now = API.plain(GetTime())
+  return type(now) == "number" and now == now and now or 0
+end
+local function rescanSoon(keysOnly)
+  if keysOnly ~= true then rescanWant = "full" elseif not rescanWant then rescanWant = "keys" end
+  local now = clockNow()
+  -- A queued rescan that never ran (its timer was lost) is forgotten after ten seconds.
+  if rescanQueued and now >= rescanQueued and now - rescanQueued < 10 then return end
+  local wait = (C.rescanGap or 2) - (now - lastRescan)
+  if wait ~= wait or wait < 0.5 then wait = 0.5 elseif wait > 5 then wait = 5 end
+  local queued = pcall(C_Timer.After, wait, function()
+    rescanQueued = nil
+    local want = rescanWant
+    rescanWant = nil
+    lastRescan = clockNow()
+    safely("rescan", want == "keys" and rescanKeys or rescan)
+  end)
+  rescanQueued = queued and now or nil
+end
+local function rescanKeysSoon() rescanSoon(true) end
 
 ---------------------------------------------------------------------------
 -- Target, demon and macros
@@ -113,22 +156,50 @@ end
 
 -- Builds the profile's macros from the spells you know. With onlyExisting it
 -- only refreshes macros you already made (after training new spells).
-function C.syncMacros(onlyExisting)
-  local s = C.lastState
-  if not s or not C.profile.macros or API.inCombat() then return {} end
-  if onlyExisting and ClassCoachDB.autoMacros == false then return {} end
-  local results = {}
-  for _, m in ipairs(Engine.macros(C.profile, s)) do
-    local result = API.saveMacro(m.name, m.body, onlyExisting)
-    results[#results + 1] = { name = m.name, result = result, about = m.about, smart = m.smart }
-    -- a macro on your bar lends its key to the spells inside it
-    local key = C.keys and C.keys["macro:" .. m.name]
-    if key and API.macroExists(m.name) then
+-- A macro on your bar lends its key to the spells inside it.
+function C.lendMacroKeys()
+  for name, body in pairs(C.macroBodies or {}) do
+    local key = C.keys and C.keys["macro:" .. name]
+    if key and API.macroExists(name) then
       for _, sp in pairs(C.spells or {}) do
-        if C.keys[sp.name] == nil and m.body:find(sp.name, 1, true) then C.keys[sp.name] = key end
+        if C.keys[sp.name] == nil and body:find(sp.name, 1, true) then C.keys[sp.name] = key end
       end
     end
   end
+end
+
+-- Automatic macro rewrites are rationed. If something ever made the addon
+-- want to rewrite macros again and again, it stops doing so by itself for the
+-- rest of the session rather than hammer the game. /coach macros still works.
+local AUTO_EDITS_PER_MINUTE = 12
+local autoEdits, autoEditsSince = 0, 0
+
+function C.syncMacros(onlyExisting)
+  local s = C.lastState
+  if not s or API.inCombat() then return {} end
+  if onlyExisting and (ClassCoachDB.autoMacros == false or C.macrosPaused) then return {} end
+  local now = GetTime()
+  if onlyExisting then
+    if C.macrosAt and now - C.macrosAt < (C.macroGap or 1.5) then return {} end   -- just done
+    if now - autoEditsSince > 60 then autoEdits, autoEditsSince = 0, now end
+  end
+  C.macrosAt = now
+  local results = {}
+  C.macroBodies = C.macroBodies or {}
+  for _, m in ipairs(Engine.macros(C.profile, s)) do
+    local result = API.saveMacro(m.name, m.body, onlyExisting)
+    results[#results + 1] = { name = m.name, result = result, about = m.about, smart = m.smart }
+    if result == "created" or result == "updated" or result == "same" then C.macroBodies[m.name] = m.body end
+    if onlyExisting and result == "updated" then
+      autoEdits = autoEdits + 1
+      if autoEdits > AUTO_EDITS_PER_MINUTE then
+        C.macrosPaused = true
+        log("macros were being rewritten too often: automatic updates paused until /reload")
+        break
+      end
+    end
+  end
+  C.lendMacroKeys()
   C.syncSmart()
   return results
 end
@@ -137,6 +208,8 @@ end
 function C.syncSmart()
   local s = C.lastState
   if not s or ClassCoachDB.smartKey == false or API.inCombat() then return false end
+  -- The secure button is only made once you use it: a key bound to it, or /coach smart.
+  if not ns.Smart.button and not C.smartWanted and not ns.Smart.status().keys.next then return false end
   if not ns.Smart.create() then return false end
   local steps, gate = Engine.smartSteps(C.profile, s, { macro = API.macroExists })
   return ns.Smart.load(steps, gate)
@@ -150,7 +223,20 @@ end
 --   "preview"  only say what would go where
 local BAR_OF = { fight = 1, react = 2, prep = 3 }
 local BAR_TITLE = { fight = "Fight", react = "React", prep = "Prepare" }
+local autoBarRuns, autoBarSince = 0, 0
 function C.setupBar(mode, quiet)
+  if quiet then
+    -- the automatic pass: at most three a minute, then it stops for the session
+    local now = GetTime()
+    if C.barPaused then return 0 end
+    if now - autoBarSince > 60 then autoBarRuns, autoBarSince = 0, now end
+    autoBarRuns = autoBarRuns + 1
+    if autoBarRuns > 3 then
+      C.barPaused = true
+      log("the action bars were being filled too often: automatic filling paused until /reload")
+      return 0
+    end
+  end
   local s = C.lastState
   local report = quiet and function() end or say
   if not (C.profile.bars or C.profile.bar) then report("No bar layout for " .. C.profile.spec .. " yet.") return end
@@ -220,7 +306,7 @@ function C.setupBar(mode, quiet)
   end
   if mode == "preview" then report("That is the plan. /coach bar fills empty buttons; /coach bar replace overwrites.")
   elseif total == 0 and #off == 0 then report("Your bars already have everything.") end
-  if mode ~= "preview" and total > 0 then rescanSoon() end
+  if mode ~= "preview" and total > 0 then rescanKeysSoon() end
   return total
 end
 
@@ -231,9 +317,9 @@ end
 local function readMana(now, inCombat)
   local cur, max = API.mana()
   if max then C.manaMax = max end
-  if cur then
+  if cur and C.manaMax and C.manaMax > 0 then
     C.lastMana = cur
-    return cur / C.manaMax * 100, true
+    return math.max(0, math.min(100, cur / C.manaMax * 100)), true
   end
   local pct = API.manaPct()
   if pct then return pct, true end
@@ -265,8 +351,12 @@ end
 function C.journeyData(now)
   local j = C.journey
   if j and now - j.at < 2 then return j end
+  -- Reading every bag slot is the costly part: only when the bags changed.
+  if not C.suppliesCache or C.suppliesStale then
+    C.suppliesCache, C.suppliesStale = API.supplies(C.level or API.level()), false
+  end
   j = { at = now, xp = API.xp(), talentPoints = API.unspentTalents(), durability = API.durability(),
-    freeSlots = API.freeBagSlots(), hasItem = API.hasItem, supplies = API.supplies(C.level or API.level()),
+    freeSlots = API.freeBagSlots(), hasItem = API.hasItem, supplies = C.suppliesCache,
     atVendor = C.atVendor == true, canRepair = C.atVendor and API.canRepair() or false }
   C.journey = j
   return j
@@ -321,12 +411,12 @@ local function tick()
     C.bagsChanged = false
     C.journey = nil
     s.journey = C.journeyData(now)
-    pcall(C.syncMacros, true)
+    safely("macros after a bag change", C.syncMacros, true)
     C.barPending = true
   end
   if C.barPending and not s.inCombat then
     C.barPending = false
-    if ClassCoachDB.autoBar then pcall(C.setupBar, nil, true) end
+    if ClassCoachDB.autoBar then safely("automatic bar fill", C.setupBar, nil, true) end
   end
   view.next = Engine.next(profile, s)
   view.chain = Engine.chain(profile, s, 3)
@@ -372,33 +462,69 @@ local function tick()
       view.status = "Ready to pull."
       view.statusKind = "ok"
     end
-    local db = ClassCoachDB
-    local journey = Engine.journey(profile, s, { food = db.food, rested = db.remindRested, train = db.remindTrain, gear = db.remindGear,
-      supplies = db.remindSupplies, roadmap = db.roadmap, data = ns.JourneyData })
-    journey.title = ("Journey · level %d"):format(s.level)
-    for _, line in ipairs(journey.lines) do
-      if type(line.icon) == "table" then   -- { spell = key }: that spell's own icon, learned or not
-        local sp, meta = s.spells[line.icon.spell], profile.spells[line.icon.spell]
-        line.icon = (sp and sp.icon) or (meta and meta.ids and API.texture(meta.ids[1])) or nil
+    -- The journey panel is a separate thing: if it ever fails, the coach panel still draws.
+    safely("journey panel", function()
+      local db = ClassCoachDB
+      local journey = Engine.journey(profile, s, { food = db.food, rested = db.remindRested, train = db.remindTrain, gear = db.remindGear,
+        supplies = db.remindSupplies, roadmap = db.roadmap, data = ns.JourneyData })
+      journey.title = ("Journey · level %d"):format(s.level)
+      for _, line in ipairs(journey.lines) do
+        if type(line.icon) == "table" then   -- { spell = key }: that spell's own icon, learned or not
+          local sp, meta = s.spells[line.icon.spell], profile.spells[line.icon.spell]
+          line.icon = (sp and sp.icon) or (meta and meta.ids and API.texture(meta.ids[1])) or nil
+        end
       end
-    end
-    C.lastJourney = journey
-    ns.Journey.render(journey)
+      C.lastJourney = journey
+      ns.Journey.render(journey)
+    end)
   end
-  if s.inCombat then ns.Journey.render({ inCombat = true }) end
+  if s.inCombat then safely("journey panel", ns.Journey.render, { inCombat = true }) end
+  if C.trouble then view.status, view.statusKind = C.trouble, "warn" end
   ns.Panel.render(view)
 end
 
-local elapsed = 0
+-- The update loop protects the game from the addon:
+--   * a refresh that fails is caught; after ten in a row the addon slows
+--     itself to one try every five seconds until it works again
+--   * a refresh that takes long makes the addon refresh less often
+--   * nothing here can raise an error into the game
+local elapsed, failures, slowRuns, stretch = 0, 0, 0, 1
+local clock = debugprofilestop
 local function onUpdate(_, dt)
+  if type(dt) ~= "number" then return end
   elapsed = elapsed + dt
   local fast = C.tracker and C.tracker.fight ~= nil
-  if elapsed < (fast and 0.1 or 0.4) then return end
+  local wait = (fast and 0.1 or 0.4) * stretch
+  if failures >= 10 then wait = 5 end
+  if elapsed < wait then return end
   elapsed = 0
+  local began = clock and clock() or nil
   local ok, err = pcall(tick)
-  if not ok and err ~= C.lastError then
-    C.lastError = err
-    log("tick error: %s", tostring(err))
+  if ok then
+    if failures >= 10 then log("refresh works again") end
+    failures, C.trouble = 0, nil
+  else
+    failures = failures + 1
+    err = tostring(err)
+    if err ~= C.lastError then C.lastError = err end
+    log("refresh error: %s", err)
+    if failures == 10 then
+      C.trouble = "ClassCoach hit a problem and slowed itself down. Type /coach errors."
+      pcall(ns.Panel.render, { status = C.trouble, statusKind = "warn", chain = {} })
+    end
+  end
+  -- more than 20 ms for one refresh is too much: halve the pace, up to four times slower
+  if began and clock then
+    local took = clock() - began
+    if took > 20 then
+      slowRuns = slowRuns + 1
+      if slowRuns >= 5 and stretch < 4 then
+        stretch, slowRuns = stretch * 2, 0
+        log("a refresh took %d ms: refreshing %dx less often", took, stretch)
+      end
+    elseif took < 5 and slowRuns > 0 then
+      slowRuns = slowRuns - 1
+    end
   end
 end
 
@@ -502,8 +628,7 @@ end
 
 function handlers.PLAYER_REGEN_ENABLED()
   C_Timer.After(0.3, function()
-    local ok, err = pcall(finishFight)
-    if not ok then log("fight report error: %s", tostring(err)) end
+    safely("fight report", finishFight)
     if C.rescanDue then rescanSoon() end
   end)
 end
@@ -528,7 +653,7 @@ function handlers.ADDON_ACTION_FORBIDDEN(addon, func) blocked("forbidden", addon
 
 -- Bags changed (bought water, used the last bandage): the rest macro and the
 -- item buttons follow on the next refresh out of combat.
-function handlers.BAG_UPDATE_DELAYED() C.bagsChanged = true end
+function handlers.BAG_UPDATE_DELAYED() C.bagsChanged = true; C.suppliesStale = true end
 
 -- At a vendor the journey panel checks your supplies.
 function handlers.MERCHANT_SHOW() C.atVendor = true; C.journey = nil end
@@ -538,6 +663,7 @@ function handlers.PLAYER_LEVEL_UP(level)
   level = API.plain(level)
   if type(level) ~= "number" then return end
   C.level = level
+  C.suppliesStale = true   -- what you can use changes with your level
   local lines = Engine.levelUp(C.profile, level)
   ns.Panel.flash(lines, 25)
   for _, l in ipairs(lines) do say(l) end
@@ -553,9 +679,12 @@ local function talentsChanged()
   rescanSoon()
 end
 
-for _, e in ipairs({ "SPELLS_CHANGED", "LEARNED_SPELL_IN_SKILL_LINE", "ACTIONBAR_SLOT_CHANGED",
-  "UPDATE_BINDINGS", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_ENTERING_WORLD" }) do
-  handlers[e] = rescanSoon
+for _, e in ipairs({ "SPELLS_CHANGED", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_ENTERING_WORLD" }) do
+  handlers[e] = function() rescanSoon() end
+end
+-- These fire in bursts (every step of a sequence macro changes a button): keys only.
+for _, e in ipairs({ "ACTIONBAR_SLOT_CHANGED", "UPDATE_BINDINGS", "UPDATE_MACROS" }) do
+  handlers[e] = rescanKeysSoon
 end
 for _, e in ipairs({ "PLAYER_TALENT_UPDATE", "CHARACTER_POINTS_CHANGED", "ACTIVE_TALENT_GROUP_CHANGED" }) do
   handlers[e] = talentsChanged
@@ -570,6 +699,8 @@ local function start()
   if ClassCoachCharDB.spec ~= nil then ClassCoachCharDB.specChoice = ClassCoachCharDB.spec; ClassCoachCharDB.spec = nil end
   if ClassCoachCharDB.specChoice == nil then ClassCoachCharDB.specChoice = "auto" end
   for k, v in pairs(ns.Options.defaults()) do if db[k] == nil then db[k] = v end end
+  ns.Options.sanitize(db, ClassCoachCharDB)
+  for _, problem in ipairs(Profiles.problems or {}) do log("%s", problem) end
   C.tracker = Tracker.new()
   C.level = API.level()
   C.faction = API.faction()
@@ -603,6 +734,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
       local fine
       if e == "UNIT_SPELLCAST_SUCCEEDED" or e == "UNIT_AURA" then
         fine = pcall(self.RegisterUnitEvent, self, e, "player")
+      elseif e == "UNIT_COMBAT" then
+        -- only your target: this event fires for every unit around you otherwise
+        fine = pcall(self.RegisterUnitEvent, self, e, "target")
       else
         fine = pcall(self.RegisterEvent, self, e)
       end
@@ -612,8 +746,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
   end
   local h = handlers[event]
   if not h or not C.profile then return end
-  local ok, err = pcall(h, ...)
-  if not ok then log("error in %s: %s", event, tostring(err)) end
+  safely(event, h, ...)
 end)
 
 ---------------------------------------------------------------------------
@@ -679,6 +812,7 @@ local HELP = {
   "/coach last — repeat the last fight report",
   "/coach reset — put both panels back where they started",
   "/coach hide | show — the coach panel",
+  "/coach errors — problems the addon caught itself (for bug reports)",
   "/coach check — what the addon can read on this client (for bug reports)",
 }
 
@@ -690,20 +824,23 @@ local function openSettings()
 end
 
 -- The minimap's addon menu (the client looks these up by name)
-function ClassCoach_OnAddonCompartmentClick() openSettings() end
+function ClassCoach_OnAddonCompartmentClick() safely("addon menu", openSettings) end
 function ClassCoach_OnAddonCompartmentEnter(_, button)
-  if not GameTooltip or not button then return end
-  GameTooltip:SetOwner(button, "ANCHOR_LEFT")
-  GameTooltip:SetText("ClassCoach", 1, 0.82, 0.2)
-  GameTooltip:AddLine("Click to open the settings.", 0.9, 0.9, 0.9)
-  GameTooltip:Show()
+  safely("addon menu", function()
+    if not GameTooltip or not button then return end
+    GameTooltip:SetOwner(button, "ANCHOR_LEFT")
+    GameTooltip:SetText("ClassCoach", 1, 0.82, 0.2)
+    GameTooltip:AddLine("Esc > Options > AddOns > ClassCoach, or /coach set.", 0.9, 0.9, 0.9)
+    GameTooltip:Show()
+  end)
 end
-function ClassCoach_OnAddonCompartmentLeave() if GameTooltip then GameTooltip:Hide() end end
+function ClassCoach_OnAddonCompartmentLeave() safely("addon menu", function() if GameTooltip then GameTooltip:Hide() end end) end
 
 SLASH_CLASSCOACH1, SLASH_CLASSCOACH2 = "/coach", "/classcoach"
-SlashCmdList.CLASSCOACH = function(msg)
-  local cmd, arg = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
-  cmd = (cmd or ""):lower()
+local function command(msg)
+  if not C.profile or type(ClassCoachDB) ~= "table" then say("Still loading: try again in a moment.") return end
+  local cmd, arg = tostring(msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
+  cmd, arg = (cmd or ""):lower(), arg or ""
   local db = ClassCoachDB
   if cmd == "" or cmd == "options" or cmd == "config" or cmd == "settings" then
     openSettings()
@@ -727,6 +864,26 @@ SlashCmdList.CLASSCOACH = function(msg)
       end
       say(("%s = %s"):format(option.name, tostring(store[option.key])))
     end
+  elseif cmd == "errors" then
+    -- "/coach errors on": let the game show Lua errors, with the addon's name on each
+    if arg:lower() == "on" or arg:lower() == "off" then
+      local shown = arg:lower() == "on"
+      API.try(SetCVar, "scriptErrors", shown and "1" or "0")
+      say(shown and "The game will now show errors as they happen. The window names the addon and the line: a screenshot of the first one is all I need."
+        or "The game no longer shows error windows.")
+      return
+    end
+    -- what the addon itself caught, for a screenshot
+    local list = db.log or {}
+    say(("%d problem(s) recorded by the addon%s."):format(#list, #list > 0 and "; the latest" or ""))
+    for i = math.max(1, #list - 7), #list do print("  " .. tostring(list[i])) end
+    if C.lastError then print("  last refresh error: " .. tostring(C.lastError)) end
+    if C.refused and #C.refused > 0 then print("  events the game refused: " .. table.concat(C.refused, ", ")) end
+    if C.blocked then print("  blocked actions: " .. table.concat(C.blocked, " | ")) end
+    if ns.Smart.error then print("  smart key: " .. tostring(ns.Smart.error)) end
+    if C.macrosPaused then print("  automatic macro updates are paused until /reload") end
+    if C.barPaused then print("  automatic bar filling is paused until /reload") end
+    print("  To see errors from any addon as they happen: /coach errors on")
   elseif cmd == "pages" then
     if API.inCombat() then say("Key bindings can only be changed out of combat.") return end
     local freed = API.freePageKeys()
@@ -779,6 +936,7 @@ SlashCmdList.CLASSCOACH = function(msg)
   elseif cmd == "smart" then
     local what, key = arg:match("^(%S+)%s+(%S+)$")
     if API.inCombat() then say("The smart key can only be set up out of combat.") return end
+    C.smartWanted = true
     C.syncMacros(false)   -- it uses a few CC macros (wand, demon, attack)
     if not C.syncSmart() then say("The smart key could not be set up on this client. /coach check shows why.") return end
     if what then
@@ -796,4 +954,10 @@ SlashCmdList.CLASSCOACH = function(msg)
     say("Coach for " .. C.profile.spec .. ". Commands:")
     for _, l in ipairs(HELP) do print("  " .. l) end
   end
+end
+
+-- A command can never raise an error into the game either.
+SlashCmdList.CLASSCOACH = function(msg)
+  local ok = safely("command /coach " .. tostring(msg), command, msg)
+  if not ok then say("That command hit a problem. Type /coach errors to see it.") end
 end
