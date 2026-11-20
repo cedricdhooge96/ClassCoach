@@ -1,5 +1,5 @@
--- Priest profiles. Spell ids are the Classic ranks, lowest first; if Forever
--- changed an id, the addon falls back to the English spell name.
+-- Priest profiles for WoW Forever. Spell ids are each rank's, lowest first; a
+-- spell Forever added or re-numbered is found by its English name instead.
 local _, ns = ...
 
 local function n(summary, key) return summary.castCount[key] or 0 end
@@ -19,7 +19,8 @@ local PRIEST_SPELLS = {
   ["Shoot"]              = { ids = { 5019 }, core = true, auto = true },
 }
 
--- What the trainer teaches at each level (Forever client data, The Forever Era).
+-- What Forever's trainer teaches at each level (every Priest gets Devouring
+-- Plague, Fear Ward and Shadow Word: Death here, whatever their race).
 local TRAINER = {
   [1] = "Smite, Lesser Heal, Power Word: Fortitude",
   [4] = "Shadow Word: Pain",
@@ -202,7 +203,8 @@ ns.RegisterProfile({
     { level = 30, text = "Penance talent", hint = "A strong, cheap spell for damage and healing: take it as Discipline." },
   },
 
-  -- Suggested leveling path; check your guide (Penance is a Discipline talent).
+  -- Forever's wand build: Wand Specialization, Spirit Tap, then Discipline up to
+  -- Meditation and Penance (Penance is a Discipline talent from level 30).
   talents = {
     { 10, 11, "Wand Specialization" },
     { 12, 16, "Spirit Tap (Shadow): mana back after kills" },

@@ -1,5 +1,6 @@
--- Shaman profiles. Spell ids are the Classic ranks, lowest first; if Forever
--- changed an id, the addon falls back to the English spell name.
+-- Shaman profiles for WoW Forever (Dwarves can be Shamans here). Spell ids are
+-- each rank's, lowest first; a spell Forever added or re-numbered is found by
+-- its English name instead.
 -- `learn` = the level the trainer sells it; `cd` = it has a cooldown.
 local _, ns = ...
 
@@ -39,7 +40,7 @@ local function spells(extra)
   return t
 end
 
--- What the trainer teaches at each level (Forever client data, The Forever Era).
+-- What Forever's trainer teaches at each level.
 local TRAINER = {
   [1] = "Lightning Bolt, Rockbiter Weapon, Healing Wave",
   [4] = "Earth Shock, Stoneskin Totem (and your Earth totem quest)",
@@ -233,7 +234,7 @@ ns.RegisterProfile({
     { level = 40, text = "Mail armour", hint = "Your trainer teaches it at 40. Replace leather as mail drops." },
   },
 
-  -- Talent order after the 12 November patch (All Things How).
+  -- Forever's Enhancement talents, in the order after the 12 November 2026 patch (All Things How).
   talents = {
     { 10, 14, "Thundering Strikes" }, { 15, 17, "Mental Dexterity" }, { 18, 19, "Improved Lightning Shield" },
     { 20, 20, "Shamanistic Focus" }, { 21, 23, "Elemental Weapons" }, { 24, 24, "Improved Lightning Shield" },

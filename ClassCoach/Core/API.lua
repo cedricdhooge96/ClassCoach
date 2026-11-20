@@ -1,5 +1,11 @@
 -- Everything that talks to the game client lives here.
 --
+-- ClassCoach is written for World of Warcraft: Forever and nothing else
+-- (patch 1.60.x, interface 160xx; the game calls this version "Camelot").
+-- Every call below is one the Forever client has. There are no fallbacks for
+-- Classic Era, Season of Discovery, the Classic expansions or retail, and on
+-- any of those the addon switches itself off (see API.forever).
+--
 -- WoW Forever hides many values from addons during combat ("secret values").
 -- Comparing or doing maths on a secret raises an error, so every read goes
 -- through pcall and is checked with issecretvalue before use. A failed read
@@ -9,7 +15,29 @@ local _, ns = ...
 local API = {}
 ns.API = API
 
-local issecret = issecretvalue or function() return false end
+-- Is this the Forever client? The game's own project id decides when it has
+-- one; otherwise the interface number does (16001 = 1.60.1; Classic Era is
+-- 115xx, the Classic expansions 2xxxx and up, retail 12xxxx).
+local function isForever()
+  if type(issecretvalue) ~= "function" then return false end
+  if WOW_PROJECT_ID ~= nil and WOW_PROJECT_CAMELOT ~= nil then return WOW_PROJECT_ID == WOW_PROJECT_CAMELOT end
+  local ok, _, _, _, interface = pcall(GetBuildInfo)
+  return ok and type(interface) == "number" and interface >= 16000 and interface < 20000
+end
+API.forever = isForever()
+API.NOT_FOREVER = "ClassCoach is made for World of Warcraft: Forever only. It does nothing on this version of the game."
+
+-- Forever's function groups. A group the client lacks reads as empty, so a
+-- call into it means "unknown" instead of an error.
+local function group(name)
+  local t = _G[name]
+  return type(t) == "table" and t or {}
+end
+local C_Spell, C_SpellBook, C_Item, C_Container = group("C_Spell"), group("C_SpellBook"), group("C_Item"), group("C_Container")
+local C_ActionBar, C_UnitAuras, C_Secrets, C_NamePlate = group("C_ActionBar"), group("C_UnitAuras"), group("C_Secrets"), group("C_NamePlate")
+local C_ClassTalents, C_Traits, C_CVar = group("C_ClassTalents"), group("C_Traits"), group("C_CVar")
+
+local issecret = issecretvalue or function() return true end   -- never on Forever; elsewhere the addon is off
 
 -- A value we may safely compare, or nil when it is secret.
 local function plain(v)
@@ -126,6 +154,48 @@ function API.inCombat()
   return plain(try(UnitAffectingCombat, "player")) == true
 end
 
+-- Every Forever function ClassCoach calls. /coach check lists the ones this
+-- client does not have, so a change in a Forever patch shows up by name.
+local NEEDS = {
+  "issecretvalue", "GetTime", "GetBuildInfo", "InCombatLockdown", "IsInGroup", "IsResting", "GetXPExhaustion", "GetTotemInfo",
+  "GetInventoryItemID", "GetInventoryItemDurability", "CanMerchantRepair", "GetActionInfo", "GetActionBarToggles", "PlaceAction",
+  "PickupMacro", "ClearCursor", "CreateMacro", "EditMacro", "GetMacroBody", "GetMacroIndexByName", "GetMacroInfo", "GetNumMacros",
+  "GetBindingKey", "GetBindingAction", "SetBinding", "SetBindingClick", "SaveBindings", "GetCurrentBindingSet", "RegisterStateDriver",
+  "UnitAffectingCombat", "UnitCanAttack", "UnitClass", "UnitClassification", "UnitCreatureFamily", "UnitExists", "UnitFactionGroup",
+  "UnitGUID", "UnitHealth", "UnitHealthMax", "UnitIsDead", "UnitIsUnit", "UnitLevel", "UnitName", "UnitPower", "UnitPowerMax",
+  "UnitPowerPercent", "UnitPowerType", "UnitXP", "UnitXPMax",
+  "C_ActionBar.GetActionBarPage", "C_ActionBar.SetActionBarPage", "C_ActionBar.GetActionText", "C_ActionBar.GetActionTexture",
+  "C_CVar.GetCVar", "C_CVar.SetCVar", "C_ClassTalents.GetActiveConfigID", "C_ClassTalents.HasUnspentTalentPoints",
+  "C_Container.GetContainerItemInfo", "C_Container.GetContainerNumFreeSlots", "C_Container.GetContainerNumSlots",
+  "C_Item.GetItemCount", "C_Item.GetItemInfo", "C_Item.GetItemInfoInstant", "C_Item.GetItemSpell", "C_Item.GetWeaponEnchantInfo",
+  "C_Item.PickupItem", "C_NamePlate.GetNamePlates", "C_Secrets.ShouldAurasBeSecret",
+  "C_Spell.GetSpellCooldown", "C_Spell.GetSpellDescription", "C_Spell.GetSpellName", "C_Spell.GetSpellPowerCost",
+  "C_Spell.GetSpellTexture", "C_Spell.IsAutoRepeatSpell", "C_Spell.IsSpellUsable", "C_Spell.PickupSpell",
+  "C_SpellBook.GetNumSpellBookSkillLines", "C_SpellBook.GetSpellBookItemInfo", "C_SpellBook.GetSpellBookItemTexture",
+  "C_SpellBook.GetSpellBookSkillLineInfo", "C_SpellBook.IsSpellKnown", "C_Timer.After",
+  "C_Traits.GetConfigInfo", "C_Traits.GetNodeInfo", "C_Traits.GetTreeCurrencyInfo", "C_Traits.GetTreeNodes",
+  "C_UnitAuras.GetAuraDataByIndex",
+}
+function API.missing()
+  local out = {}
+  for _, name in ipairs(NEEDS) do
+    local space, fn = name:match("^(.-)%.(.+)$")
+    local found
+    if space then found = type(_G[space]) == "table" and _G[space][fn] else found = _G[name] end
+    if type(found) ~= "function" then out[#out + 1] = name end
+  end
+  return out
+end
+
+-- Turns the game's own error windows on or off. Returns what the setting is
+-- afterwards (true / false), or nil when the game would not say.
+function API.showErrors(on)
+  try(C_CVar.SetCVar, "scriptErrors", on and "1" or "0")
+  local now = plain(try(C_CVar.GetCVar, "scriptErrors"))
+  if now == nil then return nil end
+  return tostring(now) == "1"
+end
+
 function API.inGroup() return plain(try(IsInGroup)) == true end
 
 -- true / false / nil (unknown). Reliable out of combat.
@@ -169,7 +239,7 @@ end
 function API.targetKey()
   local guid = plain(try(UnitGUID, "target"))
   if type(guid) == "string" then return "g:" .. guid, "guid" end
-  local plates = C_NamePlate and try(C_NamePlate.GetNamePlates)
+  local plates = try(C_NamePlate.GetNamePlates)
   if type(plates) == "table" then
     for _, plate in ipairs(plates) do
       local token = field(plate, "namePlateUnitToken")
@@ -199,8 +269,7 @@ end
 -- How long a spell's damage over time lasts, read from its own tooltip text
 -- ("... over 18 sec"). nil when the text isn't available or isn't English.
 function API.dotDuration(id)
-  local text = plain(try(C_Spell and C_Spell.GetSpellDescription, id))
-  if type(text) ~= "string" then text = plain(try(GetSpellDescription, id)) end
+  local text = plain(try(C_Spell.GetSpellDescription, id))
   if type(text) ~= "string" then return nil end
   local seconds = tonumber(text:match("over (%d+) sec"))
   if seconds and seconds >= 3 and seconds <= 120 then return seconds end
@@ -246,17 +315,14 @@ end
 ---------------------------------------------------------------------------
 
 local function isKnownId(id)
-  local known = plain(try(C_SpellBook.IsSpellKnown, id))
-  if known == nil then known = plain(try(IsSpellKnown, id)) end
-  if known == nil then known = plain(try(IsPlayerSpell, id)) end
-  return known == true
+  return plain(try(C_SpellBook.IsSpellKnown, id)) == true
 end
 
-function API.spellName(id) return plain(try(C_Spell.GetSpellName, id)) or plain(try(GetSpellInfo, id)) end
+function API.spellName(id) return plain(try(C_Spell.GetSpellName, id)) end
 
 function API.texture(id)
   if not id then return nil end
-  return plain(try(C_Spell.GetSpellTexture, id)) or plain(select(3, try(GetSpellInfo, id)))
+  return plain(try(C_Spell.GetSpellTexture, id))
 end
 
 -- The icon the game itself shows for a spell. Its own id can carry different
@@ -272,7 +338,7 @@ function API.iconFor(name, id)
 end
 
 function API.cost(id)
-  local costs = try(C_Spell.GetSpellPowerCost, id) or try(GetSpellPowerCost, id)
+  local costs = try(C_Spell.GetSpellPowerCost, id)
   if type(costs) ~= "table" then return nil end
   local found
   pcall(function()
@@ -297,7 +363,7 @@ function API.scanSpellbook()
     entry.ids[#entry.ids + 1] = id
     entry.id = id
   end
-  local ok = pcall(function()
+  pcall(function()
     local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player or 0
     for line = 1, upTo(C_SpellBook.GetNumSpellBookSkillLines(), 40) do
       local info = C_SpellBook.GetSpellBookSkillLineInfo(line)
@@ -313,19 +379,6 @@ function API.scanSpellbook()
       end
     end
   end)
-  if not ok or not next(byName) then
-    -- Older client API as a fallback.
-    pcall(function()
-      for tab = 1, upTo(GetNumSpellTabs(), 12) do
-        local _, _, offset, num = GetSpellTabInfo(tab)
-        offset, num = upTo(offset, 5000), upTo(num, 1000)
-        for i = offset + 1, offset + num do
-          local kind, id = GetSpellBookItemInfo(i, "spell")
-          if kind == "SPELL" and id then add(id, API.spellName(id)) end
-        end
-      end
-    end)
-  end
   return byName
 end
 
@@ -359,11 +412,7 @@ end
 
 -- Is this auto-repeating spell (wand, auto shot) firing right now? true / false / nil
 function API.repeating(id)
-  local on = plain(try(C_Spell and C_Spell.IsAutoRepeatSpell, id))
-  if on == nil then
-    local name = API.spellName(id)
-    on = name and plain(try(IsAutoRepeatSpell, name))
-  end
+  local on = plain(try(C_Spell.IsAutoRepeatSpell, id))
   if type(on) ~= "boolean" then return nil end
   return on
 end
@@ -371,7 +420,6 @@ end
 -- usable: true/false/nil, short: true when "not enough mana"
 function API.usable(id)
   local usable, short = try(C_Spell.IsSpellUsable, id)
-  if usable == nil and short == nil then usable, short = try(IsUsableSpell, id) end
   return plain(usable), plain(short)
 end
 
@@ -386,12 +434,8 @@ function API.ready(id)
     end
     local start, duration = field(info, "startTime"), field(info, "duration")
     if start and duration then return start == 0 or duration <= 1.5 end
-    return nil
   end
-  local start, duration = try(GetSpellCooldown, id)
-  start, duration = plain(start), plain(duration)
-  if start == nil then return nil end
-  return start == 0 or (duration or 0) <= 1.5
+  return nil
 end
 
 ---------------------------------------------------------------------------
@@ -400,39 +444,41 @@ end
 
 function API.aurasReadable(inCombat)
   if inCombat then return false end
-  local secret = try(C_Secrets and C_Secrets.ShouldAurasBeSecret)
+  local secret = try(C_Secrets.ShouldAurasBeSecret)
   return plain(secret) ~= true
 end
 
 -- Set of buff names on the player, or nil when the game hides them.
 function API.playerBuffs()
-  local names, any = {}, false
-  local ok = pcall(function()
+  local names = {}
+  pcall(function()
     for i = 1, 40 do
       local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
       if not aura then break end
       local name = field(aura, "name")
-      if name then names[name] = true; any = true end
+      if name then names[name] = true end
     end
   end)
-  if not ok or not any then
-    pcall(function()
-      for i = 1, 40 do
-        local name = UnitBuff("player", i)
-        name = plain(name)
-        if not name then break end
-        names[name] = true; any = true
-      end
-    end)
-  end
   return names
 end
 
--- true / false / nil (unknown)
+-- Is a temporary buff on your main-hand weapon (a Shaman imbue, a stone, an oil)?
+-- true / false / nil (unknown). Forever answers with a list, one entry per enchant
+-- layer: { hasEnchant, enchantType (1 = the permanent enchant, which does not count) }.
 function API.mainHandBuff()
-  local has = plain(try(GetWeaponEnchantInfo))
-  if has == nil then return nil end
-  return has == true
+  local list = plain(try(C_Item.GetWeaponEnchantInfo, 0))   -- 0 = main hand
+  if type(list) ~= "table" then return nil end
+  local found, readable = false, true
+  pcall(function()
+    for i = 1, upTo(#list, 8) do
+      local has, kind = field(list[i], "hasEnchant"), field(list[i], "enchantType")
+      if has == nil then readable = false
+      elseif has == true and kind ~= 1 then found = true end
+    end
+  end)
+  if found then return true end
+  if not readable then return nil end
+  return false
 end
 
 -- slot 1 fire, 2 earth, 3 water, 4 air
@@ -446,7 +492,7 @@ function API.totemUp(element)
 end
 
 function API.itemCount(itemID)
-  return plain(try(C_Item.GetItemCount, itemID)) or plain(try(GetItemCount, itemID))
+  return plain(try(C_Item.GetItemCount, itemID))
 end
 
 ---------------------------------------------------------------------------
@@ -461,10 +507,37 @@ function API.xp()
   return { cur = cur, max = max, rested = type(rested) == "number" and rested or 0, resting = plain(try(IsResting)) == true }
 end
 
+-- Calls fn(config, treeID) for each of your talent trees. Forever keeps
+-- talents in the game's "traits" system.
+local function eachTalentTree(fn)
+  pcall(function()
+    local config = plain(C_ClassTalents.GetActiveConfigID())
+    if type(config) ~= "number" then return end
+    local trees = field(C_Traits.GetConfigInfo(config), "treeIDs")
+    if type(trees) ~= "table" then return end
+    for i = 1, upTo(#trees, 6) do
+      local tree = plain(trees[i])
+      if type(tree) == "number" then fn(config, tree, i) end
+    end
+  end)
+end
+
+-- Talent points waiting to be spent: a number, true (some, count unknown),
+-- 0, or nil when the game won't say.
 function API.unspentTalents()
-  local points = plain(try(UnitCharacterPoints, "player"))
-  if type(points) ~= "number" then return nil end
-  return points
+  local has = plain(try(C_ClassTalents.HasUnspentTalentPoints))
+  if has == false then return 0 end
+  if has ~= true then return nil end
+  local count = 0
+  eachTalentTree(function(config, tree)
+    local list = C_Traits.GetTreeCurrencyInfo(config, tree, false)
+    if type(list) ~= "table" then return end
+    for i = 1, upTo(#list, 8) do
+      local n = field(list[i], "quantity")
+      if type(n) == "number" and n > 0 and n <= 60 then count = count + n end
+    end
+  end)
+  return count > 0 and count or true
 end
 
 -- Lowest durability of anything you wear, in percent.
@@ -484,8 +557,7 @@ end
 function API.freeBagSlots()
   local free, any = 0, false
   for bag = 0, 4 do
-    local slots = plain(try(C_Container and C_Container.GetContainerNumFreeSlots, bag))
-    if type(slots) ~= "number" then slots = plain(try(GetContainerNumFreeSlots, bag)) end
+    local slots = plain(try(C_Container.GetContainerNumFreeSlots, bag))
     if type(slots) == "number" then free = free + slots; any = true end
   end
   if not any then return nil end
@@ -528,7 +600,7 @@ function API.supplies(playerLevel)
         if id == HEARTHSTONE then
           consider("hearth", id, name or "Hearthstone", 0)
         elseif classID == 0 and subID == 5 then
-          local use = plain(try(C_Item.GetItemSpell, id)) or plain(try(GetItemSpell, id))
+          local use = plain(try(C_Item.GetItemSpell, id))
           local isFood, isDrink = use ~= "Drink", use ~= "Food"
           if isFood then out.food = out.food + count; if usable then consider("food", id, name, minLevel) end end
           if isDrink then out.drink = out.drink + count; if usable then consider("drink", id, name, minLevel) end end
@@ -579,7 +651,7 @@ end
 -- Which page your main bar shows (1 is the normal one). Shift+number and the
 -- small arrows next to the bar switch pages; pages 2-6 are usually empty.
 function API.barPage()
-  local page = plain(try(GetActionBarPage))
+  local page = plain(try(C_ActionBar.GetActionBarPage))
   return type(page) == "number" and page or nil
 end
 
@@ -596,7 +668,7 @@ function API.freePageKeys()
     end
   end
   if #freed > 0 then try(SaveBindings, plain(try(GetCurrentBindingSet)) or 1) end
-  try(ChangeActionBarPage, 1)
+  try(C_ActionBar.SetActionBarPage, 1)
   return freed
 end
 
@@ -616,13 +688,11 @@ function API.placeAction(slot, what)
   if API.inCombat() then return false end
   try(ClearCursor)
   if what.item then
-    if C_Item and C_Item.PickupItem then try(C_Item.PickupItem, what.item) else try(PickupItem, what.item) end
+    try(C_Item.PickupItem, what.item)
   elseif what.macro then
     try(PickupMacro, what.macro)
-  elseif C_Spell and C_Spell.PickupSpell then
-    try(C_Spell.PickupSpell, what.spell)
   else
-    try(PickupSpell, what.spell)
+    try(C_Spell.PickupSpell, what.spell)
   end
   try(PlaceAction, slot)
   try(ClearCursor)
@@ -645,18 +715,23 @@ end
 -- Talents: which tree has the most points (for picking a spec profile)
 ---------------------------------------------------------------------------
 
+-- Points spent in each of your three talent trees, in the game's order, or nil
+-- when the game does not list three trees.
 function API.talentPoints()
-  local points, any = {}, false
-  for tab = 1, 3 do
-    local r = { try(GetTalentTabInfo, tab) }
-    -- Classic returns name, icon, pointsSpent; newer clients id, name, description, icon, pointsSpent.
-    local spent
-    if type(plain(r[3])) == "number" and type(plain(r[1])) == "string" then spent = plain(r[3]) end
-    if spent == nil and type(plain(r[5])) == "number" then spent = plain(r[5]) end
-    points[tab] = spent or 0
-    if spent then any = true end
-  end
-  return any and points or nil
+  local points = {}
+  eachTalentTree(function(config, tree, index)
+    local spent = 0
+    local nodes = C_Traits.GetTreeNodes(tree)
+    if type(nodes) == "table" then
+      for n = 1, upTo(#nodes, 400) do
+        local ranks = field(C_Traits.GetNodeInfo(config, nodes[n]), "ranksPurchased")
+        if type(ranks) == "number" and ranks > 0 and ranks <= 10 then spent = spent + ranks end
+      end
+    end
+    points[index] = spent
+  end)
+  if #points ~= 3 then return nil end
+  return points
 end
 
 ---------------------------------------------------------------------------
@@ -695,13 +770,13 @@ function API.scanKeys()
         local name = API.spellName(id)
         if name and keys[name] == nil then
           keys[name] = shortKey(plain(try(GetBindingKey, binding))) or false
-          icons[name] = picture(try(GetActionTexture, slot))
+          icons[name] = picture(try(C_ActionBar.GetActionTexture, slot))
         end
       elseif kind == "item" and id then
         if keys["item:" .. id] == nil then keys["item:" .. id] = shortKey(plain(try(GetBindingKey, binding))) or false end
       elseif kind == "macro" then
         -- remembered as "macro:<name>" so the key can stand in for the spells inside it
-        local name = plain(try(GetActionText, slot))
+        local name = plain(try(C_ActionBar.GetActionText, slot))
         if not name and id then name = plain(try(GetMacroInfo, id)) end
         if name and keys["macro:" .. name] == nil then
           keys["macro:" .. name] = shortKey(plain(try(GetBindingKey, binding))) or false

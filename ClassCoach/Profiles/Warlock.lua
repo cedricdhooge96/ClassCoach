@@ -1,7 +1,8 @@
--- Warlock profiles. Spell ids are the Classic ranks, lowest first; if Forever
--- changed an id, the addon falls back to the English spell name.
--- Forever renamed Curse of Agony to Bane of Agony and added Wrack.
--- `learn` = the level the trainer sells it (Forever client data).
+-- Warlock profiles for WoW Forever. Spell ids are each rank's, lowest first; a
+-- spell Forever added or re-numbered is found by its English name instead.
+-- Forever renamed Curse of Agony to Bane of Agony (a Bane no longer takes the
+-- place of your Curse) and added Wrack.
+-- `learn` = the level Forever's trainer sells it.
 local _, ns = ...
 
 local function n(f, key) return f.castCount[key] or 0 end
@@ -31,7 +32,7 @@ local WARLOCK_SPELLS = {
 
 local DEMONS = { "Summon Imp", "Summon Voidwalker", "Summon Succubus", "Summon Incubus", "Summon Felhunter" }
 
--- What the trainer teaches at each level (Forever client data, The Forever Era).
+-- What Forever's trainer teaches at each level.
 local TRAINER = {
   [1] = "Immolate (10 copper); do your trainer's quest for the Imp",
   [4] = "Corruption, Curse of Weakness",
@@ -62,13 +63,13 @@ local function wandOrMelee(s) return s.hasWand and "wand" or "melee" end
 -- How to pull depends on who is at your side:
 --   Voidwalker  the tank: let it reach the enemy and hit first
 --   Imp         ranged and fragile: the enemy comes to you, so just start casting
---   others      melee damage: send them in and cast right away
+--   others      melee damage: send them in, let them land a hit, then cast
 local function pullWith(key, alone)
   return function(s)
     local spell = s.spells[key] and s.spells[key].name or key
     if s.demon == "Voidwalker" then return "Send your Voidwalker in, let it hit first, then " .. spell .. "." end
     if s.demon == "Imp" then return "Imp out: cast " .. spell .. " right away. The enemy will come to you." end
-    if s.hasPet then return "Send your demon in, then pull with " .. spell .. "." end
+    if s.hasPet then return "Send your demon in, let it land a hit, then " .. spell .. "." end
     return alone
   end
 end
@@ -145,13 +146,27 @@ ns.RegisterProfile({
     { tip = true, check = function(s) return s.level >= 10 and s:known("Summon Imp") and not s:known("Summon Voidwalker") end,
       label = "No Voidwalker yet", icon = "Interface\\Icons\\Spell_Shadow_SummonVoidWalker", hint = "Do the level 10 class quest: the Voidwalker takes the hits for you." },
     { pet = true, needs = DEMONS, label = "No demon",
-      fix = function(s) return s:known("Summon Voidwalker") and "Summon Voidwalker" or "Summon Imp" end,
+      -- Forever's guides: Imp to 10, Voidwalker to 20, then the Succubus or Incubus
+      fix = function(s)
+        return s:known("Summon Succubus") and "Summon Succubus" or s:known("Summon Incubus") and "Summon Incubus"
+          or s:known("Summon Voidwalker") and "Summon Voidwalker" or "Summon Imp"
+      end,
       hint = function(s)
+        if s:known("Summon Succubus") or s:known("Summon Incubus") then
+          return "Summon your " .. (s:known("Summon Succubus") and "Succubus" or "Incubus") .. " (costs a Soul Shard): your strongest demon from level 20."
+        end
         if s:known("Summon Voidwalker") then return "Summon your Voidwalker (costs a Soul Shard): it takes the hits for you." end
         return "Summon your Imp and keep it out: free extra damage."
       end },
     { check = function(s) return s.demon == "Imp" and s:known("Summon Voidwalker") and not s.inGroup end,
-      label = "Imp is out", fix = "Summon Voidwalker", hint = "Solo, your Voidwalker is safer: it takes the hits. The Imp is the pick for groups." },
+      label = "Imp is out",
+      fix = function(s)
+        return s:known("Summon Succubus") and "Summon Succubus" or s:known("Summon Incubus") and "Summon Incubus" or "Summon Voidwalker"
+      end,
+      hint = function(s)
+        if s:known("Summon Succubus") or s:known("Summon Incubus") then return "Solo, your level 20 demon hits much harder. The Imp is the pick for groups." end
+        return "Solo, your Voidwalker is safer: it takes the hits. The Imp is the pick for groups."
+      end },
     { buff = { "Demon Skin", "Demon Armor" }, label = "No armor",
       fix = function(s) return s:known("Demon Armor") and "Demon Armor" or "Demon Skin" end,
       hint = function(s) return "Cast " .. (s:known("Demon Armor") and "Demon Armor" or "Demon Skin") .. ": it lasts 30 minutes." end },
@@ -299,7 +314,7 @@ ns.RegisterProfile({
 
   milestones = {
     { level = 20, text = "Succubus or Incubus quest", icon = "Interface\\Icons\\Spell_Shadow_SummonSuccubus",
-      hint = "Your class trainer starts it. The Incubus version is the easier one.",
+      hint = "Your class trainer starts it. This demon hits hardest and replaces the Voidwalker for leveling; the Voidwalker stays the safe pick against several enemies.",
       done = function(s) return s:known("Summon Succubus") or s:known("Summon Incubus") end },
     { level = 30, text = "Felhunter quest", icon = "Interface\\Icons\\Spell_Shadow_SummonFelHunter",
       hint = "Your class trainer starts it. The Felhunter is the pick against casters.",
@@ -308,7 +323,7 @@ ns.RegisterProfile({
       hint = "A short class quest for your free mount." },
   },
 
-  -- Warcraft Tavern's Affliction build (41/7/3): no respec needed.
+  -- Warcraft Tavern's Affliction build for Forever (41/7/3): no respec needed.
   talents = {
     { 10, 14, "Improved Corruption" }, { 15, 17, "Suppression" }, { 18, 22, "Unholy Power (Demonology)" },
     { 23, 24, "Demonic Energies (Demonology)" }, { 25, 27, "Improved Drains" }, { 28, 28, "Amplify Curse" },

@@ -738,6 +738,11 @@ frame:SetScript("OnEvent", function(self, event, ...)
   if event == "ADDON_LOADED" then
     if ... ~= ADDON then return end
     self:UnregisterEvent("ADDON_LOADED")
+    if not API.forever then   -- any other version of the game: say so once and stay off
+      self:SetScript("OnEvent", nil)
+      print(API.NOT_FOREVER)
+      return
+    end
     local ok, err = pcall(start)
     if not ok then print("ClassCoach failed to start: " .. tostring(err)) return end
     -- The update loop runs on this always-shown frame, so hiding a panel never stops the coach.
@@ -775,7 +780,10 @@ local function check()
   local out = {}
   local function add(fmt, ...) out[#out + 1] = fmt:format(...) end
   local _, build, _, interface = API.try(GetBuildInfo)
-  add("client build %s interface %s, issecretvalue %s", describe(build), describe(interface), tostring(issecretvalue ~= nil))
+  add("client build %s interface %s, project %s; WoW Forever: %s", describe(build), describe(interface), describe(WOW_PROJECT_ID),
+    API.forever and "yes" or "NO")
+  local gone = API.missing()
+  add("Forever functions missing on this client: %s", #gone > 0 and table.concat(gone, ", ") or "none")
   add("class %s, level %s, profile %s %s (%s)", tostring(C.class), tostring(C.level), C.profile.class, C.profile.spec, tostring(C.profileWhy))
   local pts = API.talentPoints()
   add("talent points %s", pts and table.concat({ pts[1] or 0, pts[2] or 0, pts[3] or 0 }, "/") or "unreadable")
@@ -885,9 +893,14 @@ local function command(msg)
     -- "/coach errors on": let the game show Lua errors, with the addon's name on each
     if arg:lower() == "on" or arg:lower() == "off" then
       local shown = arg:lower() == "on"
-      API.try(SetCVar, "scriptErrors", shown and "1" or "0")
-      say(shown and "The game will now show errors as they happen. The window names the addon and the line: a screenshot of the first one is all I need."
-        or "The game no longer shows error windows.")
+      local now = API.showErrors(shown)
+      if now ~= shown then
+        say("The game did not accept that. Type this instead: /console scriptErrors " .. (shown and "1" or "0"))
+      elseif shown then
+        say("The game will now show errors as they happen. The window names the addon and the line: a screenshot of the first one is all I need.")
+      else
+        say("The game no longer shows error windows.")
+      end
       return
     end
     -- what the addon itself caught, for a screenshot
@@ -975,6 +988,7 @@ end
 
 -- A command can never raise an error into the game either.
 SlashCmdList.CLASSCOACH = function(msg)
+  if not API.forever then print(API.NOT_FOREVER) return end
   local ok = safely("command /coach " .. tostring(msg), command, msg)
   if not ok then say("That command hit a problem. Type /coach errors to see it.") end
 end

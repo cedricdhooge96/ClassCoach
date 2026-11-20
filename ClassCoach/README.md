@@ -15,6 +15,14 @@ A beginner's coach for WoW Forever that works for any class. One small panel sho
 
 ClassCoach only shows advice. It never presses buttons for you, which keeps it within Blizzard's addon rules.
 
+## For WoW Forever only
+
+ClassCoach is made for **World of Warcraft: Forever** (patch 1.60.x) and no other version of the game.
+
+- **It switches itself off anywhere else.** On Classic Era, Season of Discovery, a Classic expansion or retail it prints one line and does nothing.
+- **It only calls functions the Forever client has.** There are no fallbacks for other versions. `/coach check` lists any Forever function the client is missing, so a change in a Forever patch shows up by name.
+- **The advice is Forever's.** Spell and trainer levels, talent builds, zone and dungeon levels, the food buff, the Camp Tent and the Cozy Sleeping Bag all come from Forever's guides and Blizzard's posts for Forever, not from the original game.
+
 ## Install
 
 1. Close the game.
@@ -45,7 +53,7 @@ Everything else is on the settings screen.
 | Class | Spec | Status |
 |---|---|---|
 | Shaman | Enhancement | Full: priority, checklist, tips, trainer, talents |
-| Priest | Discipline | Full; Priest trainer levels are Classic's and may differ in Forever |
+| Priest | Discipline | Full |
 | Warlock | Affliction | Full: demon check, Life Tap advice, Soul Shard check, wand filler |
 | Every other class | General | Mana coach, drink/food checks, fight report, level-up reminders |
 
@@ -154,5 +162,6 @@ If the game says "Your AddOns are experiencing a large number of errors", type `
 ## Known limits
 
 - In combat Forever hides buffs, totems, enemy health and the combat log from addons. ClassCoach times your damage-over-time spells and totems itself from your own casts, so those timers are close but not exact.
-- Spells are found by their Classic ids, then by English name. If Forever renamed a spell and you play in another language, that spell may be missing from the advice; `/coach check` lists what was found.
+- Spells are found by their spell ids, then by English name. If Forever re-numbered a spell and you play in another language, that spell may be missing from the advice; `/coach check` lists what was found.
 - Healing advice (watching party health) isn't possible in combat on Forever, so there is no healer profile yet.
+- Where to quest and which dungeon fits is written for the Alliance only.

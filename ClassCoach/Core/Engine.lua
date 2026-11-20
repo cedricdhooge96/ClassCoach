@@ -677,9 +677,11 @@ function Engine.journey(profile, s, options)
   local function add(kind, line, hint, icon) out.lines[#out.lines + 1] = { kind = kind, text = line, hint = hint, icon = icon } end
 
   local train, restedOn, gear = options.train ~= false, options.rested ~= false, options.gear ~= false
-  if train and j.talentPoints and j.talentPoints > 0 then
+  -- a number, or true when the game says "some" without a count
+  local unspent = j.talentPoints
+  if train and (unspent == true or (type(unspent) == "number" and unspent > 0)) then
     local pick = Engine.talentFor(profile, s.level)
-    add("do", j.talentPoints == 1 and "1 talent point to spend" or (j.talentPoints .. " talent points to spend"),
+    add("do", unspent == true and "Talent points to spend" or unspent == 1 and "1 talent point to spend" or (unspent .. " talent points to spend"),
       pick and ("Suggested: " .. pick .. ".") or "Open your talents (N) and spend it.", ICON.talent)
   end
 
@@ -702,7 +704,7 @@ function Engine.journey(profile, s, options)
   end
 
   if options.food and s.level >= 5 and buffStarting(s, "Well Fed") == false then
-    add("do", "No food buff", "Eat cooked food for 10 seconds: +5% XP from kills for 15 minutes.", ICON.food)
+    add("do", "No food buff", "Eat cooked food (marked Nutritious) for 10 seconds: Well Fed gives +5% XP from kills for 15 minutes.", ICON.food)
   end
 
   local xp = j.xp
@@ -724,8 +726,9 @@ function Engine.journey(profile, s, options)
     end
   end
 
-  if restedOn and j.hasItem and j.hasItem("Cozy Sleeping Bag") and buffStarting(s, "Cozy") == false and s.level < 60 then
-    add("do", "Sleeping bag buff missing", "Lie on your Cozy Sleeping Bag for up to 3 minutes: up to +3% XP.", ICON.sleep)
+  -- Forever calls the sleeping bag's buff "Well-Rested"
+  if restedOn and j.hasItem and j.hasItem("Cozy Sleeping Bag") and buffStarting(s, "Well-Rested") == false and s.level < 60 then
+    add("do", "Sleeping bag buff missing", "Lie on your Cozy Sleeping Bag: +1% XP per minute, up to 3% after 3 minutes. Once an hour.", ICON.sleep)
   end
 
   if gear and j.durability and j.durability < 25 then

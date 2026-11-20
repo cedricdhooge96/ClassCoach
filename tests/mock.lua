@@ -1,4 +1,6 @@
--- A tiny fake WoW client so ClassCoach can be loaded and exercised outside the game.
+-- A tiny fake WoW Forever client so ClassCoach can be loaded and exercised outside the game.
+-- It offers only functions the Forever client has (no globals from other versions of
+-- the game), so a call to anything else simply finds nothing here, as it would there.
 -- In combat, mana, buffs, weapon buffs and enemy names come back as SECRET,
 -- like on WoW Forever: comparing or adding a SECRET raises an error.
 local M = {}
@@ -90,7 +92,37 @@ function UnitXP() return P.xp or 0 end
 function UnitXPMax() return P.xpMax or 1000 end
 function GetXPExhaustion() return P.rested end
 function IsResting() return P.resting or false end
-function UnitCharacterPoints() return P.talentPoints or 0 end
+-- Talents live in Forever's traits system: one config, three trees, nodes with ranks.
+C_ClassTalents = {
+  GetActiveConfigID = function() return 1 end,
+  HasUnspentTalentPoints = function() return (P.talentPoints or 0) > 0 end,
+}
+C_Traits = {
+  GetConfigInfo = function() return { treeIDs = P.oneTree and { 11 } or { 11, 12, 13 } } end,
+  -- twelve talents a tree, five ranks each, filled from the top
+  GetTreeNodes = function(tree)
+    local nodes = {}
+    for k = 1, 12 do nodes[k] = tree * 100 + k end
+    return nodes
+  end,
+  GetNodeInfo = function(_, node)
+    local tree, k = math.floor(node / 100) - 10, node % 100
+    local left = (P.talents[tree] or 0) - 5 * (k - 1)
+    return { ranksPurchased = math.max(0, math.min(5, left)) }
+  end,
+  GetTreeCurrencyInfo = function(_, tree)
+    if P.noTalentCount then return {} end
+    return { { quantity = tree == 11 and (P.talentPoints or 0) or 0, spent = 0 } }
+  end,
+}
+C_CVar = {
+  SetCVar = function(name, value) M.cvars[name] = value end,
+  GetCVar = function(name) return M.cvars[name] end,
+}
+M.cvars = {}
+-- This is the Forever client: its project id, and no functions from other versions.
+WOW_PROJECT_MAINLINE, WOW_PROJECT_CLASSIC, WOW_PROJECT_CAMELOT = 1, 2, 23
+WOW_PROJECT_ID = WOW_PROJECT_CAMELOT
 function GetInventoryItemDurability(slot) if slot == 16 and P.durability then return P.durability, 100 end end
 -- P.bag = { { id, count, class, sub, use } }: bag 0 holds everything
 C_Container = {
@@ -108,6 +140,7 @@ function UnitIsUnit() return SECRET end
 M.macros = {}
 function GetMacroIndexByName(name) for i, m in ipairs(M.macros) do if m.name == name then return i end end return 0 end
 function GetMacroBody(i) return M.macros[i] and M.macros[i].body end
+function GetMacroInfo(i) return M.macros[i] and M.macros[i].name end
 function GetNumMacros() return 0, #M.macros end
 function CreateMacro(name, icon, body, perChar)
   assert(not P.combat, "macros cannot be made in combat")
@@ -123,6 +156,7 @@ end
 C_SpellBook = {
   IsSpellKnown = function(id) return P.spells[id] ~= nil and P.knownIds and P.knownIds[id] or false end,
   GetNumSpellBookSkillLines = function() return 1 end,
+  GetSpellBookItemTexture = function(i) local id = P.book[i]; return id and P.bookIcons and P.bookIcons[id] end,
   GetSpellBookSkillLineInfo = function() return { itemIndexOffset = 0, numSpellBookItems = #P.book } end,
   GetSpellBookItemInfo = function(i)
     local id = P.book[i]
@@ -148,6 +182,7 @@ C_Spell = {
   end,
 }
 M.names = {}
+C_NamePlate = { GetNamePlates = function() return {} end }
 C_Secrets = { ShouldAurasBeSecret = function() return P.combat end }
 C_UnitAuras = {
   GetAuraDataByIndex = function(_, i)
@@ -158,7 +193,6 @@ C_UnitAuras = {
     return { name = hidden(list[i]) }
   end,
 }
-function GetWeaponEnchantInfo() return hidden(P.mainHand) end
 function GetTotemInfo(slot) return hidden(P.totems[slot] == true) end
 C_Item = {
   GetItemCount = function(id) return P.items[id] or 0 end,   -- by id or by name
@@ -166,12 +200,21 @@ C_Item = {
     for _, it in ipairs(P.bag or {}) do if it.id == id then return it.name or ("item " .. id), "", 1, it.min or 1, it.min or 1 end end
   end,
   PickupItem = function(id) M.cursor = { item = id } end,
+  GetItemSpell = function(id) for _, it in ipairs(P.bag or {}) do if it.id == id then return it.use end end end,
+  -- one entry per enchant layer: the permanent enchant (type 1) and the imbue (type 3)
+  GetWeaponEnchantInfo = function(slot)
+    if slot ~= 0 then return {} end
+    if P.combat then return SECRET end
+    return {
+      { hasEnchant = P.permanentEnchant == true, timeLeft = 0, charges = 0, enchantType = 1, enchantID = 1 },
+      { hasEnchant = P.mainHand == true, timeLeft = 1800000, charges = 0, enchantType = 3, enchantID = 2 },
+    }
+  end,
   GetItemInfoInstant = function(id)
     for _, it in ipairs(P.bag or {}) do if it.id == id then return id, "", "", "", 0, it.class, it.sub end end
   end,
 }
 function GetInventoryItemID(_, slot) return P.equipped[slot] end
-function GetTalentTabInfo(tab) return tab, "Tree" .. tab, "", "icon", P.talents[tab] or 0 end
 -- An action button holds a spell id, or { macro = name }.
 function GetActionInfo(slot)
   local a = P.actions[slot]
@@ -179,14 +222,16 @@ function GetActionInfo(slot)
   if type(a) == "table" then return "macro", GetMacroIndexByName(a.macro) end
   if a then return "spell", a end
 end
-function GetActionTexture(slot)
-  local a = P.actions[slot]
-  if type(a) == "number" then return P.barIcons and P.barIcons[a] end
-end
-function GetActionText(slot) local a = P.actions[slot]; if type(a) == "table" then return a.macro end end
+C_ActionBar = {
+  GetActionTexture = function(slot)
+    local a = P.actions[slot]
+    if type(a) == "number" then return P.barIcons and P.barIcons[a] end
+  end,
+  GetActionText = function(slot) local a = P.actions[slot]; if type(a) == "table" then return a.macro end end,
+  GetActionBarPage = function() return P.page or 1 end,
+  SetActionBarPage = function(n) P.page = n end,
+}
 function ClearCursor() M.cursor = nil end
-function GetActionBarPage() return P.page or 1 end
-function ChangeActionBarPage(n) P.page = n end
 function GetBindingAction(key) return P.keyActions and P.keyActions[key] or "" end
 function SetBinding(key, action) P.keyActions = P.keyActions or {}; P.keyActions[key] = action end
 function PickupMacro(name) M.cursor = { macro = name } end
@@ -235,7 +280,6 @@ function GetActionBarToggles()
 end
 function UnitFactionGroup() return P.faction or "Alliance" end
 function CanMerchantRepair() return P.vendorRepairs == true end
-function GetItemSpell(id) for _, it in ipairs(P.bag or {}) do if it.id == id then return it.use end end end
 function GetBindingKey(b) return P.bindings[b] end
 function GetBuildInfo() return "1.60.1", "99999", "Nov 2026", 16001 end
 Enum = { SpellBookSpellBank = { Player = 0 } }

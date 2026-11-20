@@ -9,6 +9,11 @@ once per spec. To add a class:
 3. Add the file to `ClassCoach.toc` under the other profiles.
 4. Run the tests (`python3 tests/run.py`), then `/reload` in game and `/coach check`.
 
+ClassCoach is for WoW Forever only. Use Forever's spell names, trainer levels and talents (a Forever
+guide or the in-game trainer, not the original game's), and if you add a call to the game in
+`Core/API.lua`, use a function the Forever client has and add its name to the `NEEDS` list there so
+`/coach check` can report it. `python3 tests/run.py forever` fails on a call Forever lacks.
+
 Several specs of one class go in the same file, each with its own `RegisterProfile` call.
 Shared spell lists can be a local table at the top of the file (see `Shaman.lua`).
 

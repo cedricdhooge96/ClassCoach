@@ -119,9 +119,19 @@ if SCENARIO == "shaman" then
   M.advance(3); f = tick(ns)
   check("journey: sleeping bag reminder when you own one", journey(ns):find("Sleeping bag buff missing") ~= nil, journey(ns))
   check("journey: tent reminder when rested is low", journey(ns):find("Rested XP low %(2%% of a level%)") ~= nil, journey(ns))
+  M.P.buffs["Well-Rested"] = true; M.fire("UNIT_AURA", "player"); M.advance(3); f = tick(ns)
+  check("journey: Forever's Well-Rested buff is the sleeping bag's", not journey(ns):find("Sleeping bag buff missing"), journey(ns))
   M.P.items["Cozy Sleeping Bag"] = nil; M.P.items["Camp Tent"] = nil
+  -- talent points the game reports without a count
+  M.P.talentPoints, M.P.noTalentCount = 2, true; ns.C.journey = nil; M.advance(3); f = tick(ns)
+  check("journey: talent points without a count", journey(ns):find("Talent points to spend") ~= nil, journey(ns))
+  M.P.talentPoints, M.P.noTalentCount = 0, nil; ns.C.journey = nil
 
   M.P.buffs = { ["Lightning Shield"] = true, ["Well Fed"] = true }
+  M.P.permanentEnchant = true
+  M.fire("UNIT_AURA", "player")
+  f = tick(ns)
+  check("a permanent weapon enchant is not a weapon buff", missing(ns):find("No weapon buff") ~= nil, missing(ns))
   M.P.mainHand = true
   M.fire("UNIT_AURA", "player")
   f = tick(ns)
@@ -212,11 +222,11 @@ if SCENARIO == "shaman" then
 
   -- The roadmap on the journey panel
   M.advance(3); tick(ns)
-  check("journey: where to quest", journey(ns):find("Quest in: Loch Modan or Westfall") ~= nil, journey(ns))
+  check("journey: where to quest", journey(ns):find("Quest in: Loch Modan, Westfall or Darkshore", 1, true) ~= nil, journey(ns))
   check("journey: next milestone", journey(ns):find("At level 14: Cozy Sleeping Bag quest chain") ~= nil, journey(ns))
   M.P.level = 20; M.fire("PLAYER_LEVEL_UP", 20); M.advance(3); tick(ns)
   check("journey: class milestone due now", journey(ns):find("Water totem quest and Ghost Wolf") ~= nil, journey(ns))
-  check("journey: dungeon in range", journey(ns):find("Dungeon: Hall of Thanes") ~= nil, journey(ns))
+  check("journey: dungeon in range (Forever's levels: Hall of Thanes ends at 18)", journey(ns):find("Dungeon: The Deadmines", 1, true) ~= nil, journey(ns))
   ClassCoachDB.roadmap = false; M.advance(3); tick(ns)
   check("roadmap can be switched off", not journey(ns):find("Quest in:"), journey(ns))
   ClassCoachDB.roadmap = true
@@ -690,6 +700,17 @@ elseif SCENARIO == "warlock" then
   check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
   check("no tick error", ns.C.lastError == nil, ns.C.lastError)
 
+  -- Forever's guides: from level 20 the Succubus or Incubus is the leveling demon
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.P.target = nil; M.fire("PLAYER_TARGET_CHANGED")
+  M.P.pet = nil
+  M.P.spells[712] = { name = "Summon Succubus", cost = 100 }; M.P.book[#M.P.book + 1] = 712
+  M.P.knownIds = M.P.knownIds or {}; M.P.knownIds[712] = true
+  M.P.level = 20; M.fire("PLAYER_LEVEL_UP", 20); M.fire("SPELLS_CHANGED"); M.advance(3)
+  local f20 = tick(ns)
+  local shown
+  for _, slot in ipairs(f20.missing) do if rawget(slot, "spell") == "Summon Succubus" then shown = true end end
+  check("level 20: no demon is fixed by the Succubus", missing(ns):find("No demon") ~= nil and shown == true, missing(ns))
+
 ---------------------------------------------------------------------------
 -- Every level 1-60: only suggest what the character has at that level.
 elseif SCENARIO == "sweep" then
@@ -884,10 +905,12 @@ elseif SCENARIO == "robust" then
   M.P.target = { name = "Wolf", level = 12, hostile = true, guid = "Creature-1" }; M.fire("PLAYER_TARGET_CHANGED")
   M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
   local touched = 0
-  for _, name in ipairs({ "EditMacro", "CreateMacro", "PlaceAction", "SetBinding", "SetBindingClick", "ChangeActionBarPage" }) do
+  for _, name in ipairs({ "EditMacro", "CreateMacro", "PlaceAction", "SetBinding", "SetBindingClick" }) do
     local real = _G[name]
     _G[name] = function(...) touched = touched + 1; return real(...) end
   end
+  local realPage = C_ActionBar.SetActionBarPage
+  C_ActionBar.SetActionBarPage = function(...) touched = touched + 1; return realPage(...) end
   for _, cmd in ipairs({ "macros", "bar", "bar replace", "smart", "smart next 1", "pages", "reset", "set scale 1.2", "check", "errors", "last" }) do
     guarded("/coach " .. cmd, SlashCmdList.CLASSCOACH, cmd)
   end
@@ -939,7 +962,8 @@ elseif SCENARIO == "robust" then
   end
   table.sort(names)
   local tables = {}
-  for _, tn in ipairs({ "C_Spell", "C_SpellBook", "C_Item", "C_Container", "C_UnitAuras", "C_Secrets", "C_NamePlate" }) do
+  for _, tn in ipairs({ "C_Spell", "C_SpellBook", "C_Item", "C_Container", "C_UnitAuras", "C_Secrets", "C_NamePlate", "C_ActionBar",
+    "C_ClassTalents", "C_Traits", "C_CVar" }) do
     if type(_G[tn]) == "table" then tables[#tables + 1] = tn end
   end
   local seed = 12345
@@ -1036,6 +1060,154 @@ elseif SCENARIO == "robust" then
   end
   table.sort(stray)
   check("no stray global names", #stray == 0, table.concat(stray, ", "))
+
+---------------------------------------------------------------------------
+-- WoW Forever only: the addon uses Forever's own functions and nothing from
+-- another version of the game, and switches itself off anywhere else.
+elseif SCENARIO == "forever" then
+  local function player()
+    M.player({
+      class = "SHAMAN", className = "Shaman", level = 20, mana = 300, maxMana = 300,
+      spells = { [403] = { name = "Lightning Bolt", cost = 15 }, [8017] = { name = "Rockbiter Weapon", cost = 10 },
+        [324] = { name = "Lightning Shield", cost = 45 } },
+      book = { 403, 8017, 324 }, talents = { 0, 11, 0 },
+      actions = { [1] = 403 }, bindings = { ACTIONBUTTON1 = "1" },
+    })
+  end
+
+  -- 1. The source calls nothing that Forever does not have. These names exist in
+  --    Classic Era, Season of Discovery, the Classic expansions or older retail,
+  --    but not in the Forever client (Warcraft Wiki's Forever API list).
+  local GONE = { "GetSpellInfo", "GetSpellTabInfo", "GetNumSpellTabs", "GetSpellBookItemInfo", "GetSpellBookItemName", "GetSpellCooldown",
+    "GetSpellPowerCost", "GetSpellDescription", "GetSpellTexture", "IsUsableSpell", "IsSpellKnown", "IsPlayerSpell", "IsAutoRepeatSpell",
+    "IsCurrentSpell", "PickupSpell", "PickupItem", "GetItemInfo", "GetItemCount", "GetItemSpell", "GetContainerNumFreeSlots",
+    "GetContainerNumSlots", "GetContainerItemInfo", "UnitBuff", "UnitDebuff", "UnitAura", "UnitCharacterPoints", "GetTalentTabInfo",
+    "GetNumTalentTabs", "GetNumTalents", "GetTalentInfo", "GetWeaponEnchantInfo", "GetActionBarPage", "ChangeActionBarPage",
+    "GetActionTexture", "GetActionText", "GetActionCooldown", "IsUsableAction", "SetCVar", "GetCVar", "CombatLogGetCurrentEventInfo",
+    "GetAddOnMetadata", "IsAddOnLoaded" }
+  local toc = io.open(ROOT .. "/ClassCoach/ClassCoach.toc"):read("*a")
+  local bad = {}
+  for line in toc:gmatch("[^\n]+") do
+    if not line:match("^#") and line:match("%.lua%s*$") then
+      local file = line:gsub("\\", "/"):gsub("%s+$", "")
+      local src = " " .. io.open(ROOT .. "/ClassCoach/" .. file):read("*a")
+      src = src:gsub("%-%-[^\n]*", "")                      -- comments may name them
+      for _, name in ipairs(GONE) do
+        -- the bare global: not C_Something.Name and not part of a longer word
+        if src:find("[^%w_%.]" .. name .. "[^%w_]") then bad[#bad + 1] = file .. ": " .. name end
+      end
+    end
+  end
+  check("no call to a function Forever lacks", #bad == 0, table.concat(bad, "; "))
+  check("the TOC names Forever's interface only", toc:match("## Interface:%s*([^\n]+)") == "16001", toc:match("## Interface:%s*([^\n]+)"))
+  local extra = {}
+  for _, f in ipairs({ "ClassCoach_Vanilla.toc", "ClassCoach_Classic.toc", "ClassCoach_Mainline.toc", "ClassCoach_TBC.toc", "ClassCoach_Wrath.toc",
+    "ClassCoach_Cata.toc", "ClassCoach_Mists.toc" }) do
+    local fh = io.open(ROOT .. "/ClassCoach/" .. f); if fh then fh:close(); extra[#extra + 1] = f end
+  end
+  check("no TOC for any other version", #extra == 0, table.concat(extra, ", "))
+
+  -- 2. On another version of the game it does nothing at all
+  local function offOn(what, setup)
+    player(); setup()
+    M.printed = {}
+    local before = #M.frames
+    ClassCoachDB, ClassCoachCharDB = nil, nil
+    local ns = load()
+    local said = table.concat(M.printed, " | ")
+    local events = 0
+    for i = before + 1, #M.frames do for _ in pairs(M.frames[i].events or {}) do events = events + 1 end end
+    check(what .. ": stays off, says why once", ns.API.forever == false and ns.C.driver == nil and ns.Panel.frame == nil
+      and ClassCoachDB == nil and select(2, said:gsub("Forever only", "")) == 1, said)
+    check(what .. ": listens to no game events", events == 0, events)
+    M.printed = {}
+    local ok = pcall(SlashCmdList.CLASSCOACH, "bar replace")
+    check(what .. ": /coach only explains", ok and #M.printed == 1 and M.printed[1]:find("Forever only") ~= nil and #M.macros == 0, M.printed[1])
+  end
+  local realBuild, realProject = GetBuildInfo, WOW_PROJECT_ID
+  offOn("retail", function() WOW_PROJECT_ID = WOW_PROJECT_MAINLINE; GetBuildInfo = function() return "12.1.5", "1", "x", 120105 end end)
+  offOn("Classic Era", function() WOW_PROJECT_ID = WOW_PROJECT_CLASSIC; GetBuildInfo = function() return "1.15.8", "1", "x", 11508 end end)
+  -- an older client without the project list: the interface number decides
+  local camelot = WOW_PROJECT_CAMELOT
+  offOn("a Classic expansion", function() WOW_PROJECT_CAMELOT = nil; GetBuildInfo = function() return "5.5.3", "1", "x", 50503 end end)
+  local hidden = issecretvalue
+  offOn("a client without hidden values", function() WOW_PROJECT_CAMELOT = camelot; WOW_PROJECT_ID = camelot; GetBuildInfo = realBuild; issecretvalue = nil end)
+  issecretvalue = hidden
+
+  -- 3. On Forever it runs, by project id or (if the id list is missing) by interface number
+  WOW_PROJECT_ID, WOW_PROJECT_CAMELOT, GetBuildInfo = nil, nil, realBuild
+  player()
+  local ns = load()
+  check("Forever by interface number 16001", ns.API.forever == true and ns.C.driver ~= nil and ns.Panel.frame ~= nil)
+  WOW_PROJECT_CAMELOT = camelot; WOW_PROJECT_ID = camelot
+  GetBuildInfo = function() return "1.61.0", "1", "x", 16100 end
+  player()
+  ns = load()
+  check("Forever by project id (and a later Forever patch)", ns.API.forever == true and ns.C.driver ~= nil)
+  GetBuildInfo = realBuild
+  local f = tick(ns)
+
+  -- 4. What it reads comes from Forever's own functions
+  check("talent trees read from the traits system", table.concat(ns.API.talentPoints() or {}, "/") == "0/11/0", table.concat(ns.API.talentPoints() or {}, "/"))
+  check("so the spec is picked from your talents", ns.C.profile.spec == "Enhancement" and ns.C.profileWhy == "talents", tostring(ns.C.profileWhy))
+  M.P.oneTree = true
+  check("an unexpected tree layout is 'unknown', not a guess", ns.API.talentPoints() == nil)
+  M.P.oneTree = nil
+  M.P.talentPoints = 3
+  check("unspent talent points", ns.API.unspentTalents() == 3, tostring(ns.API.unspentTalents()))
+  M.P.talentPoints = 0
+  check("none to spend", ns.API.unspentTalents() == 0, tostring(ns.API.unspentTalents()))
+  check("weapon buff: none", ns.API.mainHandBuff() == false)
+  M.P.mainHand = true
+  check("weapon buff: Forever's imbue layer", ns.API.mainHandBuff() == true)
+  M.P.combat = true
+  check("weapon buff hidden in combat reads as unknown", ns.API.mainHandBuff() == nil)
+  M.P.combat = false
+  M.P.page = 3
+  check("bar page from C_ActionBar", ns.API.barPage() == 3)
+  M.P.keyActions = { ["SHIFT-2"] = "ACTIONPAGE2" }
+  SlashCmdList.CLASSCOACH("pages")
+  check("/coach pages goes back to page 1 through C_ActionBar", M.P.page == 1, M.P.page)
+  M.printed = {}
+  SlashCmdList.CLASSCOACH("errors on")
+  check("/coach errors on sets the game setting through C_CVar", M.cvars.scriptErrors == "1" and table.concat(M.printed, " "):find("will now show errors") ~= nil,
+    table.concat(M.printed, " "))
+  local realSet = C_CVar.SetCVar
+  C_CVar.SetCVar = function() end
+  M.printed = {}
+  SlashCmdList.CLASSCOACH("errors off")
+  check("and says so when the game refuses", table.concat(M.printed, " "):find("/console scriptErrors 0", 1, true) ~= nil, table.concat(M.printed, " "))
+  C_CVar.SetCVar = realSet
+  M.printed = {}
+  SlashCmdList.CLASSCOACH("check")
+  local report = table.concat(M.printed, "\n")
+  check("/coach check names the client", report:find("WoW Forever: yes", 1, true) ~= nil and report:find("missing on this client: none", 1, true) ~= nil,
+    report:sub(1, 300))
+  local realTex = C_ActionBar.GetActionTexture
+  C_ActionBar.GetActionTexture = nil
+  M.printed = {}
+  SlashCmdList.CLASSCOACH("check")
+  check("and lists a Forever function the client lacks", table.concat(M.printed, "\n"):find("missing on this client: C_ActionBar.GetActionTexture", 1, true) ~= nil,
+    table.concat(M.printed, "\n"):sub(1, 400))
+  C_ActionBar.GetActionTexture = realTex
+
+  -- 5. The advice is Forever's
+  local data = ns.JourneyData
+  local function has(list, text) for _, e in ipairs(list) do if tostring(e[3] or e.text):find(text, 1, true) then return e end end end
+  local thanes, krol, wet = has(data.dungeons.Alliance, "Hall of Thanes"), has(data.dungeons.Alliance, "Krol'dok Stronghold"), has(data.dungeons.Alliance, "Excavation Site")
+  check("Forever's new dungeons at Blizzard's levels", thanes and thanes[1] == 13 and thanes[2] == 18 and krol and krol[1] == 40 and krol[2] == 45
+    and wet and wet[1] == 24 and wet[2] == 29)
+  check("Forever's new zones", has(data.zones.Alliance, "Riverglades") ~= nil and has(data.zones.Alliance, "Mount Hyjal") ~= nil)
+  for _, list in ipairs({ data.zones.Alliance, data.dungeons.Alliance }) do
+    for _, e in ipairs(list) do
+      if not (type(e[1]) == "number" and type(e[2]) == "number" and e[1] >= 1 and e[1] <= e[2] and e[2] <= 60) then
+        check("level range " .. tostring(e[3]), false, tostring(e[1]) .. "-" .. tostring(e[2]))
+      end
+    end
+  end
+  check("every level 1-60 has a zone", (function() for l = 1, 60 do local ok = false
+    for _, e in ipairs(data.zones.Alliance) do if l >= e[1] and l <= e[2] then ok = true end end
+    if not ok then return false end end return true end)())
 
 ---------------------------------------------------------------------------
 elseif SCENARIO == "template" then

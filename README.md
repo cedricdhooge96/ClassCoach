@@ -15,6 +15,8 @@ A beginner coach addon for **World of Warcraft Forever** (client 1.60.1). One co
 
 Advisory only: it never presses anything for you.
 
+**Forever only.** The addon calls only functions the Forever client has, carries Forever's own data (spells, talents, zones, dungeons, XP buffs), and switches itself off on any other version of the game.
+
 ## Classes
 
 | Class | Spec | Status |

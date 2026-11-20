@@ -9,35 +9,43 @@ local _, ns = ...
 
 local ICON = "Interface\\Icons\\"
 
+-- Everything here is WoW Forever's own: Blizzard's dungeon list for Forever,
+-- Forever's zone levels (they differ from the original game's in places) and
+-- Forever's systems (camping, the sleeping bag, Dual Specialization).
 ns.JourneyData = {
   milestones = {
     { level = 10, text = "First talent point", icon = ICON .. "Ability_Marksmanship",
       hint = "From level 10 you get one talent point per level. Press N to spend it." },
     { level = 14, text = "Cozy Sleeping Bag quest chain", icon = ICON .. "INV_Misc_Bag_10",
-      hint = "A quest chain from level 14 rewards a sleeping bag: rest on it for up to +3% XP.",
+      hint = "From level 14. It starts at a Nailed Plank on Alexston Farmstead in Westfall (Horde: Burned-Out Remains in the Barrens). Resting on the bag gives +1% XP per minute, up to 3%.",
       done = function(s) return s.journey and s.journey.hasItem and s.journey.hasItem("Cozy Sleeping Bag") end },
     { level = 40, text = "Mount and Dual Specialization", icon = ICON .. "Ability_Mount_RidingHorse",
-      hint = "At 40 you can learn riding and buy a second talent setup. Start saving gold around level 30." },
+      hint = "At 40 a riding trainer teaches Apprentice Riding, and your class trainer sells Dual Specialization (50 gold). Start saving around level 30." },
   },
 
-  -- Where to quest, per faction: { from, to, zones }. From the Alliance route in the roadmap.
+  -- Where to quest, per faction: { from, to, zones }. Forever's zone levels.
   zones = {
     Alliance = {
-      { 1, 11, "Your starting zone (Dun Morogh, Elwynn Forest or Teldrassil)" },
-      { 10, 19, "Loch Modan or Westfall" },
-      { 15, 24, "Redridge Mountains" },
-      { 20, 29, "Wetlands, Duskwood or Ashenvale" },
-      { 30, 39, "Arathi Highlands or Stranglethorn Vale" },
-      { 35, 44, "Riverglades (new), Badlands or Dustwallow Marsh" },
-      { 40, 49, "The Hinterlands, Tanaris or Feralas" },
-      { 48, 54, "Un'Goro Crater or Searing Gorge" },
-      { 50, 57, "Burning Steppes or Western Plaguelands" },
-      { 53, 60, "Eastern Plaguelands, Winterspring or Silithus" },
+      { 1, 10, "Your starting zone (Dun Morogh, Elwynn Forest or Teldrassil)" },
+      { 10, 20, "Loch Modan, Westfall or Darkshore" },
+      { 15, 25, "Redridge Mountains" },
+      { 18, 30, "Duskwood or Ashenvale" },
+      { 20, 30, "Wetlands" },
+      { 30, 40, "Arathi Highlands or Desolace" },
+      { 30, 45, "Stranglethorn Vale" },
+      { 35, 45, "Riverglades (new in Forever), Badlands or Dustwallow Marsh" },
+      { 40, 50, "The Hinterlands, Tanaris or Feralas" },
+      { 45, 50, "Searing Gorge" },
+      { 48, 55, "Un'Goro Crater or Felwood" },
+      { 50, 58, "Burning Steppes or Western Plaguelands" },
+      { 53, 60, "Eastern Plaguelands" },
+      { 55, 60, "Winterspring or Silithus" },
+      { 60, 60, "Mount Hyjal (new in Forever)" },
     },
   },
 
   -- What innkeepers and food vendors sell, by the level you can use it: { level, name }.
-  -- Names from Classic; Forever keeps the old world's vendors.
+  -- Forever's vendors sell the original game's bread and drinks at the same levels.
   drinks = {
     { 1, "Refreshing Spring Water" }, { 5, "Ice Cold Milk" }, { 15, "Melon Juice" }, { 25, "Sweet Nectar" },
     { 35, "Moonberry Juice" }, { 45, "Morning Glory Dew" },
@@ -47,14 +55,18 @@ ns.JourneyData = {
     { 35, "Soft Banana Bread" }, { 45, "Homemade Cherry Pie" },
   },
 
-  -- Dungeons by level range: { from, to, name }.
+  -- Dungeons by level range: { from, to, name }. The nine new ones use the
+  -- levels Blizzard published for Forever; the returning ones use Forever's too.
   dungeons = {
     Alliance = {
-      { 13, 20, "Hall of Thanes" }, { 17, 26, "Deadmines" }, { 24, 32, "The Stockade or Blackfathom Deeps" },
-      { 26, 33, "Excavation Site: Wetlands" }, { 28, 35, "City of Dalaran" }, { 30, 40, "Gnomeregan or Scarlet Monastery" },
-      { 35, 42, "The Drowned City" }, { 40, 47, "Krol'Dok Stronghold" }, { 41, 51, "Uldaman" }, { 44, 54, "Zul'Farrak" },
-      { 46, 55, "Maraudon" }, { 48, 55, "Alcaz Island Prison" }, { 50, 60, "Sunken Temple" }, { 52, 60, "Blackrock Depths" },
-      { 55, 60, "Blackmaw Hold" }, { 58, 60, "Shaper's Terrace" },
+      { 13, 18, "Hall of Thanes (new)" }, { 18, 23, "The Deadmines" }, { 22, 30, "The Stockade" },
+      { 24, 29, "Excavation Site: Wetlands (new)" }, { 24, 32, "Blackfathom Deeps" }, { 28, 33, "City of Dalaran (new)" },
+      { 28, 39, "Scarlet Monastery: Graveyard or Library" }, { 29, 38, "Gnomeregan" },
+      { 32, 45, "Scarlet Monastery: Armory or Cathedral" }, { 35, 40, "The Drowned City (new)" },
+      { 40, 45, "Krol'dok Stronghold (new)" }, { 42, 52, "Uldaman" }, { 44, 54, "Zul'Farrak" }, { 45, 57, "Maraudon" },
+      { 48, 53, "Alcaz Prison (new)" }, { 50, 60, "Temple of Atal'Hakkar (Sunken Temple)" }, { 52, 60, "Blackrock Depths" },
+      { 55, 60, "Blackmaw Hold (new) or Lower Blackrock Spire" },
+      { 58, 60, "Shaper's Terrace (new), Scholomance, Stratholme or Dire Maul" },
     },
   },
 }
