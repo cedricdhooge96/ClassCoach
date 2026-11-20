@@ -15,6 +15,10 @@ ns.say = say
 -- Notes a problem in the saved log (see /coach errors). The same problem
 -- repeating is counted, not stored again, so the log can never flood.
 local lastLogged, repeats = nil, 0
+local function keep(db, line)
+  db.log[#db.log + 1] = line
+  while #db.log > 100 do table.remove(db.log, 1) end
+end
 local function log(fmt, ...)
   local db = ClassCoachDB
   if type(db) ~= "table" then return end
@@ -25,13 +29,13 @@ local function log(fmt, ...)
   if line == lastLogged then
     repeats = repeats + 1
     if repeats == 10 or repeats == 100 or repeats == 1000 then
-      db.log[#db.log + 1] = ("  (the line above has now happened %d times)"):format(repeats)
+      keep(db, ("  (the line above has now happened %d times)"):format(repeats))
     end
     return
   end
   lastLogged, repeats = line, 1
-  db.log[#db.log + 1] = (date and date("%H:%M:%S") or "") .. " " .. line
-  while #db.log > 100 do table.remove(db.log, 1) end
+  local timed, stamp = pcall(date, "%H:%M:%S")
+  keep(db, ((timed and type(stamp) == "string") and stamp or "") .. " " .. line)
 end
 API.log = log
 

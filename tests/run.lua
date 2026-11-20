@@ -136,11 +136,16 @@ if SCENARIO == "shaman" then
   check("mana bar exact out of combat", f.bar.value == 300 and f.barText.text == "Mana 100%", f.barText.text)
 
   -- Fight (the game already hides the enemy's name when combat starts)
+  local beforePull = journey(ns)
   M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED")
   cast(529)
   M.advance(1.5); f = tick(ns)
   check("in combat: Flame Shock next", f.name.text == "Flame Shock", f.name.text)
-  check("journey panel hides in combat", journey(ns) == "(hidden)", journey(ns))
+  check("journey panel stays up in combat, as it was before the pull", journey(ns) ~= "(hidden)" and journey(ns) == beforePull, journey(ns))
+  ClassCoachDB.journeyInCombat = false; tick(ns)
+  check("unless you turn that off", journey(ns) == "(hidden)", journey(ns))
+  ClassCoachDB.journeyInCombat = true; tick(ns)
+  check("turned back on mid-fight it comes back", journey(ns) == beforePull, journey(ns))
   check("mana bar is handed the real hidden value", f.bar.value == M.SECRET)
   check("mana text written by the game", f.barText.secretText == true and f.barText.text == "Mana %.0f%%", f.barText.text)
   cast(8050)
@@ -331,7 +336,7 @@ if SCENARIO == "shaman" then
   check("settings page registered with the game", S.category ~= nil and S.category.name == "ClassCoach")
   local count = 0
   for _ in pairs(S.list) do count = count + 1 end
-  check("every option made it onto the page", count == 26 and #ns.Options.registered == 26 and #ns.Options.keys() == 26, count)
+  check("every option made it onto the page", count == 27 and #ns.Options.registered == 27 and #ns.Options.keys() == 27, count)
   check("sections and action buttons", #S.headers == 5 and #S.buttons == 3, #S.headers .. "/" .. #S.buttons)
   check("options write to the saved settings", S.list.compact.tbl == ClassCoachDB and S.list.specChoice.tbl == ClassCoachCharDB)
   check("slider shows its unit", S.list.opacity.opts.format(75) == "75%" and S.list.scale.opts.format(1.1) == "1.10x")

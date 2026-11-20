@@ -31,7 +31,9 @@ local function layout()
 
     { header = "Journey panel (outside the fight)" },
     { key = "journey", kind = "check", name = "Show the journey panel", default = true,
-      tip = "XP, rested XP and a short to-do list. It hides itself in combat." },
+      tip = "XP, rested XP and a short to-do list." },
+    { key = "journeyInCombat", kind = "check", name = "Keep it visible in combat", default = true,
+      tip = "The panel stays up during a fight, showing what it showed before the pull. It updates again when the fight ends. Turn off to hide it in combat." },
     { key = "journeyScale", kind = "slider", name = "Size", default = 1, min = 0.6, max = 1.6, step = 0.05, unit = "x",
       tip = "Size of the journey panel." },
     { key = "food", kind = "check", name = "Remind me: food buff", default = true,

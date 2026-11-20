@@ -64,7 +64,7 @@ Press Esc, then Options > AddOns > ClassCoach. Everything is on one page and app
 ## Two panels
 
 - **Coach** (top): only the fight. The carousel, your timers, mana, and before a pull the few things that matter for that fight (shield, weapon buff, demon, low health or mana). Anything missing shows as the icon of the spell that fixes it, with its key; hover it for the details.
-- **Journey** (its own panel, hidden in combat): your XP and rested XP, and a short to-do list with an icon per item (hover one for the full advice). The list covers from the leveling guides: unspent talent points, spells you can train, a missing food buff (+5% XP from kills), no rested XP, your Cozy Sleeping Bag or Camp Tent if you own one, gear that needs repair, full bags, and the level your trainer next has something new. `!` marks something worth doing now; the grey line under the list explains the first one.
+- **Journey** (its own panel; in a fight it stays as it was before the pull, or hides if you turn off "Keep it visible in combat"): your XP and rested XP, and a short to-do list with an icon per item (hover one for the full advice). The list covers from the leveling guides: unspent talent points, spells you can train, a missing food buff (+5% XP from kills), no rested XP, your Cozy Sleeping Bag or Camp Tent if you own one, gear that needs repair, full bags, and the level your trainer next has something new. `!` marks something worth doing now; the grey line under the list explains the first one.
 
 What the journey panel adds on top of that:
 

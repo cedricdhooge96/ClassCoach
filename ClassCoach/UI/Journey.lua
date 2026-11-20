@@ -1,7 +1,7 @@
 -- The journey panel: everything outside the fight. Your XP and rested XP,
 -- and a short list of things guides tell you to keep on top of (food buff,
--- trainer, talent points, repairs, bags). It hides itself in combat so the
--- coach panel is all you see while fighting.
+-- trainer, talent points, repairs, bags). In combat it is not redrawn: it
+-- stays as it was before the pull, or hides if you turned that option off.
 local _, ns = ...
 
 local Journey = {}
@@ -125,7 +125,15 @@ end
 function Journey.render(view)
   local f = Journey.frame
   if not f then return end
-  local wanted = Journey.db.journey ~= false and not view.inCombat
+  local db = Journey.db
+  -- In combat the game hides most of what this panel reads, so it is not redrawn.
+  -- It stays up showing what it showed before the pull, unless you asked it to hide.
+  -- (After a reload in the middle of a fight there is nothing to show until the fight ends.)
+  if view.inCombat and db.journey ~= false and db.journeyInCombat ~= false and Journey.drawn then
+    if Journey.visible ~= true then f:Show(); Journey.visible = true end
+    return
+  end
+  local wanted = db.journey ~= false and not view.inCombat
   if not wanted then
     if Journey.visible ~= false then f:Hide(); Journey.visible = false end
     return
@@ -195,6 +203,7 @@ function Journey.render(view)
     f.hint:Hide()
   end
   f:SetHeight(-y + 8)
+  Journey.drawn = true
 end
 
 function Journey.reset()
