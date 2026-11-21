@@ -322,6 +322,14 @@ function API.macroExists(name)
   return (plain(try(GetMacroIndexByName, name)) or 0) > 0
 end
 
+-- The text of a macro, yours or the coach's, or nil.
+function API.macroBody(name)
+  local index = plain(try(GetMacroIndexByName, name)) or 0
+  if index <= 0 then return nil end
+  local body = plain(try(GetMacroBody, index))
+  return type(body) == "string" and body or nil
+end
+
 ---------------------------------------------------------------------------
 -- Spells
 ---------------------------------------------------------------------------

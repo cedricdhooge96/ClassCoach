@@ -4,7 +4,8 @@ local ADDON, ns = ...
 local API, Mana, Tracker, Engine, Profiles = ns.API, ns.Mana, ns.Tracker, ns.Engine, ns.Profiles
 
 -- Every option and its default lives in UI/Options.lua (the settings screen).
-local KILL_SAMPLES = 3   -- fights needed before the "enemy nearly dead" guess is used
+local KILL_SAMPLES = 5   -- fights needed before the "enemy nearly dead" guess is used
+local KILL_KEEP = 7      -- the usual kill time is the middle one of your last this many
 
 local C = {}            -- runtime state
 ns.C = C
@@ -99,6 +100,7 @@ local function rescan()
   C.spells, C.idToKey, C.costById, C.probes, C.book = spells, idToKey, costById, probes, book
   C.keys = API.scanKeys()
   C.slots = API.barSlots or {}
+  C.lendMacroKeys()   -- also when the macros are not rewritten now (automatic updates off, or just done)
   refreshIcons()
   safely("talents", C.refreshTalents)
   C.talentsStale = false
@@ -224,12 +226,23 @@ end
 
 -- Builds the profile's macros from the spells you know. With onlyExisting it
 -- only refreshes macros you already made (after training new spells).
--- A macro on your bar lends its key and its button to the spells inside it.
+-- A macro on your bar lends its key and its button to the spells inside it:
+-- any macro on your bars (the coach's own, or one you wrote), read from the game.
 function C.lendMacroKeys()
-  for name, body in pairs(C.macroBodies or {}) do
+  local onBars = {}
+  for k in pairs(C.keys or {}) do
+    local name = type(k) == "string" and k:match("^macro:(.+)$")
+    if name then onBars[name] = true end
+  end
+  for k in pairs(C.slots or {}) do
+    local name = type(k) == "string" and k:match("^macro:(.+)$")
+    if name then onBars[name] = true end
+  end
+  for name in pairs(onBars) do
+    local body = API.macroBody(name) or (C.macroBodies and C.macroBodies[name])
     local key = C.keys and C.keys["macro:" .. name]
     local slot = C.slots and C.slots["macro:" .. name]
-    if (key or slot) and API.macroExists(name) then
+    if body and (key or slot) then
       for _, sp in pairs(C.spells or {}) do
         if body:find(sp.name, 1, true) then
           if key and C.keys[sp.name] == nil then C.keys[sp.name] = key end
@@ -1053,10 +1066,18 @@ local function finishFight()
   -- Learn how long your kills take: it decides when a new damage-over-time spell is wasted.
   -- Only fights against one enemy: with more, the time per enemy comes out far too short.
   if not summary.elite and not API.inGroup() and summary.duration < 120 and summary.targets == 1 then
-    local kill = ClassCoachCharDB.kill or { avg = 0, n = 0 }
-    local per = summary.duration / summary.targets
-    kill.avg = kill.n == 0 and per or (kill.avg * 0.7 + per * 0.3)
-    kill.n = kill.n + 1
+    local kill = ClassCoachCharDB.kill or { avg = 0, n = 0, v = 2 }
+    -- the middle one of your last few kills: one odd fight (a runner, a mob someone
+    -- else hit first) moves it little
+    local recent = type(kill.recent) == "table" and kill.recent or {}
+    recent[#recent + 1] = summary.duration
+    while #recent > KILL_KEEP do table.remove(recent, 1) end
+    local sorted = {}
+    for i, d in ipairs(recent) do sorted[i] = d end
+    table.sort(sorted)
+    kill.recent, kill.v = recent, 2
+    kill.avg = sorted[math.floor((#sorted + 1) / 2)]
+    kill.n = (kill.n or 0) + 1
     ClassCoachCharDB.kill = kill
   end
   local s = C.lastState or buildState(GetTime())
@@ -1162,6 +1183,10 @@ end
 local function start()
   ClassCoachDB = ClassCoachDB or {}
   ClassCoachCharDB = ClassCoachCharDB or {}
+  -- Kill times learned before 0.15.3 counted a fight against three enemies as three
+  -- quick kills (and kept them in a running average): far too short, so the coach
+  -- dropped Immolate from the pull. Start over.
+  if type(ClassCoachCharDB.kill) == "table" and ClassCoachCharDB.kill.v ~= 2 then ClassCoachCharDB.kill = nil end
   local db = ClassCoachDB
   -- settings saved by older versions
   if db.hidden ~= nil then db.showCoach = not db.hidden; db.hidden = nil end

@@ -632,6 +632,8 @@ elseif SCENARIO == "warlock" then
   check("no tip for casting together with the Voidwalker: that is how the pull key works now", not tips:find("Voidwalker", 1, true), tips)
   check("dots forgotten after the fight", #ns.C.tracker:dotsOn("g:Creature-5", M.now) == 0)
   check("kill time learned", ClassCoachCharDB.kill and ClassCoachCharDB.kill.n == 1 and ClassCoachCharDB.kill.avg > 10, ClassCoachCharDB.kill and ClassCoachCharDB.kill.avg)
+  check("kill time: the middle of your last few single-enemy kills", ClassCoachCharDB.kill.v == 2 and #ClassCoachCharDB.kill.recent == 1
+    and ClassCoachCharDB.kill.recent[1] == ClassCoachCharDB.kill.avg)
 
   -- Enemy nearly dead (by your usual kill time): no new damage over time.
   ClassCoachCharDB.kill = { avg = 8, n = 5 }
@@ -910,6 +912,28 @@ elseif SCENARIO == "wand" then
       M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(1)
     end
   end
+
+  -- Regression (seen in game, 0.15.0): Shoot only in a macro on your bar ("CC Wand", or
+  -- one you wrote) still got "Shoot is not on your action bars".
+  M.player({
+    class = "WARLOCK", className = "Warlock", level = 13, mana = 300, maxMana = 300,
+    spells = { [348] = { name = "Immolate", cost = 25 }, [172] = { name = "Corruption", cost = 35 },
+      [980] = { name = "Bane of Agony", cost = 25 }, [697] = { name = "Summon Voidwalker", cost = 100 }, [5019] = { name = "Shoot", cost = 0 } },
+    book = { 348, 172, 980, 697, 5019 }, equipped = { [18] = 11287 }, talents = { 3, 0, 0 },
+  })
+  local ns2 = load()
+  ClassCoachDB.autoMacros = false
+  M.P.pet = { family = "Voidwalker" }
+  M.macros[#M.macros + 1] = { name = "My Wand", body = "#showtooltip\n/cast !Shoot" }
+  M.P.actions[2] = { macro = "My Wand" }; M.P.bindings.ACTIONBUTTON2 = "2"
+  M.fire("SPELLS_CHANGED"); M.advance(3); tick(ns2)
+  target({ name = "Defias", level = 12, hostile = true, guid = "Creature-77" })
+  M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED")
+  cast(980); M.advance(1.5); cast(172); M.advance(1.5); cast(348); M.advance(2); cast(5019); M.advance(1)
+  local f2 = tick(ns2)
+  check("Shoot in a macro on your bar: its key, and no 'not on your action bars'", f2.name.text == "Shoot" and f2.key.text == "2"
+    and not f2.status.text:find("not on your action bars", 1, true), f2.name.text .. " / " .. tostring(f2.key.text) .. " / " .. f2.status.text)
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED")
 
 ---------------------------------------------------------------------------
 -- Every level 1-60: only suggest what the character has at that level.
