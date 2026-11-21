@@ -98,6 +98,7 @@ local function rescan()
   table.sort(probes, function(a, b) return a.cost < b.cost end)
   C.spells, C.idToKey, C.costById, C.probes, C.book = spells, idToKey, costById, probes, book
   C.keys = API.scanKeys()
+  C.slots = API.barSlots or {}
   refreshIcons()
   safely("talents", C.refreshTalents)
   C.talentsStale = false
@@ -111,6 +112,7 @@ end
 local function rescanKeys()
   if API.inCombat() then C.rescanDue = true return end
   C.keys = API.scanKeys()
+  C.slots = API.barSlots or {}
   refreshIcons()
   C.lendMacroKeys()
 end
@@ -219,13 +221,17 @@ end
 
 -- Builds the profile's macros from the spells you know. With onlyExisting it
 -- only refreshes macros you already made (after training new spells).
--- A macro on your bar lends its key to the spells inside it.
+-- A macro on your bar lends its key and its button to the spells inside it.
 function C.lendMacroKeys()
   for name, body in pairs(C.macroBodies or {}) do
     local key = C.keys and C.keys["macro:" .. name]
-    if key and API.macroExists(name) then
+    local slot = C.slots and C.slots["macro:" .. name]
+    if (key or slot) and API.macroExists(name) then
       for _, sp in pairs(C.spells or {}) do
-        if C.keys[sp.name] == nil and body:find(sp.name, 1, true) then C.keys[sp.name] = key end
+        if body:find(sp.name, 1, true) then
+          if key and C.keys[sp.name] == nil then C.keys[sp.name] = key end
+          if slot and C.slots[sp.name] == nil then C.slots[sp.name] = slot end
+        end
       end
     end
   end
@@ -274,7 +280,8 @@ function C.syncSmart()
   -- The secure button is only made once you use it: a key bound to it, or /coach smart.
   if not ns.Smart.button and not C.smartWanted and not ns.Smart.status().keys.next then return false end
   if not ns.Smart.create() then return false end
-  local steps, gate = Engine.smartSteps(C.profile, s, { macro = API.macroExists })
+  local steps, gate, warn = Engine.smartSteps(C.profile, s, { macro = API.macroExists })
+  C.smartWarn = warn
   return ns.Smart.load(steps, gate)
 end
 
@@ -472,6 +479,7 @@ local function tick()
   local view = {
     title = ("%s · %s · level %d"):format(profile.spec, profile.class == "ANY" and (C.class or "") or profile.class:sub(1, 1) .. profile.class:sub(2):lower(), s.level),
     usesMana = s.usesMana, manaPct = s.manaPct, manaExact = s.manaExact, manaLevel = s.manaLevel,
+    inCombat = s.inCombat,
   }
   if C.bagsChanged and not s.inCombat then
     C.bagsChanged = false
@@ -534,8 +542,10 @@ local function tick()
       local db = ClassCoachDB
       local journey = Engine.journey(profile, s, { food = db.food, rested = db.remindRested, train = db.remindTrain, gear = db.remindGear,
         supplies = db.remindSupplies, roadmap = db.roadmap, data = ns.JourneyData,
-        professions = db.remindProfessions, professionData = ns.ProfessionData })
-      journey.title = ("Journey · level %d"):format(s.level)
+        professions = db.remindProfessions, professionData = ns.ProfessionData, professionPicks = ns.ProfessionPicks,
+        class = C.class, goal = db.professionGoal, first = ClassCoachCharDB.professionA, second = ClassCoachCharDB.professionB,
+        secondary = db.remindSecondary, readable = API.professionsReadable })
+      journey.title = ("Level %d"):format(s.level)
       for _, line in ipairs(journey.lines) do
         if type(line.icon) == "table" then   -- { spell = key }: that spell's own icon, learned or not
           local sp, meta = s.spells[line.icon.spell], profile.spells[line.icon.spell]
@@ -547,8 +557,24 @@ local function tick()
     end)
   end
   if s.inCombat then safely("journey panel", ns.Journey.render, { inCombat = true }) end
+  -- A step with no key: say where to get one, once nothing more pressing is being said.
+  if now1 and not view.planning and not now1.keybind and not now1.melee and (view.status == nil or view.statusKind == "ok") then
+    view.status = now1.label .. " is not on your action bars. Drag it there from your spellbook, or type /coach bar."
+    view.statusKind = "warn"
+  end
+  if not s.inCombat then view.restMacro = API.macroExists("CC Rest") and "CC Rest" or nil end
   if C.trouble then view.status, view.statusKind = C.trouble, "warn" end
+  C.lastView = view
+  if C.demo then return C.playDemo(now, view) end
   ns.Panel.render(view)
+  -- Before a fight the icons can be clicked; the buttons for that are only touched out of combat.
+  safely("click to cast", ns.Click.update, ns.Panel.frame, ns.Panel.clicks or {}, ClassCoachDB)
+  -- The button to press now, lit up on your action bars. Not while it is only a plan, and not
+  -- for a wand that is already firing: there is nothing to press then.
+  safely("bar highlight", function()
+    local slot = now1 and not view.planning and not now1.running and ClassCoachDB.showCoach ~= false and C.slots and C.slots[now1.label] or nil
+    ns.BarGlow.update(slot, ClassCoachDB)
+  end)
   -- The game's talent window: while it is open, keep the mark on the next talent of your build.
   safely("talent marks", function()
     if ClassCoachDB.talentMarks == false or not ns.Talents.open() then ns.Talents.hide() return end
@@ -558,6 +584,88 @@ local function tick()
     end
     ns.Talents.update(C.talentState, ClassCoachDB)
   end)
+end
+
+-- /coach demo: plays the coach's states with your own spells, out of combat,
+-- so you can see and place it without fighting. It stops by itself when a
+-- fight starts.
+local function demoViews(real)
+  local s = C.lastState
+  local plan = s and Engine.plan(C.profile, s, 6) or {}
+  local step, wait = {}, nil
+  for _, st in ipairs(plan) do
+    if st.filler then wait = wait or st elseif #step < 3 then step[#step + 1] = st end
+  end
+  local a = step[1] or wait
+  if not a then return {} end
+  local b, c = step[2] or a, step[3] or step[2] or a
+  wait = wait or { key = "attack", label = "Attack", icon = "Interface\\Icons\\INV_Sword_04", filler = true, melee = true, why = "Auto attack costs no mana." }
+  local function with(st, extra)
+    local out = {}
+    for k, v in pairs(st) do out[k] = v end
+    for k, v in pairs(extra or {}) do out[k] = v end
+    return out
+  end
+  local function did(st, left, missed) return { label = st.label, icon = st.icon, left = left, missed = missed } end
+  local base = { usesMana = real.usesMana, drawMana = false, manaExact = true }
+  local function view(fields)
+    local v = {}
+    for k, v0 in pairs(base) do v[k] = v0 end
+    for k, v0 in pairs(fields) do v[k] = v0 end
+    return v
+  end
+  local drink = { text = "Mana 35%", hint = "Drink before the next pull.", icon = "Interface\\Icons\\INV_Drink_07", badge = "35" }
+  return {
+    { "Before a fight: what to fix first", view({ chain = { a, b, c }, planning = true, manaPct = 35, manaLevel = "medium",
+      missing = { drink }, status = drink.hint, statusKind = "warn" }) },
+    { "An enemy targeted: how to pull", view({ chain = { with(a, { why = a.why or "Pull with this." }), b, c }, manaPct = 100, manaLevel = "high" }) },
+    { "In the fight: next step", view({ inCombat = true, chain = { b, c, wait }, done = { did(a, 22) }, manaPct = 86, manaLevel = "high" }) },
+    { "The steady part of a fight", view({ inCombat = true, chain = { wait, with(b, { inSeconds = 6 }) }, done = { did(a, 14), did(b, 6), did(c, 9) },
+      manaPct = 62, manaLevel = "high" }) },
+    { "A spell ran out: the ring pulses", view({ inCombat = true, chain = { with(b, { why = b.label .. " ran out: cast it again." }), wait },
+      done = { did(a, 8), did(b, 0), did(c, 3) }, manaPct = 48, manaLevel = "medium" }) },
+    { "A spell was resisted", view({ inCombat = true, chain = { with(c, { retry = true, why = c.label .. " was resisted. Cast it again." }), wait },
+      done = { did(a, 5), did(b, 12), did(c, nil, "miss") }, manaPct = 40, manaLevel = "medium" }) },
+    { "Low mana: the advice changes", view({ inCombat = true, chain = { wait }, done = { did(b, 9), did(c, 4) }, manaPct = 14, manaLevel = "low",
+      status = "Mana is low: stop casting and finish with " .. wait.label .. ".", statusKind = "warn" }) },
+  }
+end
+
+function C.toggleDemo()
+  if C.demo then
+    C.demo = nil
+    say("Demo stopped.")
+    return false
+  end
+  if API.inCombat() then say("The demo only plays out of combat.") return false end
+  C.demo = { step = 0, untilTime = 0 }
+  say("Demo: the coach plays its states with your own spells. Type /coach demo again to stop.")
+  return true
+end
+
+-- One refresh of the demo. Leaves the bar highlight and the click buttons alone: nothing in it is real.
+function C.playDemo(now, real)
+  local demo = C.demo
+  if real.inCombat then
+    C.demo = nil
+    ns.Panel.render(real)
+    return
+  end
+  if now >= demo.untilTime then
+    demo.views = demo.views or demoViews(real)
+    if #demo.views == 0 then
+      C.demo = nil
+      say("Demo: no spells to show yet.")
+      ns.Panel.render(real)
+      return
+    end
+    demo.step = demo.step % #demo.views + 1
+    demo.untilTime = now + 3.5
+    ns.Panel.flash({ ("Demo %d of %d: %s"):format(demo.step, #demo.views, demo.views[demo.step][1]) }, 3.4)
+  end
+  ns.BarGlow.hide()
+  safely("click to cast", ns.Click.update, ns.Panel.frame, {}, ClassCoachDB)
+  ns.Panel.render(demo.views[demo.step][2])
 end
 
 -- The update loop protects the game from the addon:
@@ -570,7 +678,7 @@ local clock = debugprofilestop
 local function onUpdate(_, dt)
   if type(dt) ~= "number" then return end
   elapsed = elapsed + dt
-  local fast = C.tracker and C.tracker.fight ~= nil
+  local fast = (C.tracker and C.tracker.fight ~= nil) or C.demo ~= nil
   local wait = (fast and 0.1 or 0.4) * stretch
   if failures >= 10 then wait = 5 end
   if elapsed < wait then return end
@@ -777,6 +885,11 @@ local function start()
   local db = ClassCoachDB
   -- settings saved by older versions
   if db.hidden ~= nil then db.showCoach = not db.hidden; db.hidden = nil end
+  if not db.ringLook then      -- the ring replaced the wide panel: its plate is lighter, and it has no border or colour line
+    db.ringLook = true
+    if db.opacity == 75 then db.opacity = 60 end
+    db.border, db.accent = nil, nil
+  end
   if db.showDone ~= nil then   -- "show what you already cast" became a number of steps
     if db.showDone == false and db.stepsBefore == nil then db.stepsBefore = 0 end
     db.showDone = nil
@@ -794,6 +907,7 @@ local function start()
   if not ok then log("first scan error: %s", tostring(err)) end
   local mana, max = API.mana()
   C.lastMana, C.manaMax = mana, max
+  ns.Style.gameFont = ClassCoachDB.gameFont == true
   ns.Panel.create(ClassCoachCharDB, ClassCoachDB)
   ns.Journey.create(ClassCoachCharDB, ClassCoachDB)
   C.optionsReady = ns.Options.build(ClassCoachDB, ClassCoachCharDB, {
@@ -893,6 +1007,12 @@ local function check()
   local st = ns.Smart.status()
   add("smart key: button %s, %s steps, at step %s, keys next=%s again=%s restart=%s", tostring(ns.Smart.button ~= nil), st.count,
     tostring(st.step), tostring(st.keys.next), tostring(st.keys.again), tostring(st.keys.restart))
+  local clicks = ns.Click.describe()
+  add("click to cast: buttons made %s%s; clickable now: %s", tostring(ns.Click.holder ~= nil), ns.Click.error and (" (" .. ns.Click.error .. ")") or "",
+    #clicks > 0 and table.concat(clicks, ", ") or "nothing")
+  add("bar highlight: style %s, on slot %s; cues played %s", tostring(ClassCoachDB.barGlow), tostring(ns.BarGlow.slot), tostring(ns.Panel.cues or 0))
+  add("fonts: %s", ns.Style.gameFont and "the game's own (your setting)" or ns.Style.fontMissing and ("the game refused " .. ns.Style.fontMissing .. ": using its own font")
+    or "Inter and Marcellus loaded")
   add("main bar page %s; Shift+1..6 switch pages: %s", tostring(API.barPage()),
     tostring(API.plain(API.try(GetBindingAction, "SHIFT-2")) == "ACTIONPAGE2"))
   add("actions the game blocked this session: %s", C.blocked and table.concat(C.blocked, " | ") or "none")
@@ -912,6 +1032,8 @@ local HELP = {
   "/coach macros — create or refresh this class's helper macros (out of combat)",
   "/coach bar — lay out three bars by purpose: fight (main bar), react (Action Bar 2), prepare (Action Bar 3). Empty buttons only; \"preview\" just lists, \"replace\" overwrites",
   "/coach build — the talent build you follow; paste an Icy Veins or Warcraft Tavern calculator link after it to follow that one",
+  "/coach professions — which two professions suit your class and goal, and what to do next in each",
+  "/coach demo — play the coach's states with your own spells, out of combat, to see and place it",
   "/coach smart — the smart key: one key that walks the coach's plan (shows its steps and keys)",
   "/coach last — repeat the last fight report",
   "/coach reset — put both panels back where they started",
@@ -1098,15 +1220,58 @@ local function command(msg)
     C.syncMacros(false)   -- it uses a few CC macros (wand, demon, attack)
     if not C.syncSmart() then say("The smart key could not be set up on this client. /coach check shows why.") return end
     if what then
-      if ns.Smart.bind(what:lower(), key:upper()) then say(("Smart key: %s is now on %s."):format(what:lower(), key:upper()))
+      -- a key can do one thing: say what it did before, so a bar button losing its key is no surprise
+      local before = API.plain(API.try(GetBindingAction, key:upper()))
+      if ns.Smart.bind(what:lower(), key:upper()) then
+        say(("Smart key: %s is now on %s."):format(what:lower(), key:upper()))
+        if type(before) == "string" and before ~= "" and not before:find("ClassCoachSmartButton", 1, true) then
+          say(("%s used to be \"%s\". That no longer has this key; give it another under Esc > Options > Keybindings."):format(key:upper(), before))
+        end
       else say("Use: /coach smart next 1   (or again / restart, then the key)") end
     end
     local st = ns.Smart.status()
-    say("Smart key steps: " .. table.concat(ns.Smart.describe(), ", ") .. ".")
+    local steps = ns.Smart.describe()
+    if #steps == 0 then
+      say("There is no plan to put on the smart key yet for this class and level.")
+      return
+    end
+    say("Smart key steps: " .. table.concat(steps, ", ") .. ".")
+    if C.smartWarn then say(C.smartWarn) end
+    say("One press per spell: the key moves on with every press, also when a spell is still being cast or was not ready. If it gets ahead, press the lit button on your bar, or Restart.")
     say(("Keys: next %s, again %s, restart %s."):format(st.keys.next or "not bound", st.keys.again or "not bound", st.keys.restart or "not bound"))
     if not st.keys.next then
       say("Bind them in Esc > Options > Keybindings > AddOns > ClassCoach, or type /coach smart next 1 (then again, restart).")
     end
+  elseif cmd == "professions" or cmd == "profession" or cmd == "prof" then
+    local picks, guides = ns.ProfessionPicks, ns.ProfessionData
+    local goal = db.professionGoal or "gear"
+    local goalName = goal
+    for _, g in ipairs(picks.goals) do if g[1] == goal then goalName = g[2] end end
+    local pair, why = Engine.professionPair(C.class, picks, goal, ClassCoachCharDB.professionA, ClassCoachCharDB.professionB)
+    say(("Professions for your %s. Goal: %s."):format(C.profile.class == "ANY" and (C.class or "character") or C.profile.spec .. " " .. (C.class or ""), goalName))
+    print(("  Suggested: %s. %s"):format(table.concat(pair, " and "), why))
+    for _, name in ipairs(pair) do if guides[name] then print(("  %s: %s"):format(name, guides[name].about)) end end
+    print("  Change the goal or pick your own two: Esc > Options > AddOns > ClassCoach > Professions.")
+    local mine = API.professions() or {}
+    if #mine == 0 then print("  You have not learned a profession yet. Trainers are in every capital city: ask a guard.") end
+    for _, p in ipairs(mine) do
+      local guide = guides[p.name]
+      local step = guide and Engine.professionStep(guide, p.skill)
+      print(("  %s %d%s%s"):format(p.name, p.skill, p.max and (" of " .. p.max) or "",
+        step and (": %s %s (to %d)"):format(guide.verb, step[3], step[2]) or (p.skill >= 300 and ": finished" or "")))
+      if guide then
+        for _, st in ipairs(guide.steps) do
+          if st[1] > p.skill and st[1] < p.skill + 60 then print(("    from %d: %s %s"):format(st[1], guide.verb, st[3])) end
+        end
+      end
+    end
+    local free = {}
+    local has = {}
+    for _, p in ipairs(mine) do has[p.name] = true end
+    for _, name in ipairs(picks.secondary) do if not has[name] then free[#free + 1] = name end end
+    if #free > 0 then print("  Free to learn, they use no profession slot: " .. table.concat(free, ", ") .. ".") end
+    print("  Steps follow the Forever guides on wow-professions.com (based on the beta).")
+  elseif cmd == "demo" then C.toggleDemo()
   elseif cmd == "check" then check()
   else
     say("Coach for " .. C.profile.spec .. ". Commands:")

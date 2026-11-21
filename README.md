@@ -1,15 +1,17 @@
 # ClassCoach
 
-A beginner coach addon for **World of Warcraft Forever** (client 1.60.1). One compact panel that shows:
+A beginner coach addon for **World of Warcraft Forever** (client 1.60.1). One ring under your character shows:
 
-- the next ability to press, with its keybind,
-- a carousel of what you did, what to press now and what comes next, using only spells you have learned,
+- the next ability to press, in a gold ring, with its key, its name and why,
+- what you already cast on this enemy to its left and what comes next to its right, using only spells you have learned,
 - timers for your damage-over-time spells on each enemy,
+- a pulse and a soft click when a new key is needed, and the button to press lit up on your action bars,
 - resist handling: a resisted spell is noticed and asked for again,
-- a smart key that walks the plan with one key, plus helper macros (`/coach smart`, `/coach macros`),
 - your real mana (drawn by the game, since Forever hides the number from addons in combat),
-- a pre-fight checklist (buffs, demon, low health or mana),
-- a second "journey" panel for everything outside the fight: XP, rested XP, food buff, trainer, talents, repairs, bags,
+- a pre-fight checklist (buffs, demon, low health or mana), each item clickable to fix it,
+- a smart key that walks the plan with one key, plus helper macros (`/coach smart`, `/coach macros`),
+- a second "journey" list for everything outside the fight: XP, rested XP, food buff, trainer, talents, repairs, bags, professions,
+- which two professions suit your class and what to do next in each (`/coach professions`),
 - a short report after each fight with what to improve,
 - what to train and which talent to take when you level up.
 
@@ -40,6 +42,7 @@ Type `/coach` in game for the settings screen.
 ClassCoach/   the addon (copy this folder into AddOns)
 docs/         how to add classes, a profile template
 tests/        offline tests against a fake game client
+tools/        draws the addon's textures
 ```
 
 ## Credits

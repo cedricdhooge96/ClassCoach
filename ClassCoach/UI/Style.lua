@@ -1,15 +1,113 @@
--- One look for both panels: a flat dark plate, a hairline border and a thin
--- accent line in your class colour. Opacity, border and size come from the
--- settings and are re-applied whenever they change.
+-- What both panels share: the colours and typefaces of the design, round
+-- icons, key badges, and the dark plate that keeps text readable on any ground.
+-- Everything here is drawn with what the game has: flat colour textures,
+-- texture files from the Media folder (the game cannot draw a circle itself), a mask
+-- for round icons, and fonts from the Fonts folder.
 local _, ns = ...
 
 local Style = {}
 ns.Style = Style
 
-local EDGES = {
-  { "TOPLEFT", "TOPRIGHT", true }, { "BOTTOMLEFT", "BOTTOMRIGHT", true },
-  { "TOPLEFT", "BOTTOMLEFT", false }, { "TOPRIGHT", "BOTTOMRIGHT", false },
+local MEDIA = "Interface\\AddOns\\ClassCoach\\Media\\"
+local FONTS = "Interface\\AddOns\\ClassCoach\\Fonts\\"
+Style.MEDIA = MEDIA
+-- The game's own round mask (the one behind unit portraits).
+local ROUND_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+local FACES = { body = "Inter-Regular.ttf", bold = "Inter-Bold.ttf", title = "Marcellus-Regular.ttf" }
+
+Style.COLORS = {
+  ink = { 0.937, 0.914, 0.863 }, muted = { 0.722, 0.698, 0.639 }, dark = { 0.039, 0.043, 0.051 },
+  line = { 0.204, 0.220, 0.251 }, accent = { 0.941, 0.761, 0.294 }, mana = { 0.357, 0.608, 0.918 },
+  warn = { 0.941, 0.643, 0.357 }, danger = { 1.00, 0.35, 0.30 }, ok = { 0.541, 0.827, 0.604 },
+  xp = { 0.545, 0.420, 0.820 },
 }
+
+-- Sets a typeface of the design on a text. If the game will not load the file
+-- (or you chose the game's own font in the settings), the text keeps the
+-- game's standard font at the same size, so it is never left blank.
+function Style.font(fs, face, size, flags)
+  flags = flags or ""
+  local own = not (ns.Style.gameFont) and FACES[face]
+  local ok, set = false, nil
+  if own then ok, set = pcall(fs.SetFont, fs, FONTS .. own, size, flags) end
+  if not ok or set == false then
+    pcall(fs.SetFont, fs, STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", size, flags)
+    if own then Style.fontMissing = own end
+  end
+end
+
+-- A text in one of the design's typefaces. `flags` is "OUTLINE" for text that
+-- sits straight on the game world, with no plate behind it.
+function Style.text(parent, face, size, color, flags)
+  local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  Style.font(fs, face, size, flags)
+  local c = color or Style.COLORS.ink
+  fs:SetTextColor(c[1], c[2], c[3])
+  fs:SetJustifyH("LEFT")
+  return fs
+end
+
+function Style.tint(tex, c, a)
+  tex:SetVertexColor(c[1], c[2], c[3], a or 1)
+end
+
+-- One of ClassCoach's own shapes (ring, ring_bold, disc, pulse), filling `parent`.
+function Style.shape(parent, name, layer, sub)
+  local t = parent:CreateTexture(nil, layer or "ARTWORK", nil, sub or 0)
+  t:SetTexture(MEDIA .. name)
+  t:SetAllPoints(parent)
+  return t
+end
+
+-- Cuts a square spell icon into a circle. If the game refuses the mask, the
+-- icon stays square with its border cropped: plainer, never broken.
+function Style.round(owner, icon)
+  local ok = pcall(function()
+    local mask = owner:CreateMaskTexture()
+    mask:SetTexture(ROUND_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    mask:SetAllPoints(icon)
+    icon:AddMaskTexture(mask)
+  end)
+  if not ok then pcall(icon.SetTexCoord, icon, 0.07, 0.93, 0.07, 0.93) end
+  return ok
+end
+
+-- The small dark square that shows a key: a flat fill, four hairlines, a text.
+function Style.badge(parent, size)
+  local b = CreateFrame("Frame", nil, parent)
+  b:SetSize(size, size)
+  b.size = size
+  local c = Style.COLORS
+  local bg = b:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints()
+  bg:SetColorTexture(c.dark[1], c.dark[2], c.dark[3], 1)
+  for _, e in ipairs({ { "TOPLEFT", "TOPRIGHT", true }, { "BOTTOMLEFT", "BOTTOMRIGHT", true },
+    { "TOPLEFT", "BOTTOMLEFT", false }, { "TOPRIGHT", "BOTTOMRIGHT", false } }) do
+    local line = b:CreateTexture(nil, "BORDER")
+    line:SetPoint(e[1])
+    line:SetPoint(e[2])
+    if e[3] then line:SetHeight(1) else line:SetWidth(1) end
+    line:SetColorTexture(c.line[1], c.line[2], c.line[3], 1)
+  end
+  b.text = Style.text(b, "bold", math.floor(size * 0.62 + 0.5), c.ink)
+  b.text:SetPoint("CENTER")
+  b.text:SetJustifyH("CENTER")
+  return b
+end
+
+-- Shows a key on a badge, or hides the badge when there is none. A long key
+-- ("SF1") widens the badge instead of spilling out of it.
+function Style.setBadge(b, key)
+  if not key or key == "" then
+    b.text:SetText("")
+    b:Hide()
+    return
+  end
+  b.text:SetText(key)
+  local w = b.text.GetStringWidth and b.text:GetStringWidth()
+  b:SetWidth(math.max(b.size, (type(w) == "number" and w or 0) + 8))
+  b:Show()
+end
 
 -- Wraps a script handler (mouse-over, drag) so it can never raise an error
 -- into the game; a problem is noted in the addon's own log instead.
@@ -20,24 +118,11 @@ function Style.guard(fn)
   end
 end
 
+-- The dark plate behind a panel's text.
 function Style.skin(f)
   local bg = f:CreateTexture(nil, "BACKGROUND")
   bg:SetAllPoints()
   f.skinBg = bg
-  f.skinEdges = {}
-  for i, e in ipairs(EDGES) do
-    local line = f:CreateTexture(nil, "BORDER")
-    line:SetPoint(e[1])
-    line:SetPoint(e[2])
-    if e[3] then line:SetHeight(1) else line:SetWidth(1) end
-    line:SetColorTexture(1, 1, 1, 0.12)
-    f.skinEdges[i] = line
-  end
-  local accent = f:CreateTexture(nil, "ARTWORK")
-  accent:SetPoint("TOPLEFT", 1, -1)
-  accent:SetPoint("TOPRIGHT", -1, -1)
-  accent:SetHeight(2)
-  f.skinAccent = accent
 end
 
 -- Pins a panel by the edge that faces the middle of the screen. A panel in
@@ -64,26 +149,11 @@ end
 
 -- Cheap to call every render: only touches the frame when a value changed.
 function Style.apply(f, db, scale)
-  local alpha = (db.opacity or 75) / 100
+  local alpha = (db.opacity or 60) / 100
   if f.skinAlpha ~= alpha then
     f.skinAlpha = alpha
-    f.skinBg:SetColorTexture(0.04, 0.04, 0.06, alpha)
-  end
-  local border = db.border ~= false
-  if f.skinBorder ~= border then
-    f.skinBorder = border
-    for _, line in ipairs(f.skinEdges) do if border then line:Show() else line:Hide() end end
-  end
-  local accent = db.accent ~= false
-  if f.skinAccentOn ~= accent then
-    f.skinAccentOn = accent
-    if accent then
-      local r, g, b = ns.API.classColor()
-      f.skinAccent:SetColorTexture(r, g, b, 0.9)
-      f.skinAccent:Show()
-    else
-      f.skinAccent:Hide()
-    end
+    local c = Style.COLORS.dark
+    f.skinBg:SetColorTexture(c[1], c[2], c[3], alpha)
   end
   scale = scale or 1
   if f.skinScale ~= scale then

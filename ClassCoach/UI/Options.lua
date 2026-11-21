@@ -12,21 +12,31 @@ ns.Options = Options
 --   kind     "check", "slider" (min, max, step, unit) or "choice" (choices = function)
 local function layout()
   return {
-    { header = "Coach panel (the fight)" },
-    { key = "showCoach", kind = "check", name = "Show the coach panel", default = true,
-      tip = "The carousel: what you did, what to press now and what comes next." },
+    { header = "Coach (the fight)" },
+    { key = "showCoach", kind = "check", name = "Show the coach", default = true,
+      tip = "The ring: what to press now, with what you already cast on its left and what comes next on its right." },
     { key = "scale", kind = "slider", name = "Size", default = 1, min = 0.6, max = 1.6, step = 0.05, unit = "x",
-      tip = "Size of the coach panel." },
-    { key = "compact", kind = "check", name = "Compact: icons only", default = false,
-      tip = "Hides the explanation and the names of the next steps. For when you know your spells by their icons." },
+      tip = "Size of the coach. If the big icon looks soft on your screen, make it a little smaller." },
+    { key = "compact", kind = "check", name = "Compact: no explanation", default = false,
+      tip = "Hides the line that says why. For when you know your spells." },
     { key = "stepsBefore", kind = "slider", name = "Steps shown before the current one", default = 2, min = 0, max = 4, step = 1,
       tip = "How many of your last casts on this enemy stay on the left, with the seconds left on damage over time. 0 hides them." },
     { key = "stepsAfter", kind = "slider", name = "Steps shown after the current one", default = 2, min = 0, max = 4, step = 1,
-      tip = "How many upcoming steps show on the right. With more than four side icons in all, they get smaller so the row still fits." },
-    { key = "showDots", kind = "check", name = "Show the timers line", default = true,
-      tip = "\"On this enemy: Corruption 9s\" under the carousel." },
+      tip = "How many upcoming steps show on the right, each with its key." },
+    { key = "showDots", kind = "check", name = "Show timers the icons don't", default = true,
+      tip = "A line for damage over time that is not on one of the icons, and for other enemies that are still ticking." },
     { key = "showMana", kind = "check", name = "Show the mana bar", default = true,
-      tip = "Your real mana, drawn by the game." },
+      tip = "Your real mana, drawn by the game. It turns amber, then red, as the coach's advice changes." },
+    { key = "cue", kind = "check", name = "Pulse the ring when a new key is needed", default = true,
+      tip = "Most of a fight is one steady key. When something else comes up, or a spell was resisted, the ring pulses." },
+    { key = "cueSound", kind = "choice", name = "Sound with the pulse", default = "click",
+      tip = "A short sound when the ring pulses.",
+      choices = function() return { { "off", "None" }, { "click", "Soft click" }, { "ready", "Ready check" } } end },
+    { key = "barGlow", kind = "choice", name = "Light up the button to press on my action bars", default = "glow",
+      tip = "Marks the action-bar button of the step to press now. Works on the game's own action bars.",
+      choices = function() return ns.BarGlow.STYLES end },
+    { key = "clickable", kind = "check", name = "Click an icon to cast it (before a fight)", default = true,
+      tip = "Out of combat, click an amber icon to cast what fixes it, or the ring to start the pull. In a fight the game does not let an addon do this, so the icons are pictures again." },
 
     { key = "threat", kind = "check", name = "Warn about enemies I shouldn't fight", default = true,
       tip = "Before a pull: enemies far above your level, elites when you are alone, and grey ones that give no XP." },
@@ -49,19 +59,40 @@ local function layout()
     { key = "remindGear", kind = "check", name = "Remind me: repairs and full bags", default = true,
       tip = "Gear below 25% durability, or two bag slots left." },
     { key = "remindProfessions", kind = "check", name = "Remind me: professions", default = true,
-      tip = "Tells you when a profession is at its skill cap and needs a trainer, and what to craft next (Tailoring so far)." },
+      tip = "Which professions to learn, a trainer visit when one is at its skill cap, and what to do next in each. /coach professions shows the whole plan." },
     { key = "remindSupplies", kind = "check", name = "Remind me: food, water and reagents", default = true,
       tip = "At a vendor when you are running low, and anywhere when you have run out." },
     { key = "roadmap", kind = "check", name = "Show milestones, zones and dungeons", default = true,
       tip = "Class quests and other milestones for your level, where to quest, and which dungeon is in range." },
 
+    { header = "Professions" },
+    { key = "professionGoal", kind = "choice", name = "What I want from my professions", default = "gear",
+      tip = "Decides which two professions the coach suggests for your class. The suggestion only shows while you have a profession slot free.",
+      choices = function() return ns.ProfessionPicks.goals end },
+    { key = "professionA", perChar = true, kind = "choice", name = "My first profession", default = "auto",
+      tip = "Pick one yourself for this character, or leave it to the goal above.",
+      choices = function()
+        local list = { { "auto", "Suggest one for my class" } }
+        for _, name in ipairs(ns.ProfessionPicks.primary) do list[#list + 1] = { name, name } end
+        return list
+      end },
+    { key = "professionB", perChar = true, kind = "choice", name = "My second profession", default = "auto",
+      tip = "Pick one yourself for this character, or leave it to the goal above.",
+      choices = function()
+        local list = { { "auto", "Suggest one for my class" } }
+        for _, name in ipairs(ns.ProfessionPicks.primary) do list[#list + 1] = { name, name } end
+        return list
+      end },
+    { key = "remindSecondary", kind = "check", name = "Suggest First Aid, Cooking and Fishing", default = true,
+      tip = "In Forever these three use no profession slot, so every character can learn them all." },
+
     { header = "Look" },
-    { key = "opacity", kind = "slider", name = "Background", default = 75, min = 0, max = 100, step = 5, unit = "%",
-      tip = "How dark the panels are. 0% leaves only the icons and text." },
-    { key = "border", kind = "check", name = "Thin border", default = true, tip = "A hairline around each panel." },
-    { key = "accent", kind = "check", name = "Class colour line", default = true, tip = "A thin line in your class colour along the top." },
+    { key = "opacity", kind = "slider", name = "Background behind text", default = 60, min = 0, max = 100, step = 5, unit = "%",
+      tip = "How dark the plate behind the coach's text and the journey list is. It keeps the words readable on bright ground." },
+    { key = "gameFont", kind = "check", name = "Use the game's own font", default = false,
+      tip = "ClassCoach brings two typefaces (Inter and Marcellus). Tick this to use the game's font instead. Takes effect after /reload." },
     { key = "locked", kind = "check", name = "Lock the panels in place", default = false,
-      tip = "Unlocked, you can drag each panel on its own." },
+      tip = "Unlocked, drag the coach by its ring and the journey list anywhere on it. Locked, the ring lets clicks through." },
 
     { header = "Coaching" },
     { key = "specChoice", perChar = true, kind = "choice", name = "Profile for this character", default = "auto",
@@ -107,7 +138,7 @@ function Options.sanitize(db, charDB)
     if pos[3] ~= pos[3] or pos[4] ~= pos[4] or math.abs(pos[3]) > 20000 or math.abs(pos[4]) > 20000 then return nil end
     return pos
   end
-  charDB.pos, charDB.journeyPos = position(charDB.pos), position(charDB.journeyPos)
+  charDB.focusPos, charDB.journeyPos = position(charDB.focusPos), position(charDB.journeyPos)
   local kill = charDB.kill
   if type(kill) ~= "table" or type(kill.avg) ~= "number" or type(kill.n) ~= "number" or kill.avg ~= kill.avg or kill.avg <= 0 or kill.avg > 600 then
     charDB.kill = nil

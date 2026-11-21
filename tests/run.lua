@@ -70,6 +70,25 @@ local function journey(ns)
   return table.concat(parts, " | ")
 end
 local function errors() return ClassCoachDB.log and #ClassCoachDB.log or 0 end
+-- The steps to the right of the ring, nearest first: "Corruption > Immolate in 8s".
+local function nextText(f)
+  local parts = {}
+  for _, s in ipairs(f.upcoming) do
+    if s.shown and rawget(s, "title") then parts[#parts + 1] = rawget(s, "title") .. (s.timer.text ~= "" and (" " .. s.timer.text) or "") end
+  end
+  return table.concat(parts, " > ")
+end
+-- Every timer the coach shows for this enemy: on the icons left of the ring, and in the line for the rest.
+local function timers(f)
+  local parts = {}
+  for _, s in ipairs(f.done) do
+    if s.shown and rawget(s, "title") then parts[#parts + 1] = rawget(s, "title") .. " " .. s.timer.text end
+  end
+  parts[#parts + 1] = f.dots.text
+  return table.concat(parts, " | ")
+end
+-- The key shown on a slot's badge ("" when it shows none).
+local function keyOn(slot) return slot.key.shown and slot.key.text.text or "" end
 
 local SCENARIO = SCENARIO
 
@@ -99,18 +118,18 @@ if SCENARIO == "shaman" then
   check("missing shown as icons: shield and weapon buff", missing(ns) == "No shield | No weapon buff", missing(ns))
   local slot1, slot2 = f.missing[1], f.missing[2]
   check("the icon is the spell that fixes it", slot1.spell == "Lightning Shield" and slot1.icon.texture == ns.C.spells["Lightning Shield"].icon, tostring(slot1.spell))
-  check("with its key, when it is on your bar", slot1.key.text == (ns.C.keys["Lightning Shield"] or ""), tostring(slot1.key.text))
+  check("with its key, when it is on your bar", keyOn(slot1) == (ns.C.keys["Lightning Shield"] or ""), keyOn(slot1))
   check("weapon buff: the best one you know", slot2.spell == "Rockbiter Weapon", tostring(slot2.spell))
   check("one line explains the first", f.status.text == "Cast Lightning Shield before the pull.", f.status.text)
   check("no missing list in words", not f.status.text:find("No shield"), f.status.text)
   check("food is a journey to-do, not a pull blocker", journey(ns):find("No food buff") ~= nil and not f.status.text:find("food"), journey(ns))
-  check("journey: xp and rested", journey(ns):find("XP 0%% · not rested") ~= nil and journey(ns):find("No rested XP") ~= nil, journey(ns))
+  check("journey: xp and rested", journey(ns):find("0%% · not rested") ~= nil and journey(ns):find("No rested XP") ~= nil, journey(ns))
   check("journey rows carry icons", ns.Journey.frame.rows[1].icon.texture == "Interface\\Icons\\INV_Misc_Food_15", tostring(ns.Journey.frame.rows[1].icon.texture))
   check("journey: next trainer level", journey(ns):find("New spells at level 16") ~= nil, journey(ns))
   M.P.xp, M.P.rested, M.P.talentPoints, M.P.durability, M.P.freeSlots = 430, 180, 1, 12, 1
   M.P.buffs["Well Fed XP Boost"] = true; M.fire("UNIT_AURA", "player")
   M.advance(3); f = tick(ns)
-  check("journey: rested amount", journey(ns):find("XP 43%% · rested 18%% of a level") ~= nil, journey(ns))
+  check("journey: rested amount", journey(ns):find("43%% · rested 18%%") ~= nil, journey(ns))
   check("journey: talent point with the suggested talent", journey(ns):find("1 talent point to spend") ~= nil and journey(ns):find("Thundering Strikes") ~= nil, journey(ns))
   check("journey: repair and bags", journey(ns):find("Gear at 12%% durability") ~= nil and journey(ns):find("Bags nearly full %(1 free%)") ~= nil, journey(ns))
   check("journey: any Well Fed buff counts", not journey(ns):find("No food buff"), journey(ns))
@@ -135,15 +154,15 @@ if SCENARIO == "shaman" then
   M.P.mainHand = true
   M.fire("UNIT_AURA", "player")
   f = tick(ns)
-  check("ready to pull", f.status.text:find("^Ready to pull%.") ~= nil and missing(ns) == "", f.status.text .. " / " .. missing(ns))
+  check("ready to pull: nothing missing, and the coach stays quiet about it", ns.C.lastView.status == "Ready to pull." and missing(ns) == "" and f.status.text == "", f.status.text .. " / " .. missing(ns))
 
   target({ name = "Rockjaw Trogg", level = 11, hostile = true, guid = "Creature-1" })
   f = tick(ns)
   check("opener is Flame Shock", f.name.text == "Flame Shock", f.name.text)
   check("opener keybind", f.key.text == "S3", f.key.text)
-  check("chain after the opener", f.chainText.text == "Searing Totem > Melee", f.chainText.text)
-  check("chain label", f.chainLabel.text == "Then", f.chainLabel.text)
-  check("mana bar exact out of combat", f.bar.value == 300 and f.barText.text == "Mana 100%", f.barText.text)
+  check("chain after the opener", nextText(f) == "Searing Totem > Melee", nextText(f))
+  check("chain label", f.chainLabel.text == "next", f.chainLabel.text)
+  check("mana bar exact out of combat", f.bar.value == 300 and f.barText.text == "100%", f.barText.text)
 
   -- Fight (the game already hides the enemy's name when combat starts)
   local beforePull = journey(ns)
@@ -157,7 +176,7 @@ if SCENARIO == "shaman" then
   ClassCoachDB.journeyInCombat = true; tick(ns)
   check("turned back on mid-fight it comes back", journey(ns) == beforePull, journey(ns))
   check("mana bar is handed the real hidden value", f.bar.value == M.SECRET)
-  check("mana text written by the game", f.barText.secretText == true and f.barText.text == "Mana %.0f%%", f.barText.text)
+  check("mana text written by the game", f.barText.secretText == true and f.barText.text == "%.0f%%", f.barText.text)
   cast(8050)
   M.advance(1.5); f = tick(ns)
   check("then Searing Totem (mana high)", f.name.text == "Searing Totem", f.name.text .. " / " .. f.barText.text)
@@ -204,11 +223,11 @@ if SCENARIO == "shaman" then
   f = facing(13)
   check("fair fight: no warning", missing(ns) == "", missing(ns))
   f = facing(15)
-  check("3 levels above: warned, with the gap on the icon", missing(ns) == "3 levels above you" and f.missing[1].timer.text == "+3", missing(ns))
+  check("3 levels above: warned, with the gap on the icon", missing(ns) == "3 levels above you" and f.missing[1].badgeText.text == "+3", missing(ns))
   f = facing(17)
   check("5 levels above: walk away", missing(ns) == "5 levels above you" and f.missing[1].hint:find("Walk away") ~= nil, missing(ns))
   f = facing(-1)
-  check("skull enemy", missing(ns) == "Far above your level" and f.missing[1].timer.text == "??", missing(ns))
+  check("skull enemy", missing(ns) == "Far above your level" and f.missing[1].badgeText.text == "??", missing(ns))
   f = facing(12, true)
   check("elite when alone", missing(ns) == "Elite enemy", missing(ns))
   f = facing(6)
@@ -309,16 +328,25 @@ if SCENARIO == "shaman" then
   -- The panels must never grow over the action bars
   local pf, jf = ns.Panel.frame, ns.Journey.frame
   check("panels draw below the action bars", pf.strata == "LOW" and jf.strata == "LOW", tostring(pf.strata))
-  pf.left, pf.bottom, pf.top = 500, 120, 300
+  check("the coach's frame is only the ring, so it never takes a click meant for the game", rawget(pf, "width") == 84 and rawget(pf.words, "mouse") == nil)
+  check("the old wide panel's saved place is dropped: the ring starts from its own", ClassCoachCharDB.pos == nil and pf.point[1] == "CENTER" and pf.point[3] == "BOTTOM")
   pf.scripts.OnDragStop(pf)
-  check("lower half of the screen: held by its bottom edge, so it grows upward", ClassCoachCharDB.pos[1] == "BOTTOMLEFT" and ClassCoachCharDB.pos[4] == 120
-    and pf.point[1] == "BOTTOMLEFT", ClassCoachCharDB.pos[1])
-  pf.left, pf.bottom, pf.top = 500, 500, 700
-  pf.scripts.OnDragStop(pf)
-  check("upper half: held by its top edge, so it grows downward", ClassCoachCharDB.pos[1] == "TOPLEFT" and ClassCoachCharDB.pos[4] == 700, ClassCoachCharDB.pos[1])
-  ClassCoachCharDB.pos = { "CENTER", "CENTER", 0, -180 }; ns.Panel.repin = ns.Style.unpinned(ClassCoachCharDB.pos)
-  pf.left, pf.bottom, pf.top = 480, 110, 290; tick(ns)
-  check("an old saved position is pinned on the next refresh", ClassCoachCharDB.pos[1] == "BOTTOMLEFT" and ns.Panel.repin == false, ClassCoachCharDB.pos[1])
+  check("dragging the ring saves where you left it", ClassCoachCharDB.focusPos ~= nil and ClassCoachCharDB.focusPos[1] == "CENTER", tostring(ClassCoachCharDB.focusPos))
+  ClassCoachDB.locked = true; tick(ns)
+  check("locked: the ring lets clicks through", rawget(pf, "mouse") == false)
+  ClassCoachDB.locked = false; tick(ns)
+  check("unlocked: the ring can be dragged again", rawget(pf, "mouse") == true)
+  SlashCmdList.CLASSCOACH("reset")
+  check("/coach reset puts the ring back", ClassCoachCharDB.focusPos == nil and pf.point[3] == "BOTTOM")
+  jf.left, jf.bottom, jf.top = 500, 120, 300
+  jf.scripts.OnDragStop(jf)
+  check("journey in the lower half of the screen: held by its bottom edge, so it grows upward", ClassCoachCharDB.journeyPos[1] == "BOTTOMLEFT"
+    and ClassCoachCharDB.journeyPos[4] == 120 and jf.point[1] == "BOTTOMLEFT", ClassCoachCharDB.journeyPos[1])
+  jf.left, jf.bottom, jf.top = 500, 500, 700
+  jf.scripts.OnDragStop(jf)
+  check("journey in the upper half: held by its top edge, so it grows downward", ClassCoachCharDB.journeyPos[1] == "TOPLEFT" and ClassCoachCharDB.journeyPos[4] == 700,
+    ClassCoachCharDB.journeyPos[1])
+  SlashCmdList.CLASSCOACH("reset")
 
   -- The main bar on another page looks like "my bars are gone"
   M.P.keyActions = { ["SHIFT-2"] = "ACTIONPAGE2", ["SHIFT-3"] = "ACTIONPAGE3" }
@@ -346,10 +374,10 @@ if SCENARIO == "shaman" then
   check("settings page registered with the game", S.category ~= nil and S.category.name == "ClassCoach")
   local count = 0
   for _ in pairs(S.list) do count = count + 1 end
-  check("every option made it onto the page", count == 30 and #ns.Options.registered == 30 and #ns.Options.keys() == 30, count)
-  check("sections and action buttons", #S.headers == 5 and #S.buttons == 3, #S.headers .. "/" .. #S.buttons)
+  check("every option made it onto the page", count == 37 and #ns.Options.registered == 37 and #ns.Options.keys() == 37, count)
+  check("sections and action buttons", #S.headers == 6 and #S.buttons == 3, #S.headers .. "/" .. #S.buttons)
   check("options write to the saved settings", S.list.compact.tbl == ClassCoachDB and S.list.specChoice.tbl == ClassCoachCharDB)
-  check("slider shows its unit", S.list.opacity.opts.format(75) == "75%" and S.list.scale.opts.format(1.1) == "1.10x")
+  check("slider shows its unit", S.list.opacity.opts.format(60) == "60%" and S.list.scale.opts.format(1.1) == "1.10x")
   local specs = S.list.specChoice.getOptions()
   check("profile choices for this class", #specs == 2 and specs[1].value == "auto" and specs[2].value == "Enhancement", #specs)
   SlashCmdList.CLASSCOACH("")
@@ -365,7 +393,7 @@ if SCENARIO == "shaman" then
   M.P.mana = 300; M.advance(1); f = tick(ns)
   check("explanation shown by default", f.why.text ~= "" and f.why.shown, f.why.text)
   ClassCoachDB.compact = true; f = tick(ns)
-  check("compact hides the explanation", f.why.text == "" and f.chainText.text == "")
+  check("compact hides the explanation and keeps the icons", f.why.text == "" and nextText(f) ~= "", nextText(f))
   ClassCoachDB.compact = false
   ClassCoachDB.showMana = false; f = tick(ns)
   check("mana bar can be switched off", f.bar.shown == false)
@@ -416,7 +444,7 @@ elseif SCENARIO == "priest" then
   target({ name = "Kobold", level = 13, hostile = true, guid = "Creature-2" })
   f = tick(ns)
   check("shield before the pull", f.name.text == "Power Word: Shield", f.name.text)
-  check("priest chain", f.chainText.text == "Shadow Word: Pain > Mind Blast", f.chainText.text)
+  check("priest chain", nextText(f) == "Shadow Word: Pain > Mind Blast", nextText(f))
   cast(17); M.advance(1.5); f = tick(ns)
   check("opener Mind Blast", f.name.text == "Mind Blast", f.name.text)
   M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
@@ -483,13 +511,13 @@ elseif SCENARIO == "warlock" then
   f = tick(ns)
   check("checklist clear with pet", not missing(ns):find("demon"), missing(ns))
   M.P.health = 80; f = tick(ns)
-  check("low health check, with the number on the icon", missing(ns):find("Health 40%%") ~= nil and f.missing[1].timer.text == "40", missing(ns))
+  check("low health check, with the number on the icon", missing(ns):find("Health 40%%") ~= nil and f.missing[1].badgeText.text == "40", missing(ns))
   M.P.health = 200
   target({ name = "Gnoll", level = 11, hostile = true, guid = "Creature-5" })
   f = tick(ns)
   check("opener Bane of Agony", f.name.text == "Bane of Agony", f.name.text)
   check("opener is told for the Voidwalker", f.why.text:find("Voidwalker in, let it hit first") ~= nil, f.why.text)
-  check("warlock chain", f.chainText.text == "Corruption > Immolate", f.chainText.text)
+  check("warlock chain", nextText(f) == "Corruption > Immolate", nextText(f))
   check("durations read from the spell text", ns.C.spells["Corruption"].duration == 12 and ns.C.spells["Bane of Agony"].duration == 24,
     tostring(ns.C.spells["Corruption"].duration))
 
@@ -500,31 +528,37 @@ elseif SCENARIO == "warlock" then
   check("pull spell counted in the fight", ns.C.tracker:castsOnTarget("g:Creature-5", "Bane of Agony") == 1)
   check("mana start includes the pull spell", ns.C.tracker.fight.manaStart == 300, ns.C.tracker.fight.manaStart)
   check("then Corruption", f.name.text == "Corruption", f.name.text)
-  check("done slot shows Bane ticking", f.done[2].shown and f.done[2].timer.text == "24", f.done[2].timer.text)
-  check("dot line", f.dots.text:find("On this enemy: Bane of Agony 24s") ~= nil, f.dots.text)
+  check("the step nearest the ring shows Bane ticking", f.done[1].shown and f.done[1].timer.text == "24s" and rawget(f.done[1], "title") == "Bane of Agony", f.done[1].timer.text)
+  check("a timer shown on an icon is not repeated in words", f.dots.text == "" and f.leftLabel.text == "already cast", f.dots.text)
   cast(172); M.advance(2); f = tick(ns)
   check("then Immolate (mana high)", f.name.text == "Immolate", f.name.text)
   cast(348); M.advance(2); f = tick(ns)
   check("then wand", f.name.text == "Shoot", f.name.text)
-  check("chain says when Corruption comes back", f.chainText.text == "Corruption in 8s", f.chainText.text)
-  check("two done slots", f.done[1].timer.text == "8" and f.done[2].timer.text == "13", f.done[1].timer.text .. "/" .. f.done[2].timer.text)
+  check("chain says when Corruption comes back", nextText(f) == "Corruption in 8s", nextText(f))
+  check("two done slots, the latest nearest the ring", f.done[1].timer.text == "13s" and f.done[2].timer.text == "8s", f.done[1].timer.text .. "/" .. f.done[2].timer.text)
+  check("a timer with no icon gets a line", f.dots.text == "Also on this enemy: Bane of Agony 20s", f.dots.text)
   -- How many steps show on each side is a setting (0 to 4)
-  check("by default two before, two after", f.done[2].shown and not f.done[3].shown and not f.upcoming[3].shown and rawget(f, "side") == 28)
+  check("by default two before, two after", f.done[2].shown and not f.done[3].shown and not f.upcoming[3].shown)
   ClassCoachDB.stepsBefore, ClassCoachDB.stepsAfter = 4, 4
   f = tick(ns)
-  check("four before: all three casts on this enemy show, the latest nearest", not f.done[1].shown and f.done[2].shown and f.done[3].shown and f.done[4].shown
-    and f.done[4].timer.text == "13" and f.done[3].timer.text == "8" and f.done[2].timer.text == "20", tostring(f.done[2].timer.text) .. "/" .. tostring(f.done[3].timer.text))
-  check("eight side icons shrink to fit the panel", rawget(f, "side") < 28 and rawget(f, "side") >= 16 and rawget(f, "side") * 8 + 46 + 8 * 8 <= 300, rawget(f, "side"))
+  check("four before: all three casts on this enemy show, the latest nearest", f.done[1].shown and f.done[2].shown and f.done[3].shown and not f.done[4].shown
+    and f.done[1].timer.text == "13s" and f.done[2].timer.text == "8s" and f.done[3].timer.text == "20s" and f.dots.text == "",
+    tostring(f.done[2].timer.text) .. "/" .. tostring(f.done[3].timer.text) .. "/" .. f.dots.text)
+  check("steps further from the ring are smaller and sit higher", rawget(f.done[1], "width") == 34 and rawget(f.done[4], "width") == 22
+    and f.done[1].point[5] == 0 and f.done[4].point[5] == 45 and f.upcoming[4].point[4] == 218, tostring(f.done[4].point[5]))
+  check("the captions sit outside the outermost step, never over the ring", f.leftLabel.point[4] < -(170 + 13) and f.chainLabel.point[4] > 74 + 17,
+    tostring(f.leftLabel.point[4]) .. "/" .. tostring(f.chainLabel.point[4]))
   ClassCoachDB.stepsBefore, ClassCoachDB.stepsAfter = 0, 1
   f = tick(ns)
   check("none before", not f.done[1].shown and not f.done[2].shown and not f.done[3].shown and not f.done[4].shown)
-  check("one after: the list under the icon names one step at most", not f.upcoming[2].shown and not f.chainText.text:find(">", 1, true), f.chainText.text)
+  check("one after: the list under the icon names one step at most", not f.upcoming[2].shown and not nextText(f):find(">", 1, true), nextText(f))
   ClassCoachDB.stepsAfter = 0
   f = tick(ns)
-  check("none after: only the current step", not f.upcoming[1].shown and f.name.text == "Shoot" and f.chainText.text == "", f.chainText.text)
+  check("none after: only the current step", not f.upcoming[1].shown and f.name.text == "Shoot" and nextText(f) == "", nextText(f))
   ClassCoachDB.stepsBefore, ClassCoachDB.stepsAfter = "lots", -3
   f = tick(ns)
-  check("a damaged setting falls back to a sane count", rawget(f, "before") == 2 and rawget(f, "after") == 0, tostring(rawget(f, "before")) .. "/" .. tostring(rawget(f, "after")))
+  local sane = { ns.Panel.steps(ClassCoachDB) }
+  check("a damaged setting falls back to a sane count", sane[1] == 2 and sane[2] == 0 and f.done[2].shown and not f.upcoming[1].shown, sane[1] .. "/" .. sane[2])
   ClassCoachDB.stepsBefore, ClassCoachDB.stepsAfter = 2, 2
   f = tick(ns)
   M.advance(8.5); f = tick(ns)
@@ -539,7 +573,7 @@ elseif SCENARIO == "warlock" then
   check("no done slots on a fresh enemy", not f.done[1].shown and not f.done[2].shown)
   target({ name = "Gnoll", level = 11, hostile = true, guid = "Creature-5" })
   f = tick(ns)
-  check("back on the first: its timers are remembered", f.name.text == "Shoot" and f.dots.text:find("Corruption") ~= nil, f.name.text .. " / " .. f.dots.text)
+  check("back on the first: its timers are remembered", f.name.text == "Shoot" and timers(f):find("Corruption") ~= nil, f.name.text .. " / " .. timers(f))
 
   M.P.mana = 50; M.advance(3); f = tick(ns)
   check("low mana: Life Tap", f.name.text == "Life Tap", f.name.text)
@@ -570,7 +604,7 @@ elseif SCENARIO == "warlock" then
   M.advance(1); f = tick(ns)
   M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
   cast(980); cast(172); M.advance(1.5); f = tick(ns)
-  check("hidden ids: timers on the current enemy work", f.dots.text:find("Bane of Agony") ~= nil, f.dots.text)
+  check("hidden ids: timers on the current enemy work", timers(f):find("Bane of Agony %d+s") ~= nil, timers(f))
   target({ name = "Boar", level = 11, hostile = true, guid = "Creature-9" })
   f = tick(ns)
   check("hidden ids: the next enemy starts clean", f.name.text == "Bane of Agony", f.name.text)
@@ -643,14 +677,14 @@ elseif SCENARIO == "warlock" then
   M.advance(0.1); f = tick(ns)
   check("resisted: the coach asks for the same spell again", f.name.text == "Bane of Agony", f.name.text)
   check("and says why", f.why.text == "Bane of Agony was resisted. Cast it again.", f.why.text)
-  check("the done icon shows the miss", f.done[2].timer.text == "miss", tostring(f.done[2].timer.text))
+  check("the icon nearest the ring shows the miss", f.done[1].timer.text == "miss", tostring(f.done[1].timer.text))
   check("a resisted cast does not count as on the enemy", ns.C.tracker:castsOnTarget("g:Creature-40", "Bane of Agony") == 0
-    and not f.dots.text:find("Bane of Agony"), f.dots.text)
+    and not timers(f):find("Bane of Agony %d+s"), timers(f))
   cast(980); M.advance(1.5); f = tick(ns)
-  check("it landed the second time", f.name.text == "Corruption" and f.dots.text:find("Bane of Agony") ~= nil, f.name.text)
+  check("it landed the second time", f.name.text == "Corruption" and timers(f):find("Bane of Agony %d+s") ~= nil, f.name.text .. " / " .. timers(f))
   cast(172); M.advance(1.2)
   M.fire("UNIT_COMBAT", "target", "RESIST", "", 0, 32); f = tick(ns)
-  check("a resist long after your cast is someone else's", f.name.text ~= "Corruption" and f.dots.text:find("Corruption") ~= nil, f.name.text)
+  check("a resist long after your cast is someone else's", f.name.text ~= "Corruption" and timers(f):find("Corruption %d+s") ~= nil, f.name.text .. " / " .. timers(f))
   -- a resisted refresh keeps the old one running
   M.advance(1); local left = ns.C.tracker:debuffLeft("g:Creature-40", "Corruption", M.now)
   cast(172); M.fire("UNIT_COMBAT", "target", "RESIST", "", 0, 32)
@@ -658,9 +692,9 @@ elseif SCENARIO == "warlock" then
   -- immune
   cast(348); M.fire("UNIT_COMBAT", "target", "IMMUNE", "", 0, 4)
   M.advance(0.2); f = tick(ns)
-  check("immune: not suggested again on this enemy", f.name.text ~= "Immolate" and not f.chainText.text:find("Immolate"), f.name.text .. " / " .. f.chainText.text)
+  check("immune: not suggested again on this enemy", f.name.text ~= "Immolate" and not nextText(f):find("Immolate"), f.name.text .. " / " .. nextText(f))
   check("immune: explained", f.status.text:find("immune to Immolate") ~= nil, f.status.text)
-  check("immune: marked on the done icon", f.done[2].timer.text == "imm", tostring(f.done[2].timer.text))
+  check("immune: marked on the icon nearest the ring", f.done[1].timer.text == "immune", tostring(f.done[1].timer.text))
   M.advance(12)
   M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
   check("the report counts resists", ns.C.lastReport.headline:find("3 resisted") ~= nil, ns.C.lastReport.headline)
@@ -785,7 +819,7 @@ elseif SCENARIO == "sweep" then
   local function look(level, opts, spells, where)
     local f = tick(ns)
     local tag = ("%s L%d %s wand=%s pet=%s mana=%d"):format(WANT, level, where, tostring(opts.wand), tostring(opts.pet), opts.mana)
-    local shown = { f.name.text, f.why.text, f.status.text, f.chainText.text, f.dots.text, journeyNow(ns), missing(ns) }
+    local shown = { f.name.text, f.why.text, f.status.text, nextText(f), f.dots.text, journeyNow(ns), missing(ns) }
     for _, s in ipairs(f.missing) do if s.shown and rawget(s, "spell") then shown[#shown + 1] = rawget(s, "spell") end end
     for key in pairs(profile.spells) do
       if not spells[idOf[key]] then
@@ -796,13 +830,56 @@ elseif SCENARIO == "sweep" then
       end
     end
     if not opts.pet and def.pet then
-      check(tag .. ": no demon talk without one", not (f.why.text:find("demon") or f.chainText.text:find("demon")), f.why.text)
+      check(tag .. ": no demon talk without one", not (f.why.text:find("demon") or nextText(f):find("demon")), f.why.text)
     end
     if not opts.wand then
-      check(tag .. ": no Shoot without a wand", f.name.text ~= "Shoot" and not f.chainText.text:find("Shoot"), f.name.text)
+      check(tag .. ": no Shoot without a wand", f.name.text ~= "Shoot" and not nextText(f):find("Shoot"), f.name.text)
     end
     check(tag .. ": no error", ns.C.lastError == nil, ns.C.lastError)
     return f
+  end
+
+  -- The smart key at every level: its steps must be castable, in the coach's order, and
+  -- end on something that is safe to keep pressing (wand, a filler spell or attacking).
+  local smartSeen = {}
+  local function smartKey(level, opts, spells)
+    local s = ns.C.lastState
+    local made = {}
+    for _, m in ipairs(ns.Engine.macros(profile, s)) do made[m.name] = true end
+    check(("%s L%d: the pull macro fits the game's 255 characters"):format(WANT, level), made["CC Pull"] == true)
+    for _, variant in ipairs({ "with its macros", "without any macro" }) do
+      local has = { macro = function(name) return variant == "with its macros" and made[name] == true end }
+      local steps, gate = ns.Engine.smartSteps(profile, s, has)
+      local tag = ("%s L%d smart key %s wand=%s pet=%s"):format(WANT, level, variant, tostring(opts.wand), tostring(opts.pet))
+      local names = {}
+      for i, st in ipairs(steps) do
+        names[i] = st.kind .. ":" .. st.value
+        if st.kind == "spell" then
+          local known = false
+          for _, sp in pairs(spells) do if sp.name == st.value then known = true end end
+          check(tag .. ": step " .. i .. " is a spell you know", known, st.value)
+        else
+          check(tag .. ": step " .. i .. " is a macro that exists", made[st.value] == true, st.value)
+        end
+      end
+      local line = table.concat(names, " > ")
+      check(tag .. ": never more steps than a pull needs", #steps <= 8, line)
+      local last = steps[#steps]
+      if last then
+        local meta = last.kind == "spell" and profile.spells[last.value]
+        check(tag .. ": the step it stays on is safe to keep pressing", not (meta and meta.debuff), line)
+        if opts.wand then
+          -- a class that keeps casting at full mana (the Priest's Smite) ends on that spell: the coach moves you to the wand's own key when mana drops
+          local nuke = last.kind == "spell" and last.value ~= "Shoot"
+          check(tag .. ": with a wand it ends on the wand, or on the spell the coach casts at full mana",
+            nuke or last.value == (variant == "with its macros" and "CC Wand" or "Shoot"), line)
+        end
+      end
+      if next(spells) and (variant == "with its macros" or opts.wand) then check(tag .. ": it has steps", #steps >= 1, line) end
+      if gate then check(tag .. ": the gate's macro exists", made[gate.macro] == true, tostring(gate.macro)) end
+      check(tag .. ": the whole pull plan fits the key", #ns.Engine.plan(profile, s) == #ns.Engine.plan(profile, s, 20), #ns.Engine.plan(profile, s, 20))
+      smartSeen[line] = smartSeen[line] or level
+    end
   end
 
   for level = 1, 60 do
@@ -812,7 +889,9 @@ elseif SCENARIO == "sweep" then
           local opts = { wand = wand and level >= 5, pet = pet, mana = mana, noImp = def.pet and not pet and level < 10 }
           local spells = setup(level, opts)
           local f = look(level, opts, spells, "idle")
-          check(("%s L%d: a pull plan is shown"):format(WANT, level), f.chainLabel.text == "Pull" and f.name.text ~= "" and f.name.text ~= "Ready", f.name.text)
+          if mana == 300 then smartKey(level, opts, spells) end
+          check(("%s L%d: a pull plan is shown"):format(WANT, level), ns.C.lastView.planning == true and f.name.text ~= "" and f.name.text ~= "Ready"
+            and (f.chainLabel.text == "your pull plan" or not f.upcoming[1].shown), f.name.text)
           if opts.noImp then
             check(("%s L%d: points at the Imp quest, not at a missing demon"):format(WANT, level),
               journey(ns):find("No Imp yet") ~= nil and not missing(ns):find("No demon"), journey(ns) .. " / " .. missing(ns))
@@ -846,13 +925,17 @@ elseif SCENARIO == "sweep" then
     setup(4, { mana = 300, pet = true, skip = "Corruption" })
     local f = tick(ns)
     check("trainer reminder for an unlearned spell", journey(ns):find("Not trained: Corruption") ~= nil, journey(ns))
-    check("and it is not suggested", not f.chainText.text:find("Corruption"), f.chainText.text)
+    check("and it is not suggested", not nextText(f):find("Corruption"), nextText(f))
     setup(12, { mana = 60, pet = true })
     f = tick(ns)
-    check("low mana out of combat: Life Tap icon and hint", missing(ns):find("Mana 20%%") ~= nil and f.missing[2].spell == "Life Tap" and f.missing[2].timer.text == "20" and f.missing[2].hint:find("Life Tap") ~= nil, missing(ns) .. " / " .. tostring(f.missing[2].spell))
+    check("low mana out of combat: Life Tap icon and hint", missing(ns):find("Mana 20%%") ~= nil and f.missing[2].spell == "Life Tap" and f.missing[2].badgeText.text == "20" and f.missing[2].hint:find("Life Tap") ~= nil, missing(ns) .. " / " .. tostring(f.missing[2].spell))
   end
   check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
   if SWEEP_PRINT then
+    local lines = {}
+    for line, level in pairs(smartSeen) do lines[#lines + 1] = ("%s smart L%02d+  %s"):format(WANT, level, line) end
+    table.sort(lines)
+    for _, l in ipairs(lines) do print_real(l) end
     local last = {}
     for _, l in ipairs(samples) do
       local variant, body = l:sub(5, 26), l:sub(27)
@@ -1060,10 +1143,12 @@ elseif SCENARIO == "robust" then
 
   -- 8. Damaged saved settings are repaired
   ClassCoachDB.scale, ClassCoachDB.opacity, ClassCoachDB.compact, ClassCoachDB.drinkAt = "big", 0 / 0, "yes", 9999
-  ClassCoachCharDB.pos, ClassCoachCharDB.journeyPos = { "CENTER", 5, "x" }, "nowhere"
+  ClassCoachCharDB.focusPos, ClassCoachCharDB.journeyPos = { "CENTER", 5, "x" }, "nowhere"
+  ClassCoachDB.barGlow, ClassCoachDB.cueSound = 12, {}
   ClassCoachCharDB.kill, ClassCoachCharDB.specChoice, ClassCoachDB.log = { avg = -3, n = "many" }, 77, "oops"
   ns.Options.sanitize(ClassCoachDB, ClassCoachCharDB)
-  check("damaged settings go back to defaults", ClassCoachDB.scale == 1 and ClassCoachDB.opacity == 75 and ClassCoachDB.compact == false
+  check("damaged settings go back to defaults", ClassCoachDB.scale == 1 and ClassCoachDB.opacity == 60 and ClassCoachDB.compact == false
+    and ClassCoachDB.barGlow == "glow" and ClassCoachDB.cueSound == "click"
     and ClassCoachDB.drinkAt == 60 and ClassCoachCharDB.pos == nil and ClassCoachCharDB.journeyPos == nil
     and ClassCoachCharDB.kill == nil and ClassCoachCharDB.specChoice == "auto" and ClassCoachDB.log == nil)
   for _ = 1, 5 do M.advance(1); refresh(1) end
@@ -1405,15 +1490,71 @@ elseif SCENARIO == "talents" then
   ns.C.journey = nil; M.advance(3); tick(ns)
   check("professions: what to craft next, from the Forever guide", journeyNow(ns):find("Tailoring 62: craft Bolt of Woolen Cloth", 1, true) ~= nil, journeyNow(ns))
   check("professions: at the cap, any profession", journeyNow(ns):find("First Aid 75 of 75: train the next rank", 1, true) ~= nil, journeyNow(ns))
-  check("a profession without a guide says nothing until it is capped", not journeyNow(ns):find("Enchanting", 1, true), journeyNow(ns))
+  check("the second profession's next step is there too", journeyNow(ns):find("Enchanting 40: craft Enchant Chest - Inferior Stamina", 1, true) ~= nil, journeyNow(ns))
+  check("both slots taken: no suggestion to learn another", not journey(ns):find("Learn T", 1, true), journey(ns))
   M.P.professions[1].skill = 73; ns.C.journey = nil; M.advance(3); tick(ns)
   check("Tailoring near its cap: train Journeyman", journeyNow(ns):find("Tailoring 73 of 75: train the next rank", 1, true) ~= nil, journeyNow(ns))
   ClassCoachDB.remindProfessions = false; ns.C.journey = nil; M.advance(3); tick(ns)
   check("the setting turns profession lines off", not journeyNow(ns):find("Tailoring", 1, true), journeyNow(ns))
   ClassCoachDB.remindProfessions = true
   M.P.professions = nil; ns.C.journey = nil; M.advance(3); tick(ns)
-  check("no professions: nothing shown, no error", not journeyNow(ns):find("craft", 1, true) and errors() == 0)
+  check("no professions: no step lines, no error", not journeyNow(ns):find("craft", 1, true) and errors() == 0)
+  -- Which two to learn, by class and goal
+  local E, picks = ns.Engine, ns.ProfessionPicks
+  local function pair(class, goal, a, b) return table.concat((E.professionPair(class, picks, goal, a, b)), "+") end
+  check("cloth classes level with Tailoring and Enchanting", pair("WARLOCK", "gear") == "Tailoring+Enchanting" and pair("PRIEST", "gear") == "Tailoring+Enchanting", pair("WARLOCK", "gear"))
+  check("a Shaman levels with Skinning and Leatherworking, a Warrior with Mining and Blacksmithing",
+    pair("SHAMAN", "gear") == "Skinning+Leatherworking" and pair("WARRIOR", "gear") == "Mining+Blacksmithing", pair("SHAMAN", "gear"))
+  check("gold: two gatherers", pair("WARLOCK", "gold") == "Mining+Skinning" and pair("DRUID", "gold") == "Herbalism+Skinning", pair("WARLOCK", "gold"))
+  check("gear and some gold, for a cloth class: keep Tailoring, add a gatherer", pair("WARLOCK", "balanced") == "Tailoring+Herbalism", pair("WARLOCK", "balanced"))
+  check("level 60 pairs differ by class", pair("SHAMAN", "endgame") == "Herbalism+Alchemy" and pair("ROGUE", "endgame") == "Mining+Engineering", pair("SHAMAN", "endgame"))
+  check("your own pick comes first, the goal fills the other slot", pair("WARLOCK", "gear", "Alchemy", "auto") == "Alchemy+Tailoring", pair("WARLOCK", "gear", "Alchemy", "auto"))
+  check("two picks of your own are followed as they are", pair("WARLOCK", "gear", "Mining", "Engineering") == "Mining+Engineering")
+  check("a damaged pick or goal falls back to the class's leveling pair", pair("WARLOCK", "nonsense", "Juggling", 7) == "Tailoring+Enchanting", pair("WARLOCK", "nonsense", "Juggling", 7))
+  check("a class with no entry still gets a pair", pair("DEATHKNIGHT", "gear") == "Mining+Skinning")
+  for class, byGoal in pairs(picks.byClass) do
+    for _, goal in ipairs(picks.goals) do
+      local two = byGoal[goal[1]]
+      check(class .. " " .. goal[1] .. ": two different professions that have a guide", two and #two == 2 and two[1] ~= two[2]
+        and ns.ProfessionData[two[1]] ~= nil and ns.ProfessionData[two[2]] ~= nil and picks.why[goal[1]] ~= nil)
+    end
+  end
+  for _, name in ipairs(picks.primary) do check(name .. " has a guide and is not secondary", ns.ProfessionData[name] ~= nil and not ns.ProfessionData[name].secondary) end
+  for _, name in ipairs(picks.secondary) do check(name .. " is a secondary profession with a guide", ns.ProfessionData[name] ~= nil and ns.ProfessionData[name].secondary == true) end
+
+  -- On the journey panel
+  M.P.professions = {}; ClassCoachDB.remindProfessions = true; ns.C.journey = nil; M.advance(3); tick(ns)
+  check("nothing learned: the class's pair is suggested, and the three free ones", journey(ns):find("Learn Tailoring and Enchanting", 1, true) ~= nil
+    and journey(ns):find("Also learn First Aid, Cooking and Fishing", 1, true) ~= nil, journey(ns))
+  ClassCoachDB.professionGoal = "gold"; ns.C.journey = nil; M.advance(3); tick(ns)
+  check("the goal changes the suggestion", journey(ns):find("Learn Mining and Skinning", 1, true) ~= nil, journey(ns))
+  ClassCoachCharDB.professionA = "Alchemy"; ns.C.journey = nil; M.advance(3); tick(ns)
+  check("your own pick is suggested first", journey(ns):find("Learn Alchemy and Mining", 1, true) ~= nil, journey(ns))
+  ClassCoachCharDB.professionA, ClassCoachDB.professionGoal = "auto", "gear"
+  M.P.professions = { { name = "Herbalism", skill = 20, max = 75 } }; ns.C.journey = nil; M.advance(3); tick(ns)
+  check("one slot taken by something else: one suggestion for the free slot, and no nagging about your choice",
+    journey(ns):find("Learn Tailoring", 1, true) ~= nil and not journey(ns):find("Learn Tailoring and", 1, true), journey(ns))
+  check("a gathering profession says what to pick and where", journey(ns):find("Herbalism 20: pick Peacebloom, Silverleaf and Earthroot in your starting zone", 1, true) ~= nil, journey(ns))
+  M.P.professions = { { name = "Herbalism", skill = 20, max = 75 }, { name = "Mining", skill = 70, max = 75 }, { name = "Cooking", skill = 10, max = 75 },
+    { name = "First Aid", skill = 30, max = 75 } }
+  ns.C.journey = nil; M.advance(3); tick(ns)
+  check("both slots taken: nothing more to learn there; the missing free one is still named", not journey(ns):find("Learn Tailoring", 1, true)
+    and journey(ns):find("Also learn Fishing", 1, true) ~= nil, journey(ns))
+  check("at most two what-next lines, your main professions first", journey(ns):find("Herbalism 20: pick", 1, true) ~= nil
+    and journey(ns):find("Mining 70 of 75: train the next rank", 1, true) ~= nil and journey(ns):find("Cooking 10: cook Charred Wolf Meat", 1, true) ~= nil
+    and not journey(ns):find("First Aid 30", 1, true), journey(ns))
+  ClassCoachDB.remindSecondary = false; ns.C.journey = nil; M.advance(3); tick(ns)
+  check("the free professions can be switched off", not journey(ns):find("Also learn", 1, true), journey(ns))
+  ClassCoachDB.remindSecondary = true
+  GetProfessionsReal, GetProfessions = GetProfessions, function() error("not now") end
+  ns.C.journey = nil; M.advance(3); tick(ns)
+  check("when the game will not say what you have, nothing is suggested", not journey(ns):find("Learn ", 1, true) and errors() == 0, journey(ns))
+  GetProfessions = GetProfessionsReal
+  SlashCmdList.CLASSCOACH("professions")
+  M.P.professions = nil; ns.C.journey = nil; M.advance(3); tick(ns)
+
   for name, guide in pairs(ns.ProfessionData) do
+    check(name .. " says what it is and which word goes before a step", type(guide.about) == "string" and type(guide.verb) == "string" and #guide.tiers == 3)
     local last = 1
     for _, st in ipairs(guide.steps) do
       if st[1] ~= last or st[2] <= st[1] then check(name .. " steps join up at " .. st[1], false, last) end
@@ -1454,6 +1595,167 @@ elseif SCENARIO == "warrior" then
   M.advance(5); f = tick(ns); cast(78); M.advance(5)
   M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
   check("report for any class", ns.C.lastReport ~= nil)
+  check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
+  check("no tick error", ns.C.lastError == nil, ns.C.lastError)
+---------------------------------------------------------------------------
+-- The ring: fonts, the cue, the lit bar button, click to cast, the demo
+---------------------------------------------------------------------------
+elseif SCENARIO == "focus" then
+  local function warlock()
+    M.player({ class = "WARLOCK", className = "Warlock", level = 12, mana = 300, maxMana = 300,
+      spells = {
+        [686] = { name = "Shadow Bolt", cost = 25 }, [348] = { name = "Immolate", cost = 25 },
+        [172] = { name = "Corruption", cost = 35, text = "Corrupts the target, causing 40 Shadow damage over 12 sec." },
+        [980] = { name = "Bane of Agony", cost = 25 }, [1454] = { name = "Life Tap", cost = 0 },
+        [687] = { name = "Demon Skin", cost = 50 }, [688] = { name = "Summon Imp", cost = 60 }, [5019] = { name = "Shoot", cost = 0 },
+      },
+      book = { 686, 348, 172, 980, 1454, 687, 688, 5019 }, equipped = { [18] = 11287 }, talents = { 3, 0, 0 },
+      pet = { family = "Imp" },
+      actions = { [7] = 980, [8] = 172, [62] = 5019 }, bindings = { ACTIONBUTTON7 = "7", ACTIONBUTTON8 = "8", MULTIACTIONBAR1BUTTON2 = "SHIFT-2" },
+    })
+    M.P.buffs = { ["Demon Skin"] = true, ["Well Fed"] = true }
+  end
+  warlock()
+  local ns = load()
+  local f = tick(ns)
+  local C = ns.Style.COLORS
+
+  -- Typefaces: the design's own, and the game's when a file will not load
+  check("the name is set in Marcellus, the explanation in Inter", f.name.font[1]:find("Marcellus%-Regular%.ttf$") ~= nil and f.name.font[2] == 19
+    and f.why.font[1]:find("Inter%-Regular%.ttf$") ~= nil and f.key.font[1]:find("Inter%-Bold%.ttf$") ~= nil, tostring(f.name.font[1]))
+  check("text that sits on the game world has an outline; text on the plate does not", f.leftLabel.font[3] == "OUTLINE" and f.name.font[3] == "")
+  M.refuseFonts = true
+  local probe = ns.Style.text(f, "title", 19)
+  check("a typeface the game refuses falls back to the game's own font, same size", probe.font[1] == "Fonts\\FRIZQT__.TTF" and probe.font[2] == 19
+    and ns.Style.fontMissing == "Marcellus-Regular.ttf", tostring(probe.font[1]))
+  M.refuseFonts = false
+  check("icons are cut round with the game's mask", rawget(f.icon, "mask") ~= nil and rawget(f.done[1].icon, "mask") ~= nil)
+  check("the ring is gold and the mana bar is the game's status bar, 100 by 5", f.ring.color[1] == C.accent[1] and rawget(f.bar, "width") == 100 and rawget(f.bar, "height") == 5)
+
+  -- Before a fight: the drink reminder, spelled out
+  M.P.mana = 90; M.advance(3); f = tick(ns)
+  check("low mana before a pull: an amber mark and the reason in words", missing(ns):find("Mana 30%%") ~= nil and f.leftLabel.text == "before you pull"
+    and f.status.text:find("Life Tap") ~= nil and f.status.shown, missing(ns) .. " / " .. f.status.text)
+  check("the mana bar turns amber as the advice changes", f.bar.barColor[1] == C.warn[1] and f.barText.text == "30%", tostring(f.bar.barColor[1]) .. " " .. f.barText.text)
+  M.P.mana = 300; M.advance(3); f = tick(ns)
+  check("nothing missing: no mark, no caption, no line", missing(ns) == "" and f.status.text == "" and not f.leftLabel.shown)
+
+  -- The step to press, lit on the action bar
+  target({ name = "Boar", level = 11, hostile = true, guid = "Creature-70" })
+  M.advance(1); f = tick(ns)
+  local glow = ns.BarGlow
+  check("with an enemy targeted the opener's bar button is lit", f.name.text == "Bane of Agony" and glow.slot == 7 and glow.holder.shown and glow.button == ActionButton7, tostring(glow.slot))
+  check("the highlight lies over the button and takes no clicks", rawget(glow.holder, "mouse") == false and glow.holder.name == "ClassCoachBarGlow")
+  check("the default look is the glow", glow.holder.style == "glow" and glow.holder.halo.shown and not glow.holder.sparks[1].shown and rawget(glow.holder.halo, "width") == 90)
+  ClassCoachDB.barGlow = "sparkles"; tick(ns)
+  glow.holder.width, glow.holder.height = 45, 45
+  glow.holder.scripts.OnUpdate(glow.holder, 0.1)
+  local sx, sy = glow.holder.sparks[1].point[4], glow.holder.sparks[1].point[5]
+  check("sparkles: points run along the button's edge", glow.holder.style == "sparkles" and glow.holder.sparks[1].shown and not glow.holder.halo.shown
+    and (sx == 0 or sx == 45 or sy == 0 or sy == -45), tostring(sx) .. "," .. tostring(sy))
+  local x1, y1 = ns.BarGlow.around(0, 40, 20)
+  local x2, y2 = ns.BarGlow.around(0.5, 40, 20)
+  local x3, y3 = ns.BarGlow.around(7.25, 40, 20)
+  check("a trip around the button: start at the top left, halfway at the bottom right, any number of laps", x1 == 0 and y1 == 0 and x2 == 40 and y2 == -20 and x3 == 30 and y3 == 0,
+    x3 .. "," .. y3)
+  ClassCoachDB.barGlow = "frame"; tick(ns)
+  check("frame: steady, no animation running", glow.holder.style == "frame" and glow.holder.scripts.OnUpdate == nil and glow.holder.edges[1].shown)
+  ClassCoachDB.barGlow = "off"; tick(ns)
+  check("off: nothing lit", glow.slot == nil and not glow.holder.shown)
+  ClassCoachDB.barGlow = "glow"; tick(ns)
+  ActionButton7.shown = false; tick(ns)
+  check("a button that is not on screen is not lit", glow.slot == nil and not glow.holder.shown)
+  ActionButton7.shown = true; tick(ns)
+  M.P.page = 2; M.advance(1); tick(ns)
+  check("main bar on another page: its buttons show other spells, so none is lit", glow.slot == nil)
+  M.P.page = 1; M.advance(1); tick(ns)
+  check("back on page one it is lit again", glow.slot == 7)
+
+  -- Click to cast, before a fight
+  local click = ns.Click
+  check("the click buttons are the game's secure buttons, hidden by the game in a fight", click.holder ~= nil and click.holder.secure and click.buttons[1].secure
+    and M.drivers.visibility.frame == click.holder and M.drivers.visibility.conditions == "[combat] hide; show")
+  check("they are not anchored to the coach, so dragging it in a fight is never blocked", click.holder.point[2] == UIParent and click.buttons[7].point[2] == click.holder)
+  local ring = click.buttons[7]
+  check("the ring casts the opener", ring.on and ring:GetAttribute("type") == "spell" and ring:GetAttribute("spell") == "Bane of Agony" and rawget(ring, "width") == 84,
+    tostring(ring:GetAttribute("spell")))
+  check("the next steps cast themselves", click.buttons[8].on and click.buttons[8]:GetAttribute("spell") == "Corruption" and click.buttons[8].point[4] == 74,
+    tostring(click.buttons[8]:GetAttribute("spell")))
+  M.P.mana = 90; M.advance(3); tick(ns)
+  check("an amber mark casts what fixes it", click.buttons[1].on and click.buttons[1]:GetAttribute("spell") == "Life Tap" and click.buttons[1].point[4] == -74,
+    table.concat(click.describe(), ", "))
+  click.buttons[1].scripts.OnEnter(click.buttons[1])
+  M.P.mana = 300; M.advance(3); tick(ns)
+  check("fixed: its button is gone again", not click.buttons[1].on and not click.buttons[1].shown)
+  target(nil); M.advance(1); tick(ns)
+  check("nothing targeted: the plan is a picture, not a button (no pulling by accident)", not ring.on and not click.buttons[8].on)
+  target({ name = "Boar", level = 11, hostile = true, guid = "Creature-70" }); M.advance(1); tick(ns)
+  ClassCoachDB.clickable = false; tick(ns)
+  check("switched off in the settings: no buttons", #click.describe() == 0)
+  ClassCoachDB.clickable = true; tick(ns)
+  check("and back on", ring.on and #click.describe() >= 2, #click.describe())
+  cast(980); M.advance(0.4); M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
+  local escaped = 0
+  for _ = 1, 20 do
+    local ok = pcall(tick, ns)
+    if not ok then escaped = escaped + 1 end
+    M.advance(0.5)
+  end
+  check("in a fight the addon never touches a click button (the fake client raises an error if it does)", escaped == 0 and errors() == 0 and ns.C.lastError == nil,
+    tostring(ns.C.lastError) .. " " .. tostring(ClassCoachDB.log and ClassCoachDB.log[1]))
+  check("and what a click casts did not change with the coach's advice", ring:GetAttribute("spell") == "Bane of Agony" and ns.Panel.frame.name.text ~= "Bane of Agony",
+    ns.Panel.frame.name.text)
+  check("the lit button follows the coach during the fight", glow.slot == (ns.C.slots[ns.Panel.frame.name.text]), tostring(glow.slot))
+
+  -- The cue: quiet while the fight is steady, a pulse and a sound when a new key is needed
+  f = tick(ns)
+  cast(172); M.advance(1.5); f = tick(ns); cast(348); M.advance(1.5); f = tick(ns)
+  check("the steady part of the fight: the wand, no pulse", f.name.text == "Shoot" and (ns.Panel.cues or 0) == 0 and #M.sounds == 0, f.name.text .. " " .. tostring(ns.Panel.cues))
+  check("the wand's own button is lit to start it", glow.slot == 62 and glow.button == MultiBarBottomLeftButton2, tostring(glow.slot))
+  M.P.repeating = 5019; M.advance(0.5); f = tick(ns)
+  check("a wand that is firing is not lit: there is nothing to press", f.name.text == "Shoot" and glow.slot == nil, tostring(glow.slot))
+  M.P.repeating = nil
+  for _ = 1, 30 do M.advance(0.5); f = tick(ns); if f.name.text ~= "Shoot" then break end end
+  check("a spell ran out: the ring pulses once and a soft click plays", f.name.text ~= "Shoot" and ns.Panel.cues == 1 and #M.sounds == 1 and M.sounds[1] == 856
+    and f.scripts.OnUpdate ~= nil, f.name.text .. " cues " .. tostring(ns.Panel.cues) .. " sounds " .. #M.sounds)
+  M.advance(0.3); f.scripts.OnUpdate(f, 0.3)
+  check("the pulse grows out of the ring", rawget(f.pulseFrame, "width") > 84 * 0.95 and (rawget(f.pulse, "alpha") or 0) > 0)
+  tick(ns); tick(ns)
+  check("the same step does not pulse twice", ns.Panel.cues == 1)
+  M.advance(2); f.scripts.OnUpdate(f, 0.1)
+  check("the pulse ends and stops running", f.scripts.OnUpdate == nil and rawget(f.pulse, "alpha") == 0)
+  ClassCoachDB.cueSound = "off"; ClassCoachDB.cue = false
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.6); target(nil); M.advance(1); tick(ns)
+
+  -- A step with no key
+  M.P.actions[8] = nil; M.fire("ACTIONBAR_SLOT_CHANGED", 8); M.advance(3)
+  target({ name = "Wolf", level = 11, hostile = true, guid = "Creature-71" }); M.advance(1); f = tick(ns)
+  cast(980); M.advance(0.4); M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true; M.advance(1.2); f = tick(ns)
+  check("a step that is on no bar: the coach says where to get it", f.name.text == "Corruption" and f.status.text:find("Corruption is not on your action bars") ~= nil
+    and not f.keyBadge.shown and glow.slot == nil, f.name.text .. " / " .. f.status.text)
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.6); target(nil); M.advance(1); tick(ns)
+
+  -- The demo
+  SlashCmdList.CLASSCOACH("demo")
+  local seen, cuesBefore = {}, ns.Panel.cues
+  ClassCoachDB.cue = true
+  for _ = 1, 80 do
+    M.advance(0.5); f = tick(ns)
+    seen[f.msg.text] = true
+    check("demo: nothing real is lit or clickable", glow.slot == nil and #click.describe() == 0)
+    if f.msg.text:find("Demo 7 of 7") then break end
+  end
+  local states = 0
+  for text in pairs(seen) do if text:find("^Demo %d of 7") then states = states + 1 end end
+  check("/coach demo plays seven states with your own spells", states == 7 and ns.C.demo ~= nil, states)
+  check("the demo shows the pulse too", ns.Panel.cues > cuesBefore)
+  target({ name = "Wolf", level = 11, hostile = true, guid = "Creature-72" }); M.advance(1)
+  M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true; M.advance(0.5); f = tick(ns)
+  check("a real fight ends the demo at once", ns.C.demo == nil and f.name.text ~= "")
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.6)
+  SlashCmdList.CLASSCOACH("demo"); SlashCmdList.CLASSCOACH("demo")
+  check("/coach demo again stops it", ns.C.demo == nil)
+  SlashCmdList.CLASSCOACH("check")
   check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
   check("no tick error", ns.C.lastError == nil, ns.C.lastError)
 end

@@ -1,6 +1,6 @@
 # ClassCoach
 
-A beginner's coaching addon for **World of Warcraft: Forever** (patch 1.60.x, interface 16001). It shows what to press next, a pre-pull checklist, per-enemy damage-over-time timers, a fight report, and a second "journey" panel for everything outside combat. Owner: Cedric, a beginner player and a software developer. He plays a Dwarf Shaman, a Discipline Priest and an Affliction Warlock.
+A beginner's coaching addon for **World of Warcraft: Forever** (patch 1.60.x, interface 16001). It shows what to press next in a ring under the character, a pre-pull checklist, per-enemy damage-over-time timers, a fight report, and a second "journey" list for everything outside combat. Owner: Cedric, a beginner player and a software developer. He plays a Dwarf Shaman, a Discipline Priest and an Affliction Warlock.
 
 ## Rules that do not bend
 
@@ -21,12 +21,15 @@ ClassCoach/            the addon (this folder is what gets installed)
   Core/Tracker.lua     casts, resists and timers counted from your own casts
   Core/Profiles.lua    profile registration and choice
   Data/Journey.lua     milestones, zones, dungeons, vendor food and drink
-  Data/Professions.lua what to craft next per profession (Tailoring so far)
+  Data/Professions.lua what to do next in each of the 12 professions, and which two suit a class
   Data/TalentLinks.lua generated: talent calculator link symbols to talent names (from Zbuilds, MIT)
   Profiles/*.lua       one file per class (Shaman, Priest, Warlock, Generic)
-  UI/*.lua             coach panel, journey panel, smart key, talent window marks, settings
+  UI/*.lua             the coach (Panel), journey list, smart key, click to cast, bar highlight, talent window marks, settings
+  Media/*.tga          ClassCoach's own shapes, made by tools/gen_textures.py
+  Fonts/               Inter and Marcellus (SIL Open Font License), with their licences
   ClassCoach.lua       wiring: events, refresh loop, /coach commands
 docs/EXTENDING.md      how to add a class or spec
+tools/gen_textures.py  draws the textures (python3, Pillow)
 tests/                 offline tests against a fake Forever client
 ```
 
@@ -38,11 +41,24 @@ python3 tests/run.py            # everything
 python3 tests/run.py forever    # one scenario
 ```
 
-Scenarios: `shaman`, `priest`, `warlock`, `template`, `warrior`, `robust` (event storms, combat lockdown, chaos fuzzing), `forever` (no call to a function Forever lacks, off on other versions), `talents` (build following, talent window marks, link import), `sweep` (every level 1 to 60 per class).
+Scenarios: `shaman`, `priest`, `warlock`, `template`, `warrior`, `robust` (event storms, combat lockdown, chaos fuzzing), `forever` (no call to a function Forever lacks, off on other versions), `talents` (build following, talent window marks, link import, professions), `focus` (the ring: fonts, cue, bar highlight, click to cast, demo), `sweep` (every level 1 to 60 per class, including the smart key's steps).
 
 `tests/mock.lua` offers only functions the Forever client has. Keep it that way: a test that needs a function from another version is testing the wrong thing. Run each scenario with a timeout; a hang is a finding, not a slow machine.
 
 The tests run offline. Nothing is proven in the real game until Cedric has tried it, so say "passes the offline tests, not yet tried in game" until he confirms.
+
+## Drawing in the game
+
+The coach is drawn only with what Forever has: flat colour textures, texture files (32-bit TGA, sides a power of two, white on transparent and tinted in game), a mask for round icons, status bars, and fonts shipped in `Fonts/`. There are no vector shapes and no letter-spacing. A design is drawn on a 1365 x 768 grid so sizes copy straight into the code.
+
+- **Mana is a status bar.** In combat the value is hidden; `StatusBar:SetValue` is the call that accepts it. Do not build a mana ring.
+- **Secure frames** (the smart key, the click-to-cast buttons) are created, shown, hidden, moved and given attributes out of combat only, and are never anchored to an insecure frame that moves. `tests/mock.lua` raises an error when a test breaks that rule.
+- **Frames over the game's own buttons** (talent marks, bar highlight) are children of `UIParent`, anchored to the button, with the mouse off.
+- A font that fails to load falls back to the game's font (`Style.font`); `/coach check` says which.
+
+## Sigil
+
+`github.com/thaoms/sigil` (by Narsil, all rights reserved) is a Forever addon proven in live fights and a good reference for what works in the client. Take ideas and techniques from it; never copy its code or artwork into this MIT repository.
 
 ## Talent window
 

@@ -1,54 +1,34 @@
--- The one compact panel. Its heart is a carousel:
---   left    what you already did to this enemy (damage over time shows its seconds left)
---   middle  what to press now (bigger, with its key)
---   right   what comes next
--- Below it: the reason, what is ticking on the enemy, your mana, the checklist
--- or live advice, and a message area for fight reports and level-up tips.
+-- The coach: one ring in the middle of your view.
+--   middle   what to press now, in a gold ring, with its key
+--   left     what you already cast on this enemy (damage over time shows its
+--            seconds left); before a fight: what to fix first, in amber rings
+--   right    what comes next, each with its key
+--   under    your true mana as a bar, the spell's name, why, and any advice
+-- The steps on either side sit on a rising arc and get smaller the further
+-- they are from now. Nothing here has a background except the plate behind
+-- the text, so it covers as little of the game as it can.
 local _, ns = ...
 
 local Panel = {}
 ns.Panel = Panel
 
-local WIDTH = 320
-local SIDE, MAIN, GAP = 28, 46, 16
-local MAX_SIDE = 4   -- the most steps shown on either side of the current one
-local ROW_TOP = -24
-local DEFAULT_BOTTOM = 260   -- how far above the bottom of the screen the panel starts
-local MISSING_SLOTS, MISSING_SIZE = 6, 26
+local RING, ICON = 84, 72            -- the current step: ring across, icon inside it
+local MAX_SIDE = 4                   -- the most steps shown on either side of the current one
+local MISSING_SLOTS = 6
+local SIZES, FADE = { 34, 30, 26, 22 }, { 1, 0.92, 0.80, 0.68 }
+local TEXT_WIDTH = 380
+local DEFAULT_ABOVE_BOTTOM = 240     -- how far the ring's middle starts above the bottom of the screen
 local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
-local COLORS = {
-  high = { 0.32, 0.62, 1.00 }, medium = { 1.00, 0.78, 0.25 }, low = { 1.00, 0.35, 0.30 },
-  warn = { 1.00, 0.70, 0.28 }, ok = { 0.55, 0.85, 0.55 }, dim = { 0.62, 0.62, 0.66 }, text = { 0.95, 0.93, 0.88 },
-  gold = { 1.00, 0.82, 0.20 },
-}
+local MANA_BY_LEVEL = { high = "mana", medium = "warn", low = "danger" }
 
-local function font(parent, template, r, g, b)
-  local fs = parent:CreateFontString(nil, "OVERLAY", template)
-  if r then fs:SetTextColor(r, g, b) end
-  fs:SetJustifyH("LEFT")
-  return fs
+-- Where the k-th step from the middle sits: further out and a little higher each time.
+local function spot(k)
+  return 74 + (k - 1) * 48, (k - 1) * (k - 1) * 5, SIZES[k], FADE[k]
 end
+Panel.spot = spot
 
-local function setColor(fs, c) fs:SetTextColor(c[1], c[2], c[3]) end
-
--- One carousel slot: icon, key (bottom right) and a timer (centre).
-local function slot(parent, size, x, y)
-  local s = CreateFrame("Frame", nil, parent)
-  s:SetSize(size, size)
-  s:SetPoint("TOPLEFT", x, y)
-  local tex = s:CreateTexture(nil, "ARTWORK")
-  tex:SetAllPoints()
-  tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-  s.icon = tex
-  local key = font(s, size >= MAIN and "NumberFontNormal" or "NumberFontNormalSmall", 1, 1, 1)
-  key:SetPoint("BOTTOMRIGHT", 1, 1)
-  key:SetJustifyH("RIGHT")
-  s.key = key
-  local timer = font(s, "GameFontHighlight", 1, 1, 1)
-  timer:SetPoint("CENTER")
-  timer:SetJustifyH("CENTER")
-  s.timer = timer
-  return s
+local function seconds(left)
+  return ("%ds"):format(math.floor(left + 0.5))
 end
 
 -- How many steps to show before and after the current one: 0 to 4 each, 2 unless you changed it.
@@ -62,211 +42,206 @@ function Panel.steps(db)
   return count(db.stepsBefore), count(db.stepsAfter)
 end
 
--- Places the carousel for `before` icons on the left and `after` on the right.
--- With more than four side icons they sit closer and get smaller, so the row
--- always fits the panel.
-local function layout(f, before, after)
-  if f.before == before and f.after == after then return end
-  f.before, f.after = before, after
-  local n = before + after
-  local gap = n > 4 and 8 or GAP
-  local side = SIDE
-  local room = WIDTH - 20 - MAIN - gap * n
-  if n > 0 and side * n > room then side = math.max(16, math.floor(room / n)) end
-  local x = (WIDTH - (side * n + MAIN + gap * n)) / 2
-  local sideY, arrowY = ROW_TOP - (MAIN - side) / 2, ROW_TOP - MAIN / 2 + 6
-  for i = 1, MAX_SIDE do
-    local s = f.done[i]
-    if i <= before then
-      s:SetSize(side, side); s:ClearAllPoints(); s:SetPoint("TOPLEFT", x, sideY)
-      s.arrow:ClearAllPoints(); s.arrow:SetPoint("TOPLEFT", x + side + gap / 2 - 4, arrowY)
-      x = x + side + gap
-    else
-      s:Hide(); s.arrow:Hide()
-    end
+local function tooltip(self)
+  if type(self.title) ~= "string" or not GameTooltip then return end
+  GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+  GameTooltip:SetText(self.title, 1, 0.82, 0.2)
+  if type(self.spell) == "string" then
+    GameTooltip:AddLine("Cast " .. self.spell .. (type(self.bind) == "string" and (" (" .. self.bind .. ")") or ""), 1, 1, 1)
+  elseif type(self.bind) == "string" then
+    GameTooltip:AddLine("Key " .. self.bind, 1, 1, 1)
   end
-  f.glow:ClearAllPoints(); f.glow:SetPoint("TOPLEFT", x - 2, ROW_TOP + 2)
-  f.now:ClearAllPoints(); f.now:SetPoint("TOPLEFT", x, ROW_TOP)
-  x = x + MAIN
-  for i = 1, MAX_SIDE do
-    local s = f.upcoming[i]
-    if i <= after then
-      s.arrow:ClearAllPoints(); s.arrow:SetPoint("TOPLEFT", x + gap / 2 - 4, arrowY)
-      x = x + gap
-      s:SetSize(side, side); s:ClearAllPoints(); s:SetPoint("TOPLEFT", x, sideY)
-      x = x + side
-    else
-      s:Hide(); s.arrow:Hide()
-    end
+  if type(self.hint) == "string" then GameTooltip:AddLine(self.hint, 0.9, 0.9, 0.9, true) end
+  GameTooltip:Show()
+end
+
+-- One step beside the ring: a round icon, a key badge and a short text under it.
+-- Hover it for its name; dragging it drags the coach.
+local function slot(f, ringed)
+  local S = ns.Style
+  local s = CreateFrame("Frame", nil, f)
+  s:SetSize(28, 28)
+  local icon = s:CreateTexture(nil, "ARTWORK")
+  icon:SetAllPoints()
+  S.round(s, icon)
+  s.icon = icon
+  if ringed then
+    -- "before you pull": an amber ring around it
+    local edge = CreateFrame("Frame", nil, s)
+    edge:SetPoint("TOPLEFT", -3, 3)
+    edge:SetPoint("BOTTOMRIGHT", 3, -3)
+    s.edge = S.shape(edge, "ring_bold", "OVERLAY")
+    s.badgeText = S.text(edge, "bold", 11, S.COLORS.ink, "OUTLINE")
+    s.badgeText:SetPoint("CENTER")
+    s.badgeText:SetJustifyH("CENTER")
   end
-  f.side = side
+  s.key = S.badge(s, 15)
+  s.key:SetPoint("BOTTOMRIGHT", 7, -6)
+  s.timer = S.text(s, "body", 11, S.COLORS.ink, "OUTLINE")
+  s.timer:SetJustifyH("CENTER")
+  s.timer:SetPoint("TOP", s, "BOTTOM", 0, -3)
+  s:EnableMouse(true)
+  s:SetScript("OnEnter", S.guard(tooltip))
+  s:SetScript("OnLeave", S.guard(function() if GameTooltip then GameTooltip:Hide() end end))
+  s:RegisterForDrag("LeftButton")
+  s:SetScript("OnDragStart", S.guard(function() local d = f:GetScript("OnDragStart"); if d then d(f) end end))
+  s:SetScript("OnDragStop", S.guard(function() local d = f:GetScript("OnDragStop"); if d then d(f) end end))
+  s:Hide()
+  return s
+end
+
+-- Puts a side slot on the k-th place of the arc; side is -1 for the left, 1 for the right.
+local function seat(f, s, k, side, size, lift)
+  local dx, rise, natural, fade = spot(k)
+  size = size or natural
+  s:SetSize(size, size)
+  s:ClearAllPoints()
+  s:SetPoint("CENTER", f, "CENTER", side * dx, rise + (lift or 0))
+  s.fade = fade
+end
+
+function Panel.place()
+  local f = Panel.frame
+  if not f then return end
+  f:ClearAllPoints()
+  local pos = Panel.charDB.focusPos
+  if type(pos) == "table" and type(pos[3]) == "number" and type(pos[4]) == "number" then
+    f:SetPoint(pos[1] or "CENTER", UIParent, pos[2] or "CENTER", pos[3], pos[4])
+  else
+    -- under your character, well above the action bars
+    f:SetPoint("CENTER", UIParent, "BOTTOM", 0, DEFAULT_ABOVE_BOTTOM)
+  end
 end
 
 function Panel.create(charDB, db)
   if Panel.frame then return Panel.frame end
+  local S = ns.Style
+  local C = S.COLORS
   local f = CreateFrame("Frame", "ClassCoachPanel", UIParent)
   Panel.frame, Panel.charDB, Panel.db = f, charDB, db
-  f:SetSize(WIDTH, 120)
-  -- Below the action bars: if the two ever overlap, your buttons stay on top.
-  f:SetFrameStrata("LOW")
+  -- The frame itself is only the ring. Everything else is drawn around it and
+  -- lets clicks through, so the coach never takes a click meant for the game.
+  f:SetSize(RING, RING)
+  f:SetFrameStrata("LOW")   -- below the action bars: if the two ever overlap, your buttons stay on top
   f:SetClampedToScreen(true)
-  ns.Style.skin(f)
-  ns.Style.apply(f, db, db.scale)
-
-  -- Position
-  local pos = charDB.pos
-  f:ClearAllPoints()
-  -- Held by its bottom edge, well above the action bars: it grows upward.
-  if pos then f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4]) else f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, DEFAULT_BOTTOM) end
-  Panel.repin = ns.Style.unpinned(pos)
+  f:SetScale(db.scale or 1)
+  charDB.pos = nil          -- where the old, wide panel stood: the ring starts from its own default place
+  Panel.place()
   f:SetMovable(true)
-  f:EnableMouse(true)
+  f:EnableMouse(not db.locked)
   f:RegisterForDrag("LeftButton")
-  f:SetScript("OnDragStart", ns.Style.guard(function(self) if not db.locked then self:StartMoving() end end))
-  f:SetScript("OnDragStop", ns.Style.guard(function(self)
+  f:SetScript("OnDragStart", S.guard(function(self) if not db.locked then self:StartMoving() end end))
+  f:SetScript("OnDragStop", S.guard(function(self)
     self:StopMovingOrSizing()
-    local pinned = ns.Style.pin(self)
-    if pinned then
-      charDB.pos = pinned
-    else
-      local point, _, relPoint, x, y = self:GetPoint()
-      charDB.pos = { point, relPoint, x, y }
-    end
+    local point, _, relPoint, x, y = self:GetPoint()
+    if type(x) == "number" and type(y) == "number" then charDB.focusPos = { point, relPoint, x, y } end
   end))
 
-  local title = font(f, "GameFontDisableSmall")
-  title:SetPoint("TOPLEFT", 10, -8)
-  title:SetWidth(WIDTH - 20)
-  f.title = title
+  -- The current step
+  f.disc = S.shape(f, "disc", "BACKGROUND")
+  S.tint(f.disc, C.dark, 0.92)
+  f.icon = f:CreateTexture(nil, "ARTWORK")
+  f.icon:SetPoint("CENTER")
+  f.icon:SetSize(ICON, ICON)
+  S.round(f, f.icon)
+  local top = CreateFrame("Frame", nil, f)
+  top:SetAllPoints(f)
+  f.ring = S.shape(top, "ring", "ARTWORK")
+  S.tint(f.ring, C.accent)
+  f.keyBadge = S.badge(top, 22)
+  f.keyBadge:SetPoint("TOPLEFT", f, "CENTER", 22, -22)
+  f.key = f.keyBadge.text
 
-  -- Carousel: what you did, NOW, what comes next. Up to four on each side; how
-  -- many show is yours to set (Panel.steps), and layout() places them.
-  f.done, f.upcoming, f.arrows = {}, {}, {}
-  local function arrow()
-    local a = font(f, "GameFontDisable")
-    a:SetText(">")
-    f.arrows[#f.arrows + 1] = a
-    return a
-  end
-  for i = 1, MAX_SIDE do
-    f.done[i] = slot(f, SIDE, 0, ROW_TOP)
-    f.done[i].arrow = arrow()
-    f.upcoming[i] = slot(f, SIDE, 0, ROW_TOP)
-    f.upcoming[i].arrow = arrow()
-  end
-  local glow = f:CreateTexture(nil, "BORDER")
-  glow:SetSize(MAIN + 4, MAIN + 4)
-  glow:SetColorTexture(COLORS.gold[1], COLORS.gold[2], COLORS.gold[3], 0.9)
-  f.glow = glow
-  f.now = slot(f, MAIN, 0, ROW_TOP)
-  f.icon, f.key = f.now.icon, f.now.key
-  layout(f, Panel.steps(db))
-  local caption = font(f, "GameFontDisableSmall")
-  caption:SetPoint("TOPRIGHT", -10, -8)
-  caption:SetJustifyH("RIGHT")
-  f.chainLabel = caption
+  -- The cue: a ring of light that grows out of the gold ring when a new key is needed
+  local pulse = CreateFrame("Frame", nil, f)
+  pulse:SetPoint("CENTER")
+  pulse:SetSize(RING, RING)
+  f.pulseFrame = pulse
+  f.pulse = S.shape(pulse, "pulse", "OVERLAY")
+  S.tint(f.pulse, C.accent)
+  f.pulse:SetAlpha(0)
+  pcall(f.pulse.SetBlendMode, f.pulse, "ADD")
 
-  -- Under the carousel: what to press, why, and the names of what follows
-  local name = font(f, "GameFontNormalLarge", unpack(COLORS.text))
-  name:SetWidth(WIDTH - 20)
-  name:SetJustifyH("CENTER")
-  f.name = name
-  local why = font(f, "GameFontHighlightSmall", unpack(COLORS.dim))
-  why:SetWidth(WIDTH - 20)
-  why:SetJustifyH("CENTER")
-  why:SetWordWrap(true)
-  f.why = why
-  local chainText = font(f, "GameFontDisableSmall")
-  chainText:SetWidth(WIDTH - 20)
-  chainText:SetJustifyH("CENTER")
-  chainText:SetWordWrap(true)
-  f.chainText = chainText
-
-  -- What is ticking on the enemy
-  local dots = font(f, "GameFontHighlightSmall", unpack(COLORS.text))
-  dots:SetWidth(WIDTH - 20)
-  dots:SetWordWrap(true)
-  f.dots = dots
-
-  -- Mana bar
+  -- Your true mana: the game draws the value into this bar; the addon never reads it in a fight
   local bar = CreateFrame("StatusBar", nil, f)
-  bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+  bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
   bar:SetMinMaxValues(0, 100)
-  bar:SetSize(WIDTH - 20, 12)
-  pcall(bar.SetStatusBarColor, bar, unpack(COLORS.high))
+  bar:SetSize(100, 5)
+  bar:SetPoint("TOPLEFT", f, "CENTER", -50, -52)
+  pcall(bar.SetStatusBarColor, bar, C.mana[1], C.mana[2], C.mana[3])
   local barBg = bar:CreateTexture(nil, "BACKGROUND")
-  barBg:SetAllPoints()
-  barBg:SetColorTexture(0, 0, 0, 0.5)
-  local barText = font(bar, "GameFontHighlightSmall")
-  barText:SetPoint("CENTER")
-  barText:SetJustifyH("CENTER")
+  barBg:SetPoint("TOPLEFT", -1, 1)
+  barBg:SetPoint("BOTTOMRIGHT", 1, -1)
+  barBg:SetColorTexture(C.dark[1], C.dark[2], C.dark[3], 0.9)
+  local barText = S.text(bar, "body", 11, C.ink, "OUTLINE")
+  barText:SetPoint("LEFT", bar, "RIGHT", 6, 0)
   f.bar, f.barText = bar, barText
 
-  -- Before a pull: what is missing, shown as the icon of the spell that fixes it
-  local missingLabel = font(f, "GameFontNormalSmall", unpack(COLORS.warn))
-  missingLabel:SetText("Before\npull")
-  f.missingLabel = missingLabel
-  f.missing = {}
+  -- Steps on the arc. Slot 1 is nearest the ring on both sides.
+  f.done, f.upcoming, f.missing = {}, {}, {}
+  for i = 1, MAX_SIDE do
+    f.done[i] = slot(f)
+    seat(f, f.done[i], i, -1)
+    f.upcoming[i] = slot(f)
+    seat(f, f.upcoming[i], i, 1)
+    f.upcoming[i].timer:SetTextColor(C.accent[1], C.accent[2], C.accent[3])
+    f.upcoming[i].timer:ClearAllPoints()
+    f.upcoming[i].timer:SetPoint("TOP", f.upcoming[i], "BOTTOM", 0, -6)
+  end
+  -- Before a pull: what is missing, as the icon of the spell that fixes it.
+  -- Four on the arc; a fifth and sixth sit above the first two.
   for i = 1, MISSING_SLOTS do
-    local s = slot(f, MISSING_SIZE, 0, 0)
-    local edge = s:CreateTexture(nil, "BORDER")
-    edge:SetPoint("TOPLEFT", -2, 2)
-    edge:SetPoint("BOTTOMRIGHT", 2, -2)
-    edge:SetColorTexture(COLORS.warn[1], COLORS.warn[2], COLORS.warn[3], 0.9)
-    s.edge = edge
-    s:EnableMouse(true)
-    s:SetScript("OnEnter", ns.Style.guard(function(self)
-      if not self.title or not GameTooltip then return end
-      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-      GameTooltip:SetText(self.title, 1, 0.82, 0.2)
-      if self.spell then GameTooltip:AddLine("Cast " .. self.spell .. (self.bind and (" (" .. self.bind .. ")") or ""), 1, 1, 1) end
-      if self.hint then GameTooltip:AddLine(self.hint, 0.9, 0.9, 0.9, true) end
-      GameTooltip:Show()
-    end))
-    s:SetScript("OnLeave", ns.Style.guard(function() if GameTooltip then GameTooltip:Hide() end end))
-    s:RegisterForDrag("LeftButton")
-    s:SetScript("OnDragStart", ns.Style.guard(function() local d = f:GetScript("OnDragStart"); if d then d(f) end end))
-    s:SetScript("OnDragStop", ns.Style.guard(function() local d = f:GetScript("OnDragStop"); if d then d(f) end end))
+    local s = slot(f, true)
+    if i <= MAX_SIDE then seat(f, s, i, -1, 28) else seat(f, s, i - MAX_SIDE, -1, 28, 46) end
     f.missing[i] = s
   end
+  f.leftLabel = S.text(f, "body", 11, C.muted, "OUTLINE")
+  f.leftLabel:SetJustifyH("RIGHT")
+  f.chainLabel = S.text(f, "body", 11, C.muted, "OUTLINE")
 
-  -- Status line (the first fix explained, or live advice)
-  local status = font(f, "GameFontNormalSmall")
-  status:SetWidth(WIDTH - 20)
-  status:SetWordWrap(true)
-  f.status = status
-
-  -- Messages (fight report, level-up)
-  local msg = font(f, "GameFontHighlightSmall", unpack(COLORS.text))
-  msg:SetWidth(WIDTH - 20)
-  msg:SetWordWrap(true)
-  f.msg = msg
+  -- Under the ring: a dark plate, then the name, why, and whatever else needs saying
+  local words = CreateFrame("Frame", nil, f)
+  words:SetSize(TEXT_WIDTH, 10)
+  words:SetPoint("TOP", f, "CENTER", 0, -62)
+  f.words = words
+  S.skin(words)
+  local function line(face, size, color)
+    local fs = S.text(words, face, size, color)
+    fs:SetWidth(TEXT_WIDTH - 20)
+    fs:SetJustifyH("CENTER")
+    fs:SetWordWrap(true)
+    return fs
+  end
+  f.name = line("title", 19, C.ink)
+  f.why = line("body", 12, C.ink)
+  f.status = line("body", 12, C.warn)
+  f.dots = line("body", 11, C.muted)
+  f.msg = line("body", 12, C.ink)
+  f.hint = S.text(f, "body", 11, C.muted, "OUTLINE")
+  f.hint:SetPoint("BOTTOM", f, "TOP", 0, 8)
+  f.hint:SetText("Drag the ring to move the coach")
+  f.hint:Hide()
 
   if db.showCoach == false then f:Hide() end
   return f
 end
 
-local function seconds(left)
-  return ("%d"):format(math.floor(left + 0.5))
-end
-
-local function fill(s, step, faded)
-  if not step then
+local function fill(s, item, alpha)
+  if not item then
+    s.title, s.hint, s.spell, s.bind = nil, nil, nil, nil
     s:Hide()
-    if s.arrow then s.arrow:Hide() end
     return false
   end
-  s.icon:SetTexture(step.icon or QUESTION)
-  s.icon:SetDesaturated(faded and true or false)
-  s:SetAlpha(faded and 0.6 or 1)
-  s.key:SetText(step.keybind or "")
+  s.icon:SetTexture(item.icon or QUESTION)
+  s.icon:SetDesaturated(false)
+  s:SetAlpha(alpha or 1)
+  ns.Style.setBadge(s.key, item.keybind or nil)
   s.timer:SetText("")
   s:Show()
-  if s.arrow then s.arrow:Show() end
   return true
 end
 
--- Places a text line at height y and returns the height below it.
+-- Places a text line at height y inside the plate and returns the height below it.
 local function place(fs, y, value, gap)
   fs:ClearAllPoints()
   if not value or value == "" then
@@ -275,170 +250,244 @@ local function place(fs, y, value, gap)
     return y
   end
   fs:SetText(value)
-  fs:SetPoint("TOPLEFT", 10, y)
+  fs:SetPoint("TOP", fs:GetParent(), "TOP", 0, y)
   fs:Show()
-  return y - (fs:GetStringHeight() or 12) - (gap or 3)
+  return y - (fs:GetStringHeight() or 12) - (gap or 4)
 end
 
--- view = { title, chain = steps (1 = now), planning, done = { {label, icon, left} },
---          dots = { {label, left} }, otherDotted, usesMana, manaPct, manaExact, drawMana,
---          missing = { {text, hint, icon, keybind, spell, badge} }, status, statusKind ("warn"|"ok") }
+-- A label beside the outermost step on one side, level with it: never over the ring.
+local function caption(f, fs, text, side, n)
+  fs:ClearAllPoints()
+  if not text or n < 1 then
+    fs:SetText("")
+    fs:Hide()
+    return
+  end
+  local dx, rise, size = spot(math.min(n, MAX_SIDE))
+  fs:SetText(text)
+  if side < 0 then
+    fs:SetPoint("RIGHT", f, "CENTER", -(dx + size / 2 + 12), rise)
+  else
+    fs:SetPoint("LEFT", f, "CENTER", dx + size / 2 + 16, rise)
+  end
+  fs:Show()
+end
+
+-- The cue runs for a moment, then stops costing anything.
+local function animate(f)
+  local left = (Panel.pulseUntil or 0) - GetTime()
+  if left <= 0 then
+    f.pulse:SetAlpha(0)
+    f.keyBadge:SetAlpha(1)
+    f:SetScript("OnUpdate", nil)
+    return
+  end
+  local phase = (GetTime() % 0.8) / 0.8
+  local size = RING * (0.95 + 0.45 * phase)
+  f.pulseFrame:SetSize(size, size)
+  f.pulse:SetAlpha(0.85 * (1 - phase * phase))
+  f.keyBadge:SetAlpha(phase < 0.5 and 1 or 0.5)   -- the key blinks too
+end
+
+-- A new key is needed: pulse the ring and, if you want it, play a short sound.
+function Panel.cue()
+  local f = Panel.frame
+  if not f then return end
+  Panel.pulseUntil = GetTime() + 1.6
+  f:SetScript("OnUpdate", ns.Style.guard(animate))
+  Panel.cues = (Panel.cues or 0) + 1
+  local sound = Panel.db.cueSound
+  if sound ~= "off" then ns.API.sound(sound or "click") end
+end
+
+-- view = { chain = steps (1 = now), planning, inCombat, done = { {label, icon, left, missed} },
+--          dots = { {label, left} }, otherDotted, usesMana, manaPct, manaExact, manaLevel, drawMana,
+--          missing = { {text, hint, icon, keybind, spell, badge, kind, use} }, restMacro, status, statusKind ("warn"|"ok") }
 function Panel.render(view)
   local f = Panel.frame
   if not f then return end
-  local db = Panel.db
+  local S, db = ns.Style, Panel.db
+  local C = S.COLORS
   local wanted = db.showCoach ~= false
   if Panel.visible ~= wanted then
     Panel.visible = wanted
     if wanted then f:Show() else f:Hide() end
   end
   if not wanted then return end
-  ns.Style.apply(f, db, db.scale)
-  -- A position saved by an older version let the panel grow over the action bars: pin it once.
-  if Panel.repin then
-    local pinned = ns.Style.pin(f)
-    if pinned then Panel.charDB.pos = pinned; Panel.repin = false end
+  if Panel.scale ~= (db.scale or 1) then
+    Panel.scale = db.scale or 1
+    f:SetScale(Panel.scale)
+  end
+  if Panel.locked ~= (db.locked == true) then
+    Panel.locked = db.locked == true
+    f:EnableMouse(not Panel.locked)
+    if Panel.locked then f.hint:Hide() end
   end
   local compact = db.compact == true
-  f.title:SetText(view.title or "")
   local steps = view.chain or {}
   local now = steps[1]
 
   -- Middle: what to press now (or, with nothing targeted, how your next pull starts)
   if now then
     f.icon:SetTexture(now.icon or QUESTION)
-    -- Always in colour: grey read as "you cannot cast this". With nothing targeted
-    -- the "Pull" label and a softer glow say it is a plan, not a prompt.
-    f.icon:SetDesaturated(false)
-    f.key:SetText(now.keybind or "")
-    f.now.timer:SetText("")
-    f.glow:SetAlpha(view.planning and 0.45 or 0.9)
+    f.icon:SetDesaturated(false)   -- always in colour: grey reads as "you cannot cast this"
+    S.setBadge(f.keyBadge, now.keybind or nil)
+    f.ring:SetAlpha(view.planning and 0.45 or 1)
   else
     f.icon:SetTexture(QUESTION)
     f.icon:SetDesaturated(true)
-    f.key:SetText("")
-    f.glow:SetAlpha(0.25)
+    S.setBadge(f.keyBadge, nil)
+    f.ring:SetAlpha(0.25)
   end
-  f.chainLabel:SetText(view.planning and "Pull" or "Then")
+  f.title, f.spell, f.bind = now and now.label or nil, nil, nil
 
-  -- Left: what you already did here. Damage over time shows its seconds left.
+  -- The cue. Most of a fight is one steady key (wand, attack). When something
+  -- else comes up, or a spell was resisted, the ring pulses once.
+  local cueKey = now and view.inCombat and not now.filler and (now.key .. (now.retry and "!" or "")) or nil
+  if cueKey and cueKey ~= Panel.lastCue and (Panel.wasSteady or now.retry) and db.cue ~= false then Panel.cue() end
+  Panel.lastCue = cueKey
+  Panel.wasSteady = view.inCombat and now ~= nil and now.filler == true
+
+  -- Left: before a fight, what to fix first; in a fight, what you already cast here.
   local before, after = Panel.steps(db)
-  layout(f, before, after)
+  local missing = (not view.inCombat) and view.missing or {}
+  local shownLeft = 0
+  for i = 1, MISSING_SLOTS do
+    local s, item = f.missing[i], missing[i]
+    if fill(s, item) then
+      s.title, s.hint, s.spell, s.bind = item.text, item.hint, item.spell, item.keybind
+      s.badgeText:SetText(item.badge or "")
+      -- red: don't fight this; amber: fix before pulling; grey: good to know
+      S.tint(s.edge, item.kind == "danger" and C.danger or item.kind == "info" and C.muted or C.warn)
+      shownLeft = shownLeft + 1
+    end
+  end
   local done = view.done or {}
-  for i = 1, before do
-    local d = done[#done - before + i]
+  for i = 1, MAX_SIDE do
     local s = f.done[i]
-    if fill(s, d, true) and d.missed then
-      -- resisted: it did not land
-      s.timer:SetText(d.missed == "immune" and "imm" or "miss")
-      setColor(s.timer, COLORS.low)
-      s:SetAlpha(0.9)
-    elseif d and d.left then
-      if d.left > 0 then
-        s.timer:SetText(seconds(d.left))
-        setColor(s.timer, d.left <= 3 and COLORS.low or COLORS.text)
-        s:SetAlpha(0.9)
+    local d = (#missing == 0 and i <= before) and done[#done - i + 1] or nil   -- the latest nearest the ring
+    if fill(s, d, (s.fade or 1) * 0.85) then
+      shownLeft = shownLeft + 1
+      s.title = d.label
+      if d.missed then
+        -- resisted: it did not land
+        s.timer:SetText(d.missed == "immune" and "immune" or "miss")
+        s.timer:SetTextColor(C.danger[1], C.danger[2], C.danger[3])
+        s.hint = d.missed == "immune" and "This enemy is immune to it." or "It was resisted: it did not land."
+      elseif d.left then
+        local soon = d.left <= 3
+        s.timer:SetText(seconds(math.max(0, d.left)))
+        local c = soon and C.danger or C.ink
+        s.timer:SetTextColor(c[1], c[2], c[3])
+        s.hint = d.left > 0 and (seconds(d.left) .. " left on this enemy.") or "Ran out on this enemy."
       else
-        s.timer:SetText("0")
-        setColor(s.timer, COLORS.low)
+        s.timer:SetText("done")
+        s.timer:SetTextColor(C.muted[1], C.muted[2], C.muted[3])
+        s.hint = "You cast it on this enemy."
       end
     end
   end
+  caption(f, f.leftLabel, #missing > 0 and "before you pull" or "already cast", -1, math.min(shownLeft, MAX_SIDE))
 
-  -- Right: what comes next. A step that isn't due yet shows when it will be.
-  local names = {}
-  for i = 1, after do
-    local st = steps[i + 1]
+  -- Right: what comes next. A step that isn't due yet says when it will be.
+  local shownRight = 0
+  for i = 1, MAX_SIDE do
     local s = f.upcoming[i]
-    if fill(s, st, false) then
+    local st = i <= after and steps[i + 1] or nil
+    if fill(s, st, s.fade) then
+      shownRight = shownRight + 1
+      s.title, s.bind = st.label, st.keybind
       if st.inSeconds then
-        s.timer:SetText(seconds(st.inSeconds))
-        setColor(s.timer, COLORS.gold)
-        s:SetAlpha(0.7)
-        names[#names + 1] = ("%s in %ss"):format(st.label or "?", seconds(st.inSeconds))
+        s.timer:SetText("in " .. seconds(st.inSeconds))
+        s.hint = "Due again in " .. seconds(st.inSeconds) .. "."
       else
-        names[#names + 1] = st.label or "?"
+        s.hint = st.why
       end
     end
   end
+  caption(f, f.chainLabel, view.planning and "your pull plan" or "next", 1, shownRight)
 
-  local y = ROW_TOP - MAIN - 6
-  y = place(f.name, y, now and now.label or "Ready", 2)
-  y = place(f.why, y, not compact and now and now.why or nil, 3)
-  y = place(f.chainText, y, not compact and table.concat(names, " > ") or nil, 4)
-
-  -- What is ticking on this enemy
-  local dotLine
-  if db.showDots == false then view.dots, view.otherDotted = nil, nil end
-  if view.dots and #view.dots > 0 then
-    local parts = {}
-    for _, d in ipairs(view.dots) do parts[#parts + 1] = ("%s %ss"):format(d.label, seconds(d.left)) end
-    dotLine = "On this enemy: " .. table.concat(parts, " · ")
+  -- What a click would cast, for the buttons that lie over these icons before a fight (UI/Click.lua).
+  local clicks = {}
+  for i = 1, MISSING_SLOTS + 1 + MAX_SIDE do clicks[i] = { x = 0, y = 0, size = 1 } end
+  if not view.inCombat then
+    for i = 1, MISSING_SLOTS do
+      local item, c = missing[i], clicks[i]
+      if item then
+        local dx, rise = spot(i <= MAX_SIDE and i or i - MAX_SIDE)
+        c.x, c.y, c.size = -dx, rise + (i > MAX_SIDE and 46 or 0), 34
+        c.title, c.hint, c.bind = item.text, item.hint, item.keybind
+        if item.spell then
+          c.kind, c.value = "spell", item.spell
+        elseif item.use == "rest" and view.restMacro then
+          c.kind, c.value, c.does = "macro", view.restMacro, "drink and eat"
+        end
+      end
+    end
+    if not view.planning then
+      for i = 1, 1 + MAX_SIDE do
+        local st, c = steps[i], clicks[MISSING_SLOTS + i]
+        if st and not st.melee and st.label and (i == 1 or i - 1 <= after) then
+          c.kind, c.value, c.title, c.hint, c.bind = "spell", st.label, st.label, st.why, st.keybind
+          if i == 1 then
+            c.size = RING
+          else
+            local dx, rise, size = spot(i - 1)
+            c.x, c.y, c.size = dx, rise, size
+          end
+        end
+      end
+    end
   end
-  if view.otherDotted and view.otherDotted > 0 then
-    local other = view.otherDotted == 1 and "1 other enemy still ticking" or (view.otherDotted .. " other enemies still ticking")
-    dotLine = dotLine and (dotLine .. "\n" .. other) or (other:sub(1, 1):upper() .. other:sub(2))
-  end
-  y = place(f.dots, y, dotLine, 5)
+  Panel.clicks = clicks
 
   -- Mana: the game draws the true value. If it ever refuses, show our guess and say so.
-  local barShown = false
   if view.usesMana and db.showMana ~= false then
-    f.bar:ClearAllPoints()
-    f.bar:SetPoint("TOPLEFT", 10, y)
     f.bar:Show()
-    barShown = true
+    local tone = C[MANA_BY_LEVEL[view.manaLevel or "high"] or "mana"]
+    pcall(f.bar.SetStatusBarColor, f.bar, tone[1], tone[2], tone[3])
     local drawn = not Panel.manaRefused and view.drawMana and view.drawMana(f.bar, f.barText)
     if not drawn then
       if view.drawMana then Panel.manaRefused = true end
       if view.manaPct then
         f.bar:SetMinMaxValues(0, 100)
         f.bar:SetValue(view.manaPct)
-        f.barText:SetText((view.manaExact and "Mana %d%%" or "Mana about %d%% (a guess)"):format(math.floor(view.manaPct + 0.5)))
+        f.barText:SetText((view.manaExact and "%d%%" or "about %d%%"):format(math.floor(view.manaPct + 0.5)))
       else
         f.bar:Hide()
-        barShown = false
       end
     end
   else
     f.bar:Hide()
   end
-  if barShown then y = y - 18 end
 
-  -- Missing before the pull: icons, not words. Hover one for the details.
-  local missing = view.missing or {}
-  f.missingLabel:ClearAllPoints()
-  if #missing > 0 then
-    f.missingLabel:SetPoint("TOPLEFT", 10, y - 2)
-    f.missingLabel:Show()
-  else
-    f.missingLabel:Hide()
-  end
-  for i = 1, MISSING_SLOTS do
-    local s, item = f.missing[i], missing[i]
-    s:ClearAllPoints()
-    if item then
-      s.icon:SetTexture(item.icon or QUESTION)
-      s.key:SetText(item.keybind or "")
-      s.timer:SetText(item.badge or "")
-      s.title, s.hint, s.spell, s.bind = item.text, item.hint, item.spell, item.keybind
-      -- red: don't fight this; amber: fix before pulling; grey: good to know
-      local c = item.kind == "danger" and COLORS.low or item.kind == "info" and COLORS.dim or COLORS.warn
-      s.edge:SetColorTexture(c[1], c[2], c[3], 0.9)
-      s:SetPoint("TOPLEFT", 64 + (i - 1) * (MISSING_SIZE + 8), y - 2)
-      s:Show()
-    else
-      s.title, s.hint, s.spell, s.bind = nil, nil, nil, nil
-      s:Hide()
+  -- Words: the name, why, then advice. Timers the icons already show are not repeated.
+  local y = -6
+  y = place(f.name, y, now and now.label or (view.status and "" or "Ready"), 3)
+  y = place(f.why, y, not compact and now and now.why or nil, 4)
+  local explain = view.status
+  if view.statusKind == "ok" or (compact and #missing > 0) then explain = nil end
+  local tone = (view.statusKind == "warn" or #missing > 0) and C.warn or C.ink
+  f.status:SetTextColor(tone[1], tone[2], tone[3])
+  y = place(f.status, y, explain, 4)
+
+  local dotLine
+  if db.showDots ~= false then
+    local onIcon, parts = {}, {}
+    for i = 1, MAX_SIDE do
+      local s = f.done[i]
+      if s:IsShown() and s.title then onIcon[s.title] = true end
+    end
+    for _, d in ipairs(view.dots or {}) do
+      if not onIcon[d.label] then parts[#parts + 1] = ("%s %s"):format(d.label, seconds(d.left)) end
+    end
+    if #parts > 0 then dotLine = "Also on this enemy: " .. table.concat(parts, " · ") end
+    if view.otherDotted and view.otherDotted > 0 then
+      local other = view.otherDotted == 1 and "1 other enemy still ticking" or (view.otherDotted .. " other enemies still ticking")
+      dotLine = dotLine and (dotLine .. "\n" .. other) or other
     end
   end
-  if #missing > 0 then y = y - MISSING_SIZE - 8 end
-
-  local explain = view.status
-  if #missing > 0 and compact then explain = nil end
-  setColor(f.status, view.statusKind == "warn" and COLORS.dim or view.statusKind == "ok" and COLORS.ok or COLORS.text)
-  if view.statusKind == "warn" and #missing == 0 then setColor(f.status, COLORS.warn) end
-  y = place(f.status, y, explain, 4)
+  y = place(f.dots, y, dotLine, 4)
 
   local time = GetTime()
   if Panel.msgUntil and time > Panel.msgUntil then
@@ -446,10 +495,23 @@ function Panel.render(view)
     Panel.msgText = nil
   end
   y = place(f.msg, y, Panel.msgText, 4)
-  f:SetHeight(-y + 6)
+
+  -- The plate is as wide as the widest line and as tall as the lines, and gone when there are none.
+  if y >= -6 then
+    f.words:Hide()
+  else
+    local widest = 0
+    for _, fs in ipairs({ f.name, f.why, f.status, f.dots, f.msg }) do
+      local w = fs:IsShown() and fs.GetStringWidth and fs:GetStringWidth() or 0
+      if type(w) == "number" and w > widest then widest = w end
+    end
+    f.words:SetSize(widest > 0 and math.min(TEXT_WIDTH, widest + 28) or TEXT_WIDTH, -y + 4)
+    S.apply(f.words, db, 1)
+    f.words:Show()
+  end
 end
 
--- Shows a few lines in the message area for a while.
+-- Shows a few lines under the coach for a while (fight report, level-up).
 function Panel.flash(lines, seconds)
   local f = Panel.frame
   if not f then return end
@@ -459,10 +521,7 @@ function Panel.flash(lines, seconds)
 end
 
 function Panel.resetPosition()
-  local f = Panel.frame
-  if not f then return end
-  f:ClearAllPoints()
-  f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, DEFAULT_BOTTOM)
-  Panel.charDB.pos = nil
-  Panel.repin = false
+  if not Panel.frame then return end
+  Panel.charDB.focusPos = nil
+  Panel.place()
 end

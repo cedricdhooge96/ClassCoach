@@ -348,6 +348,23 @@ local function widget()
     UnregisterEvent = function(self, e) self.events[e] = nil end,
     CreateTexture = function() return widget() end,
     CreateFontString = function() return widget() end,
+    CreateMaskTexture = function() return widget() end,
+    AddMaskTexture = function(self, mask) rawset(self, "mask", mask) end,
+    SetShown = function(self, on) self.shown = on and true or false end,
+    SetSize = function(self, w, h) rawset(self, "width", w); rawset(self, "height", h) end,
+    SetWidth = function(self, w) rawset(self, "width", w) end,
+    SetHeight = function(self, h) rawset(self, "height", h) end,
+    GetWidth = function(self) return rawget(self, "width") end,
+    GetCenter = function(self) return rawget(self, "cx") or 683, rawget(self, "cy") or 240 end,
+    IsVisible = function(self) return self.shown end,
+    SetAlpha = function(self, a) rawset(self, "alpha", a) end,
+    SetStatusBarColor = function(self, r, g, b) rawset(self, "barColor", { r, g, b }) end,
+    SetVertexColor = function(self, r, g, b, a) rawset(self, "color", { r, g, b, a }) end,
+    SetFont = function(self, path, size, flags)
+      if M.refuseFonts and path:find("AddOns") then return false end
+      rawset(self, "font", { path, size, flags })
+      return true
+    end,
     SetText = function(self, t) self.text = t end,
     SetFormattedText = function(self, fmt, v)
       if v == SECRET then self.text, self.secretText = fmt, true else self.text, self.secretText = fmt:format(v), false end
@@ -387,10 +404,40 @@ local function widget()
 end
 UIParent = widget()
 UIParent.height = 768
-function CreateFrame()
+-- Secure frames (a template starting with "Secure") follow the game's rule: they
+-- cannot be made, shown, hidden, moved or resized while a fight is on.
+local PROTECTED = { "Show", "Hide", "SetPoint", "ClearAllPoints", "SetSize", "SetScale", "SetShown" }
+function CreateFrame(kind, name, parent, template)
   local f = widget()
+  f.kind, f.name, f.template = kind, name, template
+  if type(template) == "string" and template:find("Secure") then
+    assert(not P.combat, "a secure frame cannot be created in combat")
+    f.secure = true
+    for _, method in ipairs(PROTECTED) do
+      local plain = f[method]
+      rawset(f, method, function(...)
+        assert(not (P.combat and not M.inSecure), method .. " on a secure frame in combat")
+        return plain(...)
+      end)
+    end
+  end
+  if name then _G[name] = f end
   M.frames[#M.frames + 1] = f
   return f
+end
+
+M.sounds = {}
+function PlaySound(id, channel) M.sounds[#M.sounds + 1] = id; return true end
+SOUNDKIT = { IG_MAINMENU_OPTION_CHECKBOX_ON = 856, READY_CHECK = 8960 }
+STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
+
+-- The game's own action buttons, so the bar highlight has something to sit on.
+for _, bar in ipairs({ "ActionButton", "MultiBarBottomLeftButton", "MultiBarBottomRightButton", "MultiBarRightButton", "MultiBarLeftButton" }) do
+  for i = 1, 12 do
+    local b = widget()
+    b.width = 45
+    _G[bar .. i] = b
+  end
 end
 function M.fire(event, ...)
   for _, f in ipairs(M.frames) do

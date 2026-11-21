@@ -137,10 +137,10 @@ function API.drawMana(bar, label)
     local written = false
     if UnitPowerPercent and curve then
       written = pcall(function()
-        label:SetFormattedText("Mana %.0f%%", UnitPowerPercent("player", 0, false, curve))
+        label:SetFormattedText("%.0f%%", UnitPowerPercent("player", 0, false, curve))
       end)
     end
-    if not written then label:SetText("Mana") end
+    if not written then label:SetText("") end
   end
   return true
 end
@@ -157,7 +157,7 @@ end
 -- Every Forever function ClassCoach calls. /coach check lists the ones this
 -- client does not have, so a change in a Forever patch shows up by name.
 local NEEDS = {
-  "issecretvalue", "GetTime", "GetBuildInfo", "GetProfessions", "GetProfessionInfo", "InCombatLockdown", "IsInGroup", "IsResting", "GetXPExhaustion", "GetTotemInfo",
+  "issecretvalue", "GetTime", "GetBuildInfo", "PlaySound", "GetProfessions", "GetProfessionInfo", "InCombatLockdown", "IsInGroup", "IsResting", "GetXPExhaustion", "GetTotemInfo",
   "GetInventoryItemID", "GetInventoryItemDurability", "CanMerchantRepair", "GetActionInfo", "GetActionBarToggles", "PlaceAction",
   "PickupMacro", "ClearCursor", "CreateMacro", "EditMacro", "GetMacroBody", "GetMacroIndexByName", "GetMacroInfo", "GetNumMacros",
   "GetBindingKey", "GetBindingAction", "SetBinding", "SetBindingClick", "SaveBindings", "GetCurrentBindingSet", "RegisterStateDriver",
@@ -544,18 +544,24 @@ end
 -- Your professions: { { name, icon, skill, max } }, or nil when the game won't say.
 function API.professions()
   local out = {}
-  local indices = { try(GetProfessions) }
+  -- "readable" is whether the game answered at all: only then does an empty list mean "none learned".
+  local answer = { pcall(GetProfessions) }
+  API.professionsReadable = answer[1] == true
+  if not answer[1] then return out end
   for i = 1, 8 do
-    local index = plain(indices[i])
+    local index = plain(answer[i + 1])
     if type(index) == "number" then
       local name, icon, skill, max = try(GetProfessionInfo, index)
       name, skill, max = plain(name), plain(skill), plain(max)
       if type(name) == "string" and type(skill) == "number" and skill >= 0 and skill <= 450 then
-        out[#out + 1] = { name = name, icon = picture(icon), skill = skill, max = (type(max) == "number" and max >= skill) and max or nil }
+        -- the game lists your two main professions first, then the secondary ones
+        out[#out + 1] = { name = name, icon = picture(icon), skill = skill, max = (type(max) == "number" and max >= skill) and max or nil,
+          primary = i <= 2 }
+      else
+        API.professionsReadable = false   -- a slot is filled but would not say with what
       end
     end
   end
-  if #out == 0 then return nil end
   return out
 end
 
@@ -830,8 +836,8 @@ end
 
 -- name -> key text, for every spell placed on a bound action button
 function API.scanKeys()
-  local keys, icons = {}, {}
-  API.barIcons = icons
+  local keys, icons, slots = {}, {}, {}
+  API.barIcons, API.barSlots = icons, slots
   for slot = 1, 180 do
     local binding = bindingForSlot(slot)
     if binding then
@@ -842,6 +848,7 @@ function API.scanKeys()
         if name and keys[name] == nil then
           keys[name] = shortKey(plain(try(GetBindingKey, binding))) or false
           icons[name] = picture(try(C_ActionBar.GetActionTexture, slot))
+          slots[name] = slot
         end
       elseif kind == "item" and id then
         if keys["item:" .. id] == nil then keys["item:" .. id] = shortKey(plain(try(GetBindingKey, binding))) or false end
@@ -851,9 +858,41 @@ function API.scanKeys()
         if not name and id then name = plain(try(GetMacroInfo, id)) end
         if name and keys["macro:" .. name] == nil then
           keys["macro:" .. name] = shortKey(plain(try(GetBindingKey, binding))) or false
+          slots["macro:" .. name] = slot
         end
       end
     end
   end
   return keys
+end
+
+-- The game's own button for an action slot, when it is on screen right now.
+-- Only the game's standard bars are known; another bar addon's buttons are not.
+local BAR_BUTTONS = {
+  { 1, 12, "ActionButton" }, { 61, 72, "MultiBarBottomLeftButton" }, { 49, 60, "MultiBarBottomRightButton" },
+  { 25, 36, "MultiBarRightButton" }, { 37, 48, "MultiBarLeftButton" },
+  { 145, 156, "MultiBar5Button" }, { 157, 168, "MultiBar6Button" }, { 169, 180, "MultiBar7Button" },
+}
+function API.barButton(slot)
+  if type(slot) ~= "number" then return nil end
+  for _, bar in ipairs(BAR_BUTTONS) do
+    if slot >= bar[1] and slot <= bar[2] then
+      local button = _G[bar[3] .. (slot - bar[1] + 1)]
+      if type(button) ~= "table" then return nil end
+      -- the main bar shows another page's buttons while it is switched away from page 1
+      if bar[1] == 1 and (API.barPage() or 1) ~= 1 then return nil end
+      if plain(try(button.IsVisible, button)) ~= true then return nil end
+      return button
+    end
+  end
+end
+
+-- A short sound for the coach's cue. Returns false when the game would not play it.
+local SOUNDS = { click = { "IG_MAINMENU_OPTION_CHECKBOX_ON", 856 }, ready = { "READY_CHECK", 8960 } }
+function API.sound(kind)
+  local sound = SOUNDS[kind]
+  if not sound then return false end
+  local id = (type(SOUNDKIT) == "table" and SOUNDKIT[sound[1]]) or sound[2]
+  local ok, played = pcall(PlaySound, id, "Master")
+  return ok and played ~= false
 end

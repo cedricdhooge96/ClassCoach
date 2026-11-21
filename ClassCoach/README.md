@@ -1,15 +1,18 @@
 # ClassCoach
 
-A beginner's coach for WoW Forever that works for any class. One small panel shows:
+A beginner's coach for WoW Forever that works for any class. One ring under your character shows:
 
-- **What to press next**: the spell, its key, and why. Out of combat with an enemy targeted, it shows how to pull.
-- **The carousel**: on the left what you already did to this enemy, in the middle (bigger) what to press now, on the right what comes next. With nothing targeted it shows your pull plan. Only spells your character has learned are shown.
-- **Damage over time, per enemy**: each spell's seconds left on the enemy you are looking at, on the left icons and in the "On this enemy" line. Switch enemies and each keeps its own timers. When a spell is about to matter again the right side says so ("Corruption in 8s").
+- **What to press next**: the spell in a gold ring, its key, its name and why. Out of combat with an enemy targeted, it shows how to pull.
+- **Before and after**: left of the ring what you already cast on this enemy, right of it what comes next, each with its key. The steps sit on a rising arc and get smaller the further they are from now. With nothing targeted it shows your pull plan. Only spells your character has learned are shown.
+- **Damage over time, per enemy**: each spell's seconds left, under its icon on the left. Switch enemies and each keeps its own timers. When a spell is about to matter again the right side says so ("in 8s").
+- **A cue when it matters**: most of a fight is one steady key. When something else comes up, or a spell was resisted, the ring pulses and a soft click plays.
+- **The button to press, lit on your action bars**: as a glow, a gold frame or sparkles, whichever you pick.
+- **Click to cast, before a fight**: click an amber "before you pull" icon to cast what fixes it, or the ring to start the pull.
 - **No wasted spells**: the addon learns how long your kills usually take. When an enemy should be nearly dead it stops suggesting new damage over time and tells you to finish it.
 - **Your demon** (Warlock): the pull advice changes with who is out. Voidwalker goes in first; with the Imp you just start casting.
 - **Macros**: `/coach macros` makes a few helper macros from the spells you know (see below).
-- **Mana**: the bar is your real mana, drawn by the game itself. When mana gets low the advice changes, e.g. "melee only" or "wand until it dies".
-- **Before you pull**: missing buffs, weapon buff, wand, reagents, food, and "drink first" when mana is low.
+- **Mana**: the bar under the ring is your real mana, drawn by the game itself. It turns amber, then red, as the advice changes, e.g. "melee only" or "wand until it dies".
+- **Before you pull**: missing buffs, weapon buff, demon, wand and reagents as amber icons left of the ring, and in words under it: "Drink before the next pull" when mana is low.
 - **After each fight**: time, casts, mana spent, and up to two tips on what to do better.
 - **Level-ups**: which new spells to train and which talent to take.
 
@@ -35,14 +38,16 @@ ClassCoach is made for **World of Warcraft: Forever** (patch 1.60.x) and no othe
 | Command | What it does |
 |---|---|
 | `/coach set compact on` | Changes one setting from chat; `/coach set` lists them |
+| `/coach demo` | Plays the coach's states with your own spells, out of combat, so you can see and place it without fighting |
+| `/coach professions` | Which two professions suit your class and goal, and what to do next in each |
 | `/coach pages` | Stops Shift+number from switching your main bar to an empty page |
 | `/coach macros` | Creates or refreshes this class's helper macros (out of combat) |
 | `/coach build` | The talent build you follow. `/coach build 2` picks one from the list, `/coach build auto` lets the addon choose, and `/coach build` followed by an Icy Veins or Warcraft Tavern talent calculator link follows that build |
 | `/coach smart` | Shows the smart key's steps and keys; `/coach smart next 1` binds a key |
 | `/coach bar` | Lays out the fight, react and prepare bars on empty buttons; `preview` only lists, `replace` overwrites |
 | `/coach last` | Repeats the last fight report in chat |
-| `/coach hide` / `show` | Hides or shows the coach panel |
-| `/coach reset` | Puts both panels back where they started |
+| `/coach hide` / `show` | Hides or shows the coach |
+| `/coach reset` | Puts the coach and the journey list back where they started |
 | `/coach spec Enhancement` | Picks a profile by hand; `/coach spec auto` goes back to automatic |
 | `/coach check` | Prints what the addon can read on your client. Useful when something looks wrong |
 | `/coach errors` | Lists problems ClassCoach caught in itself. `/coach errors on` makes the game show every addon's error on screen; `off` hides them again |
@@ -64,26 +69,34 @@ The profile is picked from your talent points (the tree with the most points); b
 
 Press Esc, then Options > AddOns > ClassCoach. Everything is on one page and applies at once. (`/coach set` changes a single setting from chat, for example `/coach set compact on`. The addon never opens the game's settings panel itself: an addon doing that is a known way to upset action bars in combat.)
 
-- **Coach panel**: show or hide, size, compact (icons only), how many steps show before and after the current one (0 to 4 each), the timers line, the mana bar.
-- **Journey panel**: show or hide, size, and which reminders you want (food, rested XP, trainer and talents, repairs and bags).
-- **Look**: background darkness, thin border, class-colour line, lock in place.
+- **Coach**: show or hide, size, compact (no explanation), how many steps show before and after the current one (0 to 4 each), the mana bar, the pulse and its sound, the look of the lit bar button (glow, gold frame, sparkles or off), and click to cast.
+- **Journey list**: show or hide, size, and which reminders you want (food, rested XP, trainer and talents, repairs and bags).
+- **Professions**: what you want from them (your own gear, gear and some gold, gold, or level 60), your own two if you prefer, and the three free ones.
+- **Look**: how dark the plate behind the text is, the game's own font instead of ClassCoach's, lock in place.
 - **Coaching**: profile for this character, skipping damage over time on dying enemies, when to suggest drinking, tips in chat, keeping macros up to date.
 - **Actions**: create or refresh macros, reset panel positions.
 
-## Two panels
+## The coach and the journey list
 
-- **Coach** (top): only the fight. The carousel, your timers, mana, and before a pull the few things that matter for that fight (shield, weapon buff, demon, low health or mana). Anything missing shows as the icon of the spell that fixes it, with its key; hover it for the details.
-- **Journey** (its own panel; in a fight it stays as it was before the pull, or hides if you turn off "Keep it visible in combat"): your XP and rested XP, and a short to-do list with an icon per item (hover one for the full advice). The list covers from the leveling guides: unspent talent points, spells you can train, a missing food buff (+5% XP from kills), no rested XP, your Cozy Sleeping Bag or Camp Tent if you own one, gear that needs repair, full bags, and the level your trainer next has something new. `!` marks something worth doing now; the grey line under the list explains the first one.
+- **Coach**: only the fight. A ring with the spell to press, the steps before and after it, your mana, and under it the spell's name, why, and any advice. It has no window around it: only the ring can be dragged, and everything else lets clicks through to the game. Before a pull, anything missing shows left of the ring as the icon of the spell that fixes it, in an amber ring, with its key; hover it for the details or click it to cast.
+- **Journey** (its own list; in a fight it stays as it was before the pull, or hides if you turn off "Keep it visible in combat"): your level, XP and rested XP, then **Do now** and **Coming up**, each a short list with an icon per item (hover one for the full advice). It covers, from the leveling guides: unspent talent points, spells you can train, a missing food buff (+5% XP from kills), no rested XP, your Cozy Sleeping Bag or Camp Tent if you own one, gear that needs repair, full bags, professions, and the level your trainer next has something new. The grey line under the list explains the first thing to do.
 
-What the journey panel adds on top of that:
+What the journey list adds on top of that:
 
 - **Milestones**: class quests and other things worth doing at your level, and the next one coming ("At level 20: Water totem quest and Ghost Wolf").
 - **Where to be**: zones and dungeons that fit your level (Alliance for now).
 - **Supplies**: at a vendor it tells you what you are low on (water, food, class reagents) and whether to repair. On the road it only speaks up when you have run out.
 
-And on the coach panel, before a pull, a red or amber icon when the enemy is one you shouldn't fight alone: far above your level, elite, or grey (no XP).
+Before a pull the coach also shows a red or amber icon when the enemy is one you shouldn't fight alone: far above your level, elite, or grey (no XP).
 
-The two panels move independently: drag each where you like. `/coach reset` puts both back.
+The two move independently: drag the coach by its ring and the journey list anywhere on it. `/coach reset` puts both back. `/coach demo` plays every state of the coach so you can place it without fighting.
+
+### What the game allows
+
+- **Mana is a straight bar, not a ring.** In a fight the game hides your mana from addons and only lets them hand it to a status bar to draw. A ring would need the number.
+- **Icons are clickable before a fight only.** Only the game's own secure buttons may cast, and in a fight an addon may not change what they cast, move them or hide them. So the game itself hides ClassCoach's click buttons when a fight starts. In a fight, press your keys or the lit button on your action bar.
+- **The lit bar button works on the game's own action bars.** ClassCoach lays its own frame over the button; it never touches the button itself. Another bar addon's buttons are not found.
+- **The big icon can look soft.** The game's icon art is 64 pixels; the ring shows it larger. If that bothers you, lower "Size" a little.
 
 ## Talents
 
@@ -98,7 +111,13 @@ To switch the marks off: Options > AddOns > ClassCoach > "Mark my next talent in
 
 ## Professions
 
-The journey panel tells you when a profession is at its skill cap and needs a trainer, and for Tailoring what to craft next (from wow-professions.com's Forever guide, which is based on the beta). Other professions get the cap reminder only for now. Switch it off with "Remind me: professions".
+`/coach professions` shows the plan; the journey list carries the next thing to do.
+
+- **Which two.** While you have a profession slot free, the coach suggests the pair for your class and your goal. The goal is a setting: make your own gear while leveling (cloth classes: Tailoring and Enchanting; Shaman, Hunter, Rogue, Druid: Skinning and Leatherworking; Warrior, Paladin: Mining and Blacksmithing), gear and some gold, gold (two gathering professions), or ready for level 60. You can also set your own two; a profession you already learned is never argued with.
+- **The three free ones.** In Forever, First Aid, Cooking and Fishing use no profession slot. The coach names the ones you have not learned. First Aid also makes the healing potions in Forever.
+- **What to do next.** For every profession: what to craft, or what to mine, pick or skin and where, for your skill. And a reminder when you are at a skill cap and need the next rank, with what that rank asks for.
+
+The steps follow the Forever guides on wow-professions.com, which are based on the beta; materials, amounts and alternatives are in the guides. The pairs are the ones Forever guides agree on (Gfinity Esports and RankedBoost, November 2026). They are recommendations, not rules. Switch all of it off with "Remind me: professions".
 
 ## Action bars
 
@@ -119,22 +138,22 @@ The journey panel tells you when a profession is at its skill cap and needs a tr
 
 ### If your bars seem to vanish
 
-- The panels are drawn below the action bars and grow away from the nearest screen edge, so they cannot cover your buttons.
+- The coach and the journey list are drawn below the action bars, so they cannot cover your buttons, and the coach takes no clicks outside its ring.
 - Shift+number switches the main bar to another, usually empty, page. The coach flags it ("Main bar is on page 2") and `/coach pages` stops Shift+number from doing that.
 - If the game blocks an action and blames this addon, it is recorded: `/coach check` lists it.
 
 ## Macros
 
-`/coach macros` (out of combat) creates this class's macros on your character's macro tab, named `CC ...`. Open `/macro` and drag them to your bar. They rewrite themselves when you train new spells, and a macro on your bar lends its key to the spells inside it on the panel.
+`/coach macros` (out of combat) creates this class's macros on your character's macro tab, named `CC ...`. Open `/macro` and drag them to your bar. They rewrite themselves when you train new spells, and a macro on your bar lends its key and its lit button to the spells inside it.
 
 - One press still casts one spell: the game allows nothing else, and an addon may not press keys or change a macro during combat. `CC Pull` is written from the coach's own pull plan and steps through it, one spell per press. It rewrites itself between fights when the plan changes (new spells, or kills getting shorter).
 - Without a wand, the filler spell (Shadow Bolt, Smite) is added to the end, so that one key carries the whole fight.
 - Warlock `CC Pull` also sends your demon in. With the Voidwalker out, the first press only sends it; the spells start once it is fighting.
-- Macros cannot think. Keep watching the panel: it knows when a spell is still running, the macro does not.
+- Macros cannot think. Keep watching the coach: it knows when a spell is still running, the macro does not.
 
 ## When a spell is resisted
 
-The game tells addons only that "something was resisted on your target", not what. ClassCoach matches that to the harmful spell you cast a moment before and undoes it: the timer is removed, the carousel marks the cast "miss", and the coach asks for the same spell again. If the enemy is immune, the spell is skipped on that enemy for the rest of the fight. The fight report counts resists and tells you when the enemy's level was the reason.
+The game tells addons only that "something was resisted on your target", not what. ClassCoach matches that to the harmful spell you cast a moment before and undoes it: the timer is removed, the icon left of the ring is marked "miss", and the coach asks for the same spell again. If the enemy is immune, the spell is skipped on that enemy for the rest of the fight. The fight report counts resists and tells you when the enemy's level was the reason.
 
 A macro cannot do this. A `/castsequence` moves on after a resisted cast, because the cast itself went off. That is what the smart key's Again key is for.
 
@@ -144,8 +163,15 @@ One key that walks the coach's plan: opening spells in order, then it stays on y
 
 - Bind three keys under Esc > Options > Keybindings > AddOns > ClassCoach (or type `/coach smart next 1`, `/coach smart again 2`, `/coach smart restart 3`):
   **Next** casts the next step. **Again** casts the previous step once more, for a resist. **Restart** goes back to the start, for a new enemy.
-- The panel shows which of those keys to press: it switches to the Again key when a spell was resisted.
+- The coach shows which of those keys to press: it switches to the Again key when a spell was resisted.
 - `/coach smart` lists its steps and keys.
+
+Its limits, which come from how the game's secure buttons work:
+
+- **One press per spell.** The key moves on with every press, also when the spell could not be cast (still casting the last one, not ready, out of range). Pressing it faster than your spells go off skips steps. When that happens the coach shows the skipped spell's own key and lights its button; Restart puts the key back at the start.
+- **A new enemy needs Restart** when you switch straight from one living enemy to another. It goes back to the start by itself only when your target dies or you have no target.
+- **It walks the opening you would do at full mana.** When the coach changes its advice in a fight (low mana, an enemy about to die), follow the coach's key, not the smart key.
+- The `CC Pull` macro is the other way to put the opening on one key: it only moves on when a spell really went off, but it cannot repeat a resisted spell and it starts over after its last step.
 
 What it is not: the addon does not decide during a fight what the key casts. The game forbids that, and nothing here works around it. The plan is loaded into the game's own secure button between fights; in a fight one press is still one cast, the same rule macros follow.
 
@@ -167,13 +193,26 @@ Forever hides your mana number from addons during combat, but lets them hand it 
 ClassCoach is built so that a mistake in it costs you a line of advice, never your game.
 
 - **Nothing it does can raise an error into the game.** Every refresh, game event, chat command, drag and mouse-over runs inside a guard. A problem is written to a small log (100 entries at most, repeats counted instead of repeated) that `/coach errors` prints.
-- **It slows itself down when something is wrong.** After ten failed refreshes in a row it retries only once every five seconds and says so on the panel, then goes back to normal by itself when the cause is gone. A refresh that keeps taking too long is run less often.
+- **It slows itself down when something is wrong.** After ten failed refreshes in a row it retries only once every five seconds and says so under the ring, then goes back to normal by itself when the cause is gone. A refresh that keeps taking too long is run less often.
 - **It cannot loop.** Every list the game hands over (spellbook, bags, bars) is read up to a fixed size, whatever length the game reports. Rescans run at most once every two seconds, however many events ask for one.
 - **It rations its own writes.** At most 12 automatic macro updates and 3 automatic bar fills per minute; past that it stops and tells you, and the commands still work by hand.
 - **It leaves combat alone.** Macros, bar buttons, key bindings and the smart key are only changed out of combat, as the game requires.
 - **It repairs damaged settings.** A saved value of the wrong kind or out of range goes back to its default when you log in.
 
 If the game says "Your AddOns are experiencing a large number of errors", type `/coach errors on`, then `/reload`. The first error window names the addon and the line. `/coach errors` shows what ClassCoach caught in itself; an empty list means the errors come from another addon.
+
+## Tested, and not yet
+
+The offline tests play every level from 1 to 60 for the three class profiles against a fake Forever client, including the smart key's steps, event storms and combat lockdown. They cannot show how the coach looks.
+
+Not yet seen in the real game: the ring and its fonts, the lit bar button, click to cast, the pulse and its sound, the talent window marks, and the profession lines. `/coach check` reports what loaded: the fonts, whether the click buttons were made, and which bar slot is lit.
+
+## Credits
+
+- The ring, the true mana bar, the cue, the demo and the drink reminder take their ideas from **Sigil** by Narsil (github.com/thaoms/sigil), a Retribution Paladin helper for Forever. No code or artwork was taken: Sigil is all rights reserved.
+- Fonts: **Inter** by The Inter Project Authors and **Marcellus** by Astigmatic, both under the SIL Open Font License; the licences are in the `Fonts` folder.
+- Talent calculator link tables: **Zbuilds** by Zael98 (MIT).
+- Profession steps: the Forever guides on **wow-professions.com**.
 
 ## Known limits
 

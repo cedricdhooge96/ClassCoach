@@ -1,72 +1,65 @@
--- The journey panel: everything outside the fight. Your XP and rested XP,
--- and a short list of things guides tell you to keep on top of (food buff,
--- trainer, talent points, repairs, bags). In combat it is not redrawn: it
+-- The journey panel: everything outside the fight. Your level, XP and rested
+-- XP, then two short lists: what to do now and what is coming (food buff,
+-- trainer, talent points, repairs, bags, milestones). In combat it is not redrawn: it
 -- stays as it was before the pull, or hides if you turned that option off.
 local _, ns = ...
 
 local Journey = {}
 ns.Journey = Journey
 
-local WIDTH, MAX_LINES, ICON_SIZE = 320, 9, 20
+local WIDTH, MAX_LINES, ICON_SIZE, PAD = 244, 9, 20, 10
 local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
-local COLORS = {
-  act = { 1.00, 0.78, 0.30 }, info = { 0.70, 0.72, 0.78 }, dim = { 0.62, 0.62, 0.66 },
-  xp = { 0.58, 0.35, 0.85 }, rested = { 0.30, 0.55, 1.00 },
-}
-
-local function font(parent, template)
-  local fs = parent:CreateFontString(nil, "OVERLAY", template)
-  fs:SetJustifyH("LEFT")
-  return fs
-end
 
 -- One to-do: an icon like a spell button, its text, and the full advice on mouse-over.
 local function row(parent)
+  local S = ns.Style
   local r = CreateFrame("Frame", nil, parent)
-  r:SetSize(WIDTH - 20, ICON_SIZE)
+  r:SetSize(WIDTH - 2 * PAD, ICON_SIZE)
   local icon = r:CreateTexture(nil, "ARTWORK")
   icon:SetSize(ICON_SIZE, ICON_SIZE)
   icon:SetPoint("TOPLEFT", 0, 0)
   icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
   r.icon = icon
-  local label = font(r, "GameFontHighlightSmall")
-  label:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-  label:SetWidth(WIDTH - 20 - ICON_SIZE - 6)
+  local label = S.text(r, "body", 12, S.COLORS.ink)
+  label:SetPoint("LEFT", icon, "RIGHT", 9, 0)
+  label:SetWidth(WIDTH - 2 * PAD - ICON_SIZE - 9)
   label:SetWordWrap(false)
   r.label = label
   r:EnableMouse(true)
-  r:SetScript("OnEnter", ns.Style.guard(function(self)
+  r:SetScript("OnEnter", S.guard(function(self)
     if not self.title or not GameTooltip then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText(self.title, 1, 0.82, 0.2)
     if self.hint then GameTooltip:AddLine(self.hint, 0.9, 0.9, 0.9, true) end
     GameTooltip:Show()
   end))
-  r:SetScript("OnLeave", ns.Style.guard(function() if GameTooltip then GameTooltip:Hide() end end))
+  r:SetScript("OnLeave", S.guard(function() if GameTooltip then GameTooltip:Hide() end end))
   -- dragging a row drags the panel
   r:RegisterForDrag("LeftButton")
-  r:SetScript("OnDragStart", ns.Style.guard(function() local s = parent:GetScript("OnDragStart"); if s then s(parent) end end))
-  r:SetScript("OnDragStop", ns.Style.guard(function() local s = parent:GetScript("OnDragStop"); if s then s(parent) end end))
+  r:SetScript("OnDragStart", S.guard(function() local s = parent:GetScript("OnDragStart"); if s then s(parent) end end))
+  r:SetScript("OnDragStop", S.guard(function() local s = parent:GetScript("OnDragStop"); if s then s(parent) end end))
   return r
 end
 
 function Journey.create(charDB, db)
   if Journey.frame then return Journey.frame end
+  local S = ns.Style
+  local C = S.COLORS
   local f = CreateFrame("Frame", "ClassCoachJourney", UIParent)
   Journey.frame, Journey.charDB, Journey.db = f, charDB, db
   f:SetSize(WIDTH, 60)
-  f:SetFrameStrata("LOW")   -- below the action bars, like the coach panel
+  f:SetFrameStrata("LOW")   -- below the action bars, like the coach
   f:SetClampedToScreen(true)
-  ns.Style.skin(f)
-  ns.Style.apply(f, db, db.journeyScale)
+  S.skin(f)
+  S.apply(f, db, db.journeyScale)
   Journey.place()
   f:SetMovable(true)
   f:EnableMouse(true)
   f:RegisterForDrag("LeftButton")
-  f:SetScript("OnDragStart", ns.Style.guard(function(self) if not db.locked then self:StartMoving() end end))
-  f:SetScript("OnDragStop", ns.Style.guard(function(self)
+  f:SetScript("OnDragStart", S.guard(function(self) if not db.locked then self:StartMoving() end end))
+  f:SetScript("OnDragStop", S.guard(function(self)
     self:StopMovingOrSizing()
-    local pinned = ns.Style.pin(self)
+    local pinned = S.pin(self)
     if pinned then
       charDB.journeyPos = pinned
     else
@@ -75,33 +68,34 @@ function Journey.create(charDB, db)
     end
   end))
 
-  local title = font(f, "GameFontDisableSmall")
-  title:SetPoint("TOPLEFT", 10, -8)
-  title:SetWidth(WIDTH - 20)
-  f.title = title
-
+  -- "Level 11" on the left, "79% · rested 4%" on the right, a thin XP bar under both
+  f.title = S.text(f, "title", 18, C.ink)
+  f.title:SetPoint("TOPLEFT", PAD, -8)
   local bar = CreateFrame("StatusBar", nil, f)
-  bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+  bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
   bar:SetMinMaxValues(0, 100)
-  bar:SetSize(WIDTH - 20, 10)
-  bar:SetPoint("TOPLEFT", 10, -22)
+  bar:SetSize(WIDTH - 2 * PAD, 5)
+  bar:SetPoint("TOPLEFT", PAD, -34)
+  pcall(bar.SetStatusBarColor, bar, C.xp[1], C.xp[2], C.xp[3])
   local bg = bar:CreateTexture(nil, "BACKGROUND")
   bg:SetAllPoints()
-  bg:SetColorTexture(0, 0, 0, 0.5)
-  local barText = font(bar, "GameFontHighlightSmall")
-  barText:SetPoint("CENTER")
-  barText:SetJustifyH("CENTER")
+  bg:SetColorTexture(C.dark[1], C.dark[2], C.dark[3], 0.9)
+  local barText = S.text(f, "body", 11, C.muted)
+  barText:SetPoint("TOPRIGHT", -PAD, -14)
+  barText:SetJustifyH("RIGHT")
   f.bar, f.barText = bar, barText
 
+  -- Two short lists: what to do now, and what is coming
+  f.doHead = S.text(f, "bold", 11, C.accent)
+  f.doHead:SetText("Do now")
+  f.laterHead = S.text(f, "bold", 11, C.muted)
+  f.laterHead:SetText("Coming up")
   f.rows = {}
   for i = 1, MAX_LINES do f.rows[i] = row(f) end
-  local allSet = font(f, "GameFontHighlightSmall")
-  allSet:SetTextColor(0.55, 0.85, 0.55)
-  f.allSet = allSet
-  local hint = font(f, "GameFontDisableSmall")
-  hint:SetWidth(WIDTH - 20)
-  hint:SetWordWrap(true)
-  f.hint = hint
+  f.allSet = S.text(f, "body", 12, C.ok)
+  f.hint = S.text(f, "body", 11, C.muted)
+  f.hint:SetWidth(WIDTH - 2 * PAD)
+  f.hint:SetWordWrap(true)
 
   if db.journey == false then f:Hide() end
   return f
@@ -145,49 +139,67 @@ function Journey.render(view)
     if pinned then Journey.charDB.journeyPos = pinned; Journey.repin = false end
   end
 
+  local C = ns.Style.COLORS
   f.title:SetText(view.title or "Journey")
-  local y = -22
+  local y = -30
   if view.xp then
     f.bar:Show()
     f.bar:SetValue(view.xp.pct)
     local rested = view.xp.restedPct or 0
-    local c = rested > 0 and COLORS.rested or COLORS.xp
-    f.bar:SetStatusBarColor(c[1], c[2], c[3])
     f.barText:SetText(rested > 0
-      and ("XP %d%% · rested %d%% of a level"):format(math.floor(view.xp.pct), math.floor(rested + 0.5))
-      or ("XP %d%% · not rested"):format(math.floor(view.xp.pct)))
-    y = y - 16
+      and ("%d%% · rested %d%%"):format(math.floor(view.xp.pct), math.floor(rested + 0.5))
+      or ("%d%% · not rested"):format(math.floor(view.xp.pct)))
+    y = -34 - 5 - 10
   else
     f.bar:Hide()
+    f.barText:SetText("")
   end
 
-  local lines, firstHint = view.lines or {}, nil
+  -- "Do now" first, then what is coming; the order inside each list is the engine's.
+  local lines, firstHint = {}, nil
+  for _, item in ipairs(view.lines or {}) do if item.kind == "do" and #lines < MAX_LINES then lines[#lines + 1] = item end end
+  local doing = #lines
+  for _, item in ipairs(view.lines or {}) do if item.kind ~= "do" and #lines < MAX_LINES then lines[#lines + 1] = item end end
+  local function head(fs, shown)
+    fs:ClearAllPoints()
+    if shown then
+      fs:SetPoint("TOPLEFT", PAD, y)
+      fs:Show()
+      y = y - 11 - 8
+    else
+      fs:Hide()
+    end
+  end
+  head(f.doHead, doing > 0)
   for i = 1, MAX_LINES do
     local r, item = f.rows[i], lines[i]
     r:ClearAllPoints()
+    if i == doing + 1 then head(f.laterHead, item ~= nil) end
     if item then
-      local c = item.kind == "do" and COLORS.act or COLORS.info
+      local now = item.kind == "do"
+      local c = now and C.ink or C.muted
       r.icon:SetTexture(item.icon or QUESTION)
-      r.icon:SetDesaturated(item.kind ~= "do")
+      r.icon:SetDesaturated(not now)
       r.label:SetTextColor(c[1], c[2], c[3])
       r.label:SetText(item.text)
       r.title, r.hint = item.text, item.hint
-      r:SetPoint("TOPLEFT", 10, y)
+      r:SetPoint("TOPLEFT", PAD, y)
       r:Show()
-      y = y - ICON_SIZE - 3
-      if not firstHint and item.kind == "do" and item.hint then firstHint = item.hint end
+      y = y - ICON_SIZE - 8
+      if not firstHint and now and item.hint then firstHint = item.hint end
     else
       r.label:SetText("")
       r.title, r.hint = nil, nil
       r:Hide()
     end
   end
+  if doing == MAX_LINES then head(f.laterHead, false) end
   f.allSet:ClearAllPoints()
   if #lines == 0 then
     f.allSet:SetText("All set. Go quest.")
-    f.allSet:SetPoint("TOPLEFT", 10, y)
+    f.allSet:SetPoint("TOPLEFT", PAD, y)
     f.allSet:Show()
-    y = y - 14
+    y = y - 16
   else
     f.allSet:SetText("")
     f.allSet:Hide()
@@ -195,9 +207,9 @@ function Journey.render(view)
   f.hint:ClearAllPoints()
   if firstHint then
     f.hint:SetText(firstHint)
-    f.hint:SetPoint("TOPLEFT", 10, y - 2)
+    f.hint:SetPoint("TOPLEFT", PAD, y - 2)
     f.hint:Show()
-    y = y - 4 - (f.hint:GetStringHeight() or 12)
+    y = y - 6 - (f.hint:GetStringHeight() or 12)
   else
     f.hint:SetText("")
     f.hint:Hide()

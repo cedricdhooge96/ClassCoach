@@ -419,7 +419,17 @@ function Engine.smartSteps(profile, s, has)
   end
   local gate = smart.gate
   if gate and not has.macro(gate.macro) then gate = nil end
-  return steps, gate
+  -- What the key cannot do well without a macro it counts on. A wand cast as a
+  -- plain spell switches off again on the next press; a melee class with no
+  -- attack macro would stay on its last spell and cast it again and again.
+  local warn
+  local last = steps[#steps]
+  if last and last.kind == "spell" and last.value == (s.spells["Shoot"] and s.spells["Shoot"].name) then
+    warn = "Without the CC Wand macro, a second press on the wand step stops your wand. Type /coach macros."
+  elseif last and not tail then
+    warn = "Without an attack macro the key stays on " .. last.label .. " and would cast it again. Use it for the opening only, or type /coach macros."
+  end
+  return steps, gate, warn
 end
 
 ---------------------------------------------------------------------------
@@ -432,7 +442,7 @@ end
 function Engine.plan(profile, s, max)
   local fresh = setmetatable({ manaLevel = "high", manaPct = 100, inCombat = false, fightTime = 0,
     target = { exists = false, key = "plan" } }, { __index = s })
-  return Engine.chain(profile, fresh, max or 6)
+  return Engine.chain(profile, fresh, max or 8)
 end
 
 -- Spell names of a plan, in order, for a /castsequence. Steps in `skip` are
@@ -637,16 +647,128 @@ function Engine.checklist(profile, s, options)
   end
   if s.healthPct and s.healthPct < 50 then
     missing[#missing + 1] = { text = ("Health %d%%"):format(math.floor(s.healthPct)), hint = "Eat or bandage before the next pull.",
-      icon = ICON.food, badge = ("%d"):format(math.floor(s.healthPct)) }
+      icon = ICON.food, badge = ("%d"):format(math.floor(s.healthPct)), use = "rest" }
   end
   if s.usesMana and s.manaPct and s.manaPct < (options.drinkAt or 60) then
     -- restFix: a spell that gets mana back without drinking (Life Tap)
     local sp = profile.restFix and s.spells[profile.restFix]
     missing[#missing + 1] = { text = ("Mana %d%%"):format(math.floor(s.manaPct)), hint = text(profile.restHint, s) or "Drink before the next pull.",
       icon = sp and sp.icon or ICON.drink, spell = sp and sp.name, keybind = sp and s.keys and s.keys[sp.name] or nil,
-      badge = ("%d"):format(math.floor(s.manaPct)) }
+      badge = ("%d"):format(math.floor(s.manaPct)), use = not sp and "rest" or nil }
   end
   return missing
+end
+
+---------------------------------------------------------------------------
+-- Professions: which two to take, and what to do next in each
+---------------------------------------------------------------------------
+
+local function listed(list, name)
+  for _, v in ipairs(list or {}) do if v == name then return true end end
+  return false
+end
+
+local function sentence(names)
+  if #names <= 1 then return names[1] or "" end
+  return table.concat(names, ", ", 1, #names - 1) .. " and " .. names[#names]
+end
+
+-- The two primary professions to suggest for a class.
+--   picks   ns.ProfessionPicks (see Data/Professions.lua)
+--   goal    "gear", "balanced", "gold" or "endgame"
+--   first, second   a profession you chose yourself, or "auto"
+-- Returns { name, name }, why. A profession you chose always comes first; the
+-- goal's pair fills what is left.
+function Engine.professionPair(class, picks, goal, first, second)
+  picks = picks or {}
+  local table_ = (picks.byClass and picks.byClass[class]) or picks.any or {}
+  local suggested = table_[goal] or table_.gear or {}
+  local pair, chosen = {}, 0
+  for _, own in ipairs({ first, second }) do
+    if type(own) == "string" and own ~= "auto" and listed(picks.primary, own) and not listed(pair, own) then
+      pair[#pair + 1] = own
+      chosen = chosen + 1
+    end
+  end
+  for _, name in ipairs(suggested) do
+    if #pair < 2 and not listed(pair, name) then pair[#pair + 1] = name end
+  end
+  local why = chosen == 2 and "Your own choice." or (picks.why and picks.why[table_[goal] and goal or "gear"]) or ""
+  if chosen == 1 then why = "Your own choice, plus one that fits your goal." end
+  return pair, why
+end
+
+-- The stretch of a guide your skill is in: { from, to, what }, or nil.
+function Engine.professionStep(guide, skill)
+  for _, step in ipairs(guide and guide.steps or {}) do
+    if skill >= step[1] and skill < step[2] then return step end
+  end
+end
+
+-- Lines for the journey panel.
+--   professions   what you have learned: { { name, skill, max, icon, primary } }, or nil when unreadable
+--   options       professionData, professionPicks, class, goal, first, second, secondary (false = don't suggest them)
+-- At most: one line on what to learn, one on the secondary professions, a line
+-- for each profession at its cap, and two "what next" lines (your two main
+-- professions before the secondary ones).
+function Engine.professionLines(professions, level, options)
+  local lines = {}
+  local guides, picks = options.professionData or {}, options.professionPicks
+  if not professions and not picks then return lines end
+  professions = professions or {}
+  local have, primaries = {}, 0
+  for _, p in ipairs(professions) do
+    have[p.name] = true
+    if p.primary then primaries = primaries + 1 end
+  end
+
+  -- What to learn. Only for a slot that is still free: a profession you already took is your choice.
+  if picks and options.readable ~= false and (level or 1) >= 5 then
+    if primaries < 2 then
+      local pair, why = Engine.professionPair(options.class, picks, options.goal or "gear", options.first, options.second)
+      local wanted = {}
+      for _, name in ipairs(pair) do
+        if not have[name] and #wanted < 2 - primaries then wanted[#wanted + 1] = name end
+      end
+      if #wanted > 0 then
+        local about = {}
+        for _, name in ipairs(wanted) do if guides[name] and guides[name].about then about[#about + 1] = name .. ": " .. guides[name].about end end
+        lines[#lines + 1] = { kind = "do", text = "Learn " .. sentence(wanted),
+          hint = ("%s %s Trainers are in every capital city: ask a guard. /coach professions shows the plan."):format(why, table.concat(about, " ")) }
+      end
+    end
+    if options.secondary ~= false then
+      local missing = {}
+      for _, name in ipairs(picks.secondary or {}) do if not have[name] then missing[#missing + 1] = name end end
+      if #missing > 0 then
+        lines[#lines + 1] = { kind = "info", text = "Also learn " .. sentence(missing),
+          hint = "These use no profession slot, so every character can have all three. First Aid also makes healing potions in Forever, and cooked food gives the Well Fed buff." }
+      end
+    end
+  end
+
+  -- At the cap: a trainer visit. Then what to do next, main professions first.
+  local nextLines = 0
+  local function consider(p)
+    local guide = guides[p.name]
+    if p.max and p.max < 300 and p.skill >= p.max - 5 then
+      local tier
+      for _, t in ipairs(guide and guide.tiers or {}) do if t.cap == p.max then tier = t end end
+      lines[#lines + 1] = { kind = "do", text = ("%s %d of %d: train the next rank"):format(p.name, p.skill, p.max), icon = p.icon,
+        hint = tier and ("%s %s needs %s. At %d you stop gaining skill until you have it."):format(tier.name, p.name, tier.needs, p.max)
+          or ("At %d you stop gaining skill. A %s trainer teaches the next rank."):format(p.max, p.name) }
+    elseif guide and nextLines < 2 and p.skill < 300 then
+      local step = Engine.professionStep(guide, p.skill)
+      if step then
+        nextLines = nextLines + 1
+        lines[#lines + 1] = { kind = "info", text = ("%s %d: %s %s"):format(p.name, p.skill, guide.verb or "craft", step[3]), icon = p.icon,
+          hint = ("That takes you from %d to %d. From the Forever guide on %s; materials and amounts are there."):format(step[1], step[2], guide.source or "the web") }
+      end
+    end
+  end
+  for _, p in ipairs(professions) do if p.primary then consider(p) end end
+  for _, p in ipairs(professions) do if not p.primary then consider(p) end end
+  return lines
 end
 
 ---------------------------------------------------------------------------
@@ -778,28 +900,10 @@ function Engine.journey(profile, s, options)
     end
   end
 
-  -- Professions: at the skill cap (a trainer visit), and what to craft next where we have a guide for it.
-  if options.professions ~= false and j.professions then
-    local guides = options.professionData or {}
-    local crafted = false
-    for _, p in ipairs(j.professions) do
-      local guide = guides[p.name]
-      if p.max and p.max < 300 and p.skill >= p.max - 5 then
-        local tier
-        for _, t in ipairs(guide and guide.tiers or {}) do if t.cap == p.max then tier = t end end
-        add("do", ("%s %d of %d: train the next rank"):format(p.name, p.skill, p.max),
-          tier and ("%s %s needs %s. At %d you stop gaining skill until you train it."):format(tier.name, p.name, tier.needs, p.max)
-            or ("At %d you stop gaining skill. A %s trainer teaches the next rank."):format(p.max, p.name), p.icon or ICON.trainer)
-      elseif guide and not crafted and p.skill < 300 then
-        for _, step in ipairs(guide.steps or {}) do
-          if p.skill >= step[1] and p.skill < step[2] then
-            crafted = true
-            add("info", ("%s %d: craft %s"):format(p.name, p.skill, step[3]),
-              ("%s takes you from %d to %d. From the Forever guide on %s."):format(step[3], step[1], step[2], guide.source), p.icon or ICON.trainer)
-            break
-          end
-        end
-      end
+  -- Professions: which to learn, a trainer visit at the skill cap, and what to do next in each.
+  if options.professions ~= false then
+    for _, line in ipairs(Engine.professionLines(j.professions, s.level, options)) do
+      add(line.kind, line.text, line.hint, line.icon or ICON.trainer)
     end
   end
 
