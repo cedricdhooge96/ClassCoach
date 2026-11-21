@@ -25,7 +25,6 @@ local MANA_BY_LEVEL = { high = "mana", medium = "warn", low = "danger" }
 local function spot(k)
   return 74 + (k - 1) * 48, (k - 1) * (k - 1) * 5, SIZES[k], FADE[k]
 end
-Panel.spot = spot
 
 local function seconds(left)
   return ("%ds"):format(math.floor(left + 0.5))
@@ -40,19 +39,6 @@ end
 function Panel.steps(db)
   db = db or Panel.db or {}
   return count(db.stepsBefore), count(db.stepsAfter)
-end
-
-local function tooltip(self)
-  if type(self.title) ~= "string" or not GameTooltip then return end
-  GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-  GameTooltip:SetText(self.title, 1, 0.82, 0.2)
-  if type(self.spell) == "string" then
-    GameTooltip:AddLine("Cast " .. self.spell .. (type(self.bind) == "string" and (" (" .. self.bind .. ")") or ""), 1, 1, 1)
-  elseif type(self.bind) == "string" then
-    GameTooltip:AddLine("Key " .. self.bind, 1, 1, 1)
-  end
-  if type(self.hint) == "string" then GameTooltip:AddLine(self.hint, 0.9, 0.9, 0.9, true) end
-  GameTooltip:Show()
 end
 
 -- One step beside the ring: a round icon, a key badge and a short text under it.
@@ -81,8 +67,8 @@ local function slot(f, ringed)
   s.timer:SetJustifyH("CENTER")
   s.timer:SetPoint("TOP", s, "BOTTOM", 0, -3)
   s:EnableMouse(true)
-  s:SetScript("OnEnter", S.guard(tooltip))
-  s:SetScript("OnLeave", S.guard(function() if GameTooltip then GameTooltip:Hide() end end))
+  s:SetScript("OnEnter", S.guard(S.tooltip))
+  s:SetScript("OnLeave", S.guard(S.hideTooltip))
   s:RegisterForDrag("LeftButton")
   s:SetScript("OnDragStart", S.guard(function() local d = f:GetScript("OnDragStart"); if d then d(f) end end))
   s:SetScript("OnDragStop", S.guard(function() local d = f:GetScript("OnDragStop"); if d then d(f) end end))
@@ -217,6 +203,7 @@ function Panel.create(charDB, db)
   f.status = line("body", 12, C.warn)
   f.dots = line("body", 11, C.muted)
   f.msg = line("body", 12, C.ink)
+  f.lines = { f.name, f.why, f.status, f.dots, f.msg }
   f.hint = S.text(f, "body", 11, C.muted, "OUTLINE")
   f.hint:SetPoint("BOTTOM", f, "TOP", 0, 8)
   f.hint:SetText("Drag the ring to move the coach")
@@ -321,7 +308,6 @@ function Panel.render(view)
   if Panel.locked ~= (db.locked == true) then
     Panel.locked = db.locked == true
     f:EnableMouse(not Panel.locked)
-    if Panel.locked then f.hint:Hide() end
   end
   local compact = db.compact == true
   local steps = view.chain or {}
@@ -339,7 +325,6 @@ function Panel.render(view)
     S.setBadge(f.keyBadge, nil)
     f.ring:SetAlpha(0.25)
   end
-  f.title, f.spell, f.bind = now and now.label or nil, nil, nil
 
   -- The cue. Most of a fight is one steady key (wand, attack). When something
   -- else comes up, or a spell was resisted, the ring pulses once.
@@ -408,9 +393,10 @@ function Panel.render(view)
   caption(f, f.chainLabel, view.planning and "your pull plan" or "next", 1, shownRight)
 
   -- What a click would cast, for the buttons that lie over these icons before a fight (UI/Click.lua).
-  local clicks = {}
-  for i = 1, MISSING_SLOTS + 1 + MAX_SIDE do clicks[i] = { x = 0, y = 0, size = 1 } end
+  -- Only worked out between fights: in a fight those buttons are hidden and may not be touched.
   if not view.inCombat then
+    local clicks = {}
+    for i = 1, MISSING_SLOTS + 1 + MAX_SIDE do clicks[i] = { x = 0, y = 0, size = 1 } end
     for i = 1, MISSING_SLOTS do
       local item, c = missing[i], clicks[i]
       if item then
@@ -438,8 +424,8 @@ function Panel.render(view)
         end
       end
     end
+    Panel.clicks = clicks
   end
-  Panel.clicks = clicks
 
   -- Mana: the game draws the true value. If it ever refuses, show our guess and say so.
   if view.usesMana and db.showMana ~= false then
@@ -501,7 +487,7 @@ function Panel.render(view)
     f.words:Hide()
   else
     local widest = 0
-    for _, fs in ipairs({ f.name, f.why, f.status, f.dots, f.msg }) do
+    for _, fs in ipairs(f.lines) do
       local w = fs:IsShown() and fs.GetStringWidth and fs:GetStringWidth() or 0
       if type(w) == "number" and w > widest then widest = w end
     end
@@ -518,6 +504,13 @@ function Panel.flash(lines, seconds)
   Panel.msgText = table.concat(lines, "\n")
   f.msg:SetText(Panel.msgText)
   Panel.msgUntil = GetTime() + (seconds or 15)
+end
+
+-- "Drag the ring to move the coach": shown while the demo plays, which is when you place it.
+function Panel.showHint(on)
+  local f = Panel.frame
+  if not f then return end
+  if on and not Panel.db.locked then f.hint:Show() else f.hint:Hide() end
 end
 
 function Panel.resetPosition()

@@ -23,15 +23,6 @@ local MAX = 11   -- six "before you pull" icons, the ring, four next steps
 
 local function inCombat() return ns.API.inCombat() end
 
-local function tooltip(self)
-  if type(self.title) ~= "string" or not GameTooltip then return end
-  GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-  GameTooltip:SetText(self.title, 1, 0.82, 0.2)
-  GameTooltip:AddLine("Click to " .. (type(self.does) == "string" and self.does or "cast it") .. (type(self.bind) == "string" and (" (or press " .. self.bind .. ")") or "") .. ".", 1, 1, 1)
-  if type(self.hint) == "string" then GameTooltip:AddLine(self.hint, 0.9, 0.9, 0.9, true) end
-  GameTooltip:Show()
-end
-
 -- Makes the buttons. Only possible out of combat. Returns true when they exist.
 function Click.create(panel)
   if Click.holder then return true end
@@ -49,8 +40,9 @@ function Click.create(panel)
       b:RegisterForClicks("AnyDown", "AnyUp")
       b:SetFrameLevel(60)
       b:SetAttribute("checkselfcast", true)
-      b:SetScript("OnEnter", S.guard(tooltip))
-      b:SetScript("OnLeave", S.guard(function() if GameTooltip then GameTooltip:Hide() end end))
+      b.clickable = true
+      b:SetScript("OnEnter", S.guard(S.tooltip))
+      b:SetScript("OnLeave", S.guard(S.hideTooltip))
       -- dragging a button drags the coach under it
       b:RegisterForDrag("LeftButton")
       b:SetScript("OnDragStart", S.guard(function() local d = panel:GetScript("OnDragStart"); if d and not inCombat() then d(panel) end end))

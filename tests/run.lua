@@ -1551,6 +1551,10 @@ elseif SCENARIO == "talents" then
   check("when the game will not say what you have, nothing is suggested", not journey(ns):find("Learn ", 1, true) and errors() == 0, journey(ns))
   GetProfessions = GetProfessionsReal
   SlashCmdList.CLASSCOACH("professions")
+  local report = table.concat(E.professionReport(ns.API.professions(), "Affliction Warlock", ns.C.professionOptions()), "\n")
+  check("/coach professions: the pair for your goal, what you have, the next steps and the free ones", report:find("Suggested: Tailoring and Enchanting", 1, true) ~= nil
+    and report:find("Herbalism 20 of 75: pick Peacebloom", 1, true) ~= nil and report:find("from 70: pick Mageroyal", 1, true) ~= nil
+    and report:find("Mining 70 of 75", 1, true) ~= nil and report:find("Free to learn, they use no profession slot: Fishing.", 1, true) ~= nil, report)
   M.P.professions = nil; ns.C.journey = nil; M.advance(3); tick(ns)
 
   for name, guide in pairs(ns.ProfessionData) do
@@ -1670,6 +1674,18 @@ elseif SCENARIO == "focus" then
   check("main bar on another page: its buttons show other spells, so none is lit", glow.slot == nil)
   M.P.page = 1; M.advance(1); tick(ns)
   check("back on page one it is lit again", glow.slot == 7)
+  ActionButton7.action = 79; tick(ns)
+  check("in a stance or form the main bar's buttons hold other spells: the wrong button is never lit", glow.slot == nil)
+  ActionButton7.action = 7; tick(ns)
+  check("a button that says it shows this slot is lit", glow.slot == 7)
+  ClassCoachDB.showCoach = false; tick(ns)
+  check("coach hidden: nothing lit, nothing clickable", glow.slot == nil and ns.Click.holder == nil or #ns.Click.describe() == 0)
+  ClassCoachDB.showCoach = true; tick(ns)
+  SlashCmdList.CLASSCOACH("set barGlow Sparkles")
+  check("/coach set takes a choice by its name, whatever the capitals", ClassCoachDB.barGlow == "sparkles", tostring(ClassCoachDB.barGlow))
+  SlashCmdList.CLASSCOACH("set barGlow rainbows")
+  check("and refuses one that is not on the list", ClassCoachDB.barGlow == "sparkles")
+  ClassCoachDB.barGlow = "glow"; tick(ns)
 
   -- Click to cast, before a fight
   local click = ns.Click
@@ -1728,12 +1744,24 @@ elseif SCENARIO == "focus" then
   M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.6); target(nil); M.advance(1); tick(ns)
 
   -- A step with no key
-  M.P.actions[8] = nil; M.fire("ACTIONBAR_SLOT_CHANGED", 8); M.advance(3)
-  target({ name = "Wolf", level = 11, hostile = true, guid = "Creature-71" }); M.advance(1); f = tick(ns)
-  cast(980); M.advance(0.4); M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true; M.advance(1.2); f = tick(ns)
+  local function fightTo(guid)
+    target({ name = "Wolf", level = 11, hostile = true, guid = guid }); M.advance(1); tick(ns)
+    cast(980); M.advance(0.4); M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true; M.advance(1.2)
+    return tick(ns)
+  end
+  local function leave()
+    M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.6); target(nil); M.advance(1); tick(ns)
+  end
+  M.P.bindings.ACTIONBUTTON8 = nil; M.fire("UPDATE_BINDINGS"); M.fire("ACTIONBAR_SLOT_CHANGED", 8); M.advance(3)
+  f = fightTo("Creature-73")
+  check("on a bar but without a key: its button is lit and nobody is nagged", f.name.text == "Corruption" and glow.slot == 8 and not f.keyBadge.shown
+    and not f.status.text:find("not on your action bars"), f.name.text .. " / " .. f.status.text .. " / " .. tostring(glow.slot))
+  leave()
+  M.P.actions[8] = nil; M.P.bindings.ACTIONBUTTON8 = "8"; M.fire("ACTIONBAR_SLOT_CHANGED", 8); M.advance(3)
+  f = fightTo("Creature-71")
   check("a step that is on no bar: the coach says where to get it", f.name.text == "Corruption" and f.status.text:find("Corruption is not on your action bars") ~= nil
     and not f.keyBadge.shown and glow.slot == nil, f.name.text .. " / " .. f.status.text)
-  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.6); target(nil); M.advance(1); tick(ns)
+  leave()
 
   -- The demo
   SlashCmdList.CLASSCOACH("demo")
@@ -1748,13 +1776,14 @@ elseif SCENARIO == "focus" then
   local states = 0
   for text in pairs(seen) do if text:find("^Demo %d of 7") then states = states + 1 end end
   check("/coach demo plays seven states with your own spells", states == 7 and ns.C.demo ~= nil, states)
+  check("while it plays, the coach says how to move it", f.hint.shown and f.hint.text == "Drag the ring to move the coach")
   check("the demo shows the pulse too", ns.Panel.cues > cuesBefore)
   target({ name = "Wolf", level = 11, hostile = true, guid = "Creature-72" }); M.advance(1)
   M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true; M.advance(0.5); f = tick(ns)
   check("a real fight ends the demo at once", ns.C.demo == nil and f.name.text ~= "")
   M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.6)
   SlashCmdList.CLASSCOACH("demo"); SlashCmdList.CLASSCOACH("demo")
-  check("/coach demo again stops it", ns.C.demo == nil)
+  check("/coach demo again stops it, and the hint goes", ns.C.demo == nil and not f.hint.shown)
   SlashCmdList.CLASSCOACH("check")
   check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
   check("no tick error", ns.C.lastError == nil, ns.C.lastError)

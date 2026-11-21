@@ -466,6 +466,17 @@ local function buildState(now)
   })
 end
 
+-- What the engine needs to know to talk about professions: the data, your class, and your settings.
+function C.professionOptions()
+  return { professionData = ns.ProfessionData, professionPicks = ns.ProfessionPicks, class = C.class, goal = ClassCoachDB.professionGoal,
+    first = ClassCoachCharDB.professionA, second = ClassCoachCharDB.professionB, secondary = ClassCoachDB.remindSecondary,
+    readable = API.professionsReadable }
+end
+function C.withOptions(options, more)
+  for k, v in pairs(more) do options[k] = v end
+  return options
+end
+
 local function tick()
   local now = GetTime()
   -- the profile was changed on the settings screen
@@ -540,11 +551,9 @@ local function tick()
     -- The journey panel is a separate thing: if it ever fails, the coach panel still draws.
     safely("journey panel", function()
       local db = ClassCoachDB
-      local journey = Engine.journey(profile, s, { food = db.food, rested = db.remindRested, train = db.remindTrain, gear = db.remindGear,
+      local journey = Engine.journey(profile, s, C.withOptions({ food = db.food, rested = db.remindRested, train = db.remindTrain, gear = db.remindGear,
         supplies = db.remindSupplies, roadmap = db.roadmap, data = ns.JourneyData,
-        professions = db.remindProfessions, professionData = ns.ProfessionData, professionPicks = ns.ProfessionPicks,
-        class = C.class, goal = db.professionGoal, first = ClassCoachCharDB.professionA, second = ClassCoachCharDB.professionB,
-        secondary = db.remindSecondary, readable = API.professionsReadable })
+        professions = db.remindProfessions }, C.professionOptions()))
       journey.title = ("Level %d"):format(s.level)
       for _, line in ipairs(journey.lines) do
         if type(line.icon) == "table" then   -- { spell = key }: that spell's own icon, learned or not
@@ -557,24 +566,27 @@ local function tick()
     end)
   end
   if s.inCombat then safely("journey panel", ns.Journey.render, { inCombat = true }) end
-  -- A step with no key: say where to get one, once nothing more pressing is being said.
-  if now1 and not view.planning and not now1.keybind and not now1.melee and (view.status == nil or view.statusKind == "ok") then
+  -- A step that is on none of your bars: say where to get it, once nothing more pressing is being said.
+  -- (On a bar without a key is fine: its button is lit and can be clicked.)
+  local slot = now1 and C.slots and C.slots[now1.label] or nil
+  if now1 and not view.planning and not now1.keybind and not slot and not now1.melee and (view.status == nil or view.statusKind == "ok") then
     view.status = now1.label .. " is not on your action bars. Drag it there from your spellbook, or type /coach bar."
     view.statusKind = "warn"
   end
   if not s.inCombat then view.restMacro = API.macroExists("CC Rest") and "CC Rest" or nil end
   if C.trouble then view.status, view.statusKind = C.trouble, "warn" end
   C.lastView = view
-  if C.demo then return C.playDemo(now, view) end
-  ns.Panel.render(view)
-  -- Before a fight the icons can be clicked; the buttons for that are only touched out of combat.
-  safely("click to cast", ns.Click.update, ns.Panel.frame, ns.Panel.clicks or {}, ClassCoachDB)
-  -- The button to press now, lit up on your action bars. Not while it is only a plan, and not
-  -- for a wand that is already firing: there is nothing to press then.
-  safely("bar highlight", function()
-    local slot = now1 and not view.planning and not now1.running and ClassCoachDB.showCoach ~= false and C.slots and C.slots[now1.label] or nil
-    ns.BarGlow.update(slot, ClassCoachDB)
-  end)
+  if C.demo then
+    C.playDemo(now, view)
+  else
+    local shown = ClassCoachDB.showCoach ~= false
+    ns.Panel.render(view)
+    -- Before a fight the icons can be clicked; the buttons for that are only touched out of combat.
+    safely("click to cast", ns.Click.update, ns.Panel.frame, shown and ns.Panel.clicks or {}, ClassCoachDB)
+    -- The button to press now, lit up on your action bars. Not while it is only a plan, and not
+    -- for a wand that is already firing: there is nothing to press then.
+    safely("bar highlight", ns.BarGlow.update, slot and shown and not view.planning and not now1.running and slot or nil, ClassCoachDB)
+  end
   -- The game's talent window: while it is open, keep the mark on the next talent of your build.
   safely("talent marks", function()
     if ClassCoachDB.talentMarks == false or not ns.Talents.open() then ns.Talents.hide() return end
@@ -634,6 +646,7 @@ end
 function C.toggleDemo()
   if C.demo then
     C.demo = nil
+    ns.Panel.showHint(false)
     say("Demo stopped.")
     return false
   end
@@ -648,6 +661,7 @@ function C.playDemo(now, real)
   local demo = C.demo
   if real.inCombat then
     C.demo = nil
+    ns.Panel.showHint(false)
     ns.Panel.render(real)
     return
   end
@@ -655,6 +669,7 @@ function C.playDemo(now, real)
     demo.views = demo.views or demoViews(real)
     if #demo.views == 0 then
       C.demo = nil
+      ns.Panel.showHint(false)
       say("Demo: no spells to show yet.")
       ns.Panel.render(real)
       return
@@ -665,6 +680,7 @@ function C.playDemo(now, real)
   end
   ns.BarGlow.hide()
   safely("click to cast", ns.Click.update, ns.Panel.frame, {}, ClassCoachDB)
+  ns.Panel.showHint(true)
   ns.Panel.render(demo.views[demo.step][2])
 end
 
@@ -1086,7 +1102,13 @@ local function command(msg)
         local n = tonumber(v)
         if n then store[option.key] = math.max(option.min, math.min(option.max, n)) end
       elseif value ~= "" then
-        store[option.key] = value
+        -- a setting with a list: take the value or its name, whatever the capitals
+        local picked, names = nil, {}
+        for _, choice in ipairs(option.choices()) do
+          names[#names + 1] = choice[1]
+          if choice[1]:lower() == v or choice[2]:lower() == v then picked = choice[1] end
+        end
+        if picked then store[option.key] = picked else say("Choose one of: " .. table.concat(names, ", ") .. ".") end
       end
       say(("%s = %s"):format(option.name, tostring(store[option.key])))
     end
@@ -1243,34 +1265,10 @@ local function command(msg)
       say("Bind them in Esc > Options > Keybindings > AddOns > ClassCoach, or type /coach smart next 1 (then again, restart).")
     end
   elseif cmd == "professions" or cmd == "profession" or cmd == "prof" then
-    local picks, guides = ns.ProfessionPicks, ns.ProfessionData
-    local goal = db.professionGoal or "gear"
-    local goalName = goal
-    for _, g in ipairs(picks.goals) do if g[1] == goal then goalName = g[2] end end
-    local pair, why = Engine.professionPair(C.class, picks, goal, ClassCoachCharDB.professionA, ClassCoachCharDB.professionB)
-    say(("Professions for your %s. Goal: %s."):format(C.profile.class == "ANY" and (C.class or "character") or C.profile.spec .. " " .. (C.class or ""), goalName))
-    print(("  Suggested: %s. %s"):format(table.concat(pair, " and "), why))
-    for _, name in ipairs(pair) do if guides[name] then print(("  %s: %s"):format(name, guides[name].about)) end end
-    print("  Change the goal or pick your own two: Esc > Options > AddOns > ClassCoach > Professions.")
-    local mine = API.professions() or {}
-    if #mine == 0 then print("  You have not learned a profession yet. Trainers are in every capital city: ask a guard.") end
-    for _, p in ipairs(mine) do
-      local guide = guides[p.name]
-      local step = guide and Engine.professionStep(guide, p.skill)
-      print(("  %s %d%s%s"):format(p.name, p.skill, p.max and (" of " .. p.max) or "",
-        step and (": %s %s (to %d)"):format(guide.verb, step[3], step[2]) or (p.skill >= 300 and ": finished" or "")))
-      if guide then
-        for _, st in ipairs(guide.steps) do
-          if st[1] > p.skill and st[1] < p.skill + 60 then print(("    from %d: %s %s"):format(st[1], guide.verb, st[3])) end
-        end
-      end
-    end
-    local free = {}
-    local has = {}
-    for _, p in ipairs(mine) do has[p.name] = true end
-    for _, name in ipairs(picks.secondary) do if not has[name] then free[#free + 1] = name end end
-    if #free > 0 then print("  Free to learn, they use no profession slot: " .. table.concat(free, ", ") .. ".") end
-    print("  Steps follow the Forever guides on wow-professions.com (based on the beta).")
+    local who = C.profile.class == "ANY" and (C.class or "character") or (C.profile.spec .. " " .. C.profile.class:sub(1, 1) .. C.profile.class:sub(2):lower())
+    local lines = Engine.professionReport(API.professions(), who, C.professionOptions())
+    say(lines[1])
+    for i = 2, #lines do print(lines[i]) end
   elseif cmd == "demo" then C.toggleDemo()
   elseif cmd == "check" then check()
   else

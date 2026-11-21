@@ -882,6 +882,9 @@ function API.barButton(slot)
       -- the main bar shows another page's buttons while it is switched away from page 1
       if bar[1] == 1 and (API.barPage() or 1) ~= 1 then return nil end
       if plain(try(button.IsVisible, button)) ~= true then return nil end
+      -- In a stance or form the main bar's buttons hold other slots: only light a button that really shows this one.
+      local showing = plain(button.action)
+      if type(showing) == "number" and showing ~= slot then return nil end
       return button
     end
   end

@@ -72,6 +72,45 @@ function Style.round(owner, icon)
   return ok
 end
 
+-- Four straight lines around a frame: the game has no border of its own to give.
+local EDGES = {
+  { "TOPLEFT", "TOPRIGHT", true }, { "BOTTOMLEFT", "BOTTOMRIGHT", true },
+  { "TOPLEFT", "BOTTOMLEFT", false }, { "TOPRIGHT", "BOTTOMRIGHT", false },
+}
+function Style.edges(f, layer, thickness, color)
+  local lines = {}
+  for i, e in ipairs(EDGES) do
+    local line = f:CreateTexture(nil, layer)
+    line:SetPoint(e[1])
+    line:SetPoint(e[2])
+    if e[3] then line:SetHeight(thickness) else line:SetWidth(thickness) end
+    line:SetColorTexture(color[1], color[2], color[3], 1)
+    lines[i] = line
+  end
+  return lines
+end
+
+-- The tooltip every icon shares. An icon sets what it has: title, spell (what
+-- to cast), bind (its key), does (what a click does, on a clickable icon), hint.
+function Style.tooltip(self)
+  if type(self.title) ~= "string" or not GameTooltip then return end
+  local key = type(self.bind) == "string" and self.bind or nil
+  GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+  GameTooltip:SetText(self.title, 1, 0.82, 0.2)
+  if self.clickable then
+    GameTooltip:AddLine("Click to " .. (type(self.does) == "string" and self.does or "cast it") .. (key and (" (or press " .. key .. ")") or "") .. ".", 1, 1, 1)
+  elseif type(self.spell) == "string" then
+    GameTooltip:AddLine("Cast " .. self.spell .. (key and (" (" .. key .. ")") or ""), 1, 1, 1)
+  elseif key then
+    GameTooltip:AddLine("Key " .. key, 1, 1, 1)
+  end
+  if type(self.hint) == "string" then GameTooltip:AddLine(self.hint, 0.9, 0.9, 0.9, true) end
+  GameTooltip:Show()
+end
+function Style.hideTooltip()
+  if GameTooltip then GameTooltip:Hide() end
+end
+
 -- The small dark square that shows a key: a flat fill, four hairlines, a text.
 function Style.badge(parent, size)
   local b = CreateFrame("Frame", nil, parent)
@@ -81,14 +120,7 @@ function Style.badge(parent, size)
   local bg = b:CreateTexture(nil, "BACKGROUND")
   bg:SetAllPoints()
   bg:SetColorTexture(c.dark[1], c.dark[2], c.dark[3], 1)
-  for _, e in ipairs({ { "TOPLEFT", "TOPRIGHT", true }, { "BOTTOMLEFT", "BOTTOMRIGHT", true },
-    { "TOPLEFT", "BOTTOMLEFT", false }, { "TOPRIGHT", "BOTTOMRIGHT", false } }) do
-    local line = b:CreateTexture(nil, "BORDER")
-    line:SetPoint(e[1])
-    line:SetPoint(e[2])
-    if e[3] then line:SetHeight(1) else line:SetWidth(1) end
-    line:SetColorTexture(c.line[1], c.line[2], c.line[3], 1)
-  end
+  Style.edges(b, "BORDER", 1, c.line)
   b.text = Style.text(b, "bold", math.floor(size * 0.62 + 0.5), c.ink)
   b.text:SetPoint("CENTER")
   b.text:SetJustifyH("CENTER")

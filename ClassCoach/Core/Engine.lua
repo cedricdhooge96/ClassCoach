@@ -419,15 +419,15 @@ function Engine.smartSteps(profile, s, has)
   end
   local gate = smart.gate
   if gate and not has.macro(gate.macro) then gate = nil end
-  -- What the key cannot do well without a macro it counts on. A wand cast as a
-  -- plain spell switches off again on the next press; a melee class with no
-  -- attack macro would stay on its last spell and cast it again and again.
+  -- What to know about the step the key stays on. A wand cast as a plain spell
+  -- switches off again on the next press, and a key that ends on a spell casts
+  -- that spell on every further press.
   local warn
   local last = steps[#steps]
   if last and last.kind == "spell" and last.value == (s.spells["Shoot"] and s.spells["Shoot"].name) then
     warn = "Without the CC Wand macro, a second press on the wand step stops your wand. Type /coach macros."
   elseif last and not tail then
-    warn = "Without an attack macro the key stays on " .. last.label .. " and would cast it again. Use it for the opening only, or type /coach macros."
+    warn = "The key stays on " .. last.label .. " and casts it again on every press. Follow the coach when it moves you to another key."
   end
   return steps, gate, warn
 end
@@ -681,8 +681,8 @@ end
 -- goal's pair fills what is left.
 function Engine.professionPair(class, picks, goal, first, second)
   picks = picks or {}
-  local table_ = (picks.byClass and picks.byClass[class]) or picks.any or {}
-  local suggested = table_[goal] or table_.gear or {}
+  local byGoal = (picks.byClass and picks.byClass[class]) or picks.any or {}
+  local suggested = byGoal[goal] or byGoal.gear or {}
   local pair, chosen = {}, 0
   for _, own in ipairs({ first, second }) do
     if type(own) == "string" and own ~= "auto" and listed(picks.primary, own) and not listed(pair, own) then
@@ -693,8 +693,8 @@ function Engine.professionPair(class, picks, goal, first, second)
   for _, name in ipairs(suggested) do
     if #pair < 2 and not listed(pair, name) then pair[#pair + 1] = name end
   end
-  local why = chosen == 2 and "Your own choice." or (picks.why and picks.why[table_[goal] and goal or "gear"]) or ""
-  if chosen == 1 then why = "Your own choice, plus one that fits your goal." end
+  local why = (picks.why and picks.why[byGoal[goal] and goal or "gear"]) or ""
+  if chosen == 2 then why = "Your own choice." elseif chosen == 1 then why = "Your own choice, plus one that fits your goal." end
   return pair, why
 end
 
@@ -703,6 +703,36 @@ function Engine.professionStep(guide, skill)
   for _, step in ipairs(guide and guide.steps or {}) do
     if skill >= step[1] and skill < step[2] then return step end
   end
+end
+
+-- The whole plan in words, for /coach professions.
+--   mine   what you have learned (as for professionLines); who = "Affliction Warlock"
+function Engine.professionReport(mine, who, options)
+  local picks, guides = options.professionPicks, options.professionData or {}
+  local goal, goalName = options.goal or "gear", nil
+  for _, g in ipairs(picks.goals or {}) do if g[1] == goal then goalName = g[2] end end
+  local pair, why = Engine.professionPair(options.class, picks, goal, options.first, options.second)
+  local out = { ("Professions for your %s. Goal: %s."):format(who, goalName or "Make my own gear while leveling"),
+    ("  Suggested: %s. %s"):format(table.concat(pair, " and "), why) }
+  for _, name in ipairs(pair) do if guides[name] then out[#out + 1] = ("  %s: %s"):format(name, guides[name].about) end end
+  out[#out + 1] = "  Change the goal or pick your own two: Esc > Options > AddOns > ClassCoach > Professions."
+  if #mine == 0 then out[#out + 1] = "  You have not learned a profession yet. Trainers are in every capital city: ask a guard." end
+  local has = {}
+  for _, p in ipairs(mine) do
+    has[p.name] = true
+    local guide = guides[p.name]
+    local step = guide and Engine.professionStep(guide, p.skill)
+    out[#out + 1] = ("  %s %d%s%s"):format(p.name, p.skill, p.max and (" of " .. p.max) or "",
+      step and (": %s %s (to %d)"):format(guide.verb, step[3], step[2]) or (p.skill >= 300 and ": finished" or ""))
+    for _, st in ipairs(guide and guide.steps or {}) do
+      if st[1] > p.skill and st[1] < p.skill + 60 then out[#out + 1] = ("    from %d: %s %s"):format(st[1], guide.verb, st[3]) end
+    end
+  end
+  local free = {}
+  for _, name in ipairs(picks.secondary or {}) do if not has[name] then free[#free + 1] = name end end
+  if #free > 0 then out[#out + 1] = "  Free to learn, they use no profession slot: " .. table.concat(free, ", ") .. "." end
+  out[#out + 1] = "  Steps follow the Forever guides on wow-professions.com (based on the beta)."
+  return out
 end
 
 -- Lines for the journey panel.

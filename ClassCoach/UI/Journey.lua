@@ -26,14 +26,8 @@ local function row(parent)
   label:SetWordWrap(false)
   r.label = label
   r:EnableMouse(true)
-  r:SetScript("OnEnter", S.guard(function(self)
-    if not self.title or not GameTooltip then return end
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText(self.title, 1, 0.82, 0.2)
-    if self.hint then GameTooltip:AddLine(self.hint, 0.9, 0.9, 0.9, true) end
-    GameTooltip:Show()
-  end))
-  r:SetScript("OnLeave", S.guard(function() if GameTooltip then GameTooltip:Hide() end end))
+  r:SetScript("OnEnter", S.guard(S.tooltip))
+  r:SetScript("OnLeave", S.guard(S.hideTooltip))
   -- dragging a row drags the panel
   r:RegisterForDrag("LeftButton")
   r:SetScript("OnDragStart", S.guard(function() local s = parent:GetScript("OnDragStart"); if s then s(parent) end end))

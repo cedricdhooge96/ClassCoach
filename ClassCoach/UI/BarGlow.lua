@@ -22,16 +22,7 @@ local function create()
   h:SetFrameStrata("MEDIUM")
   h:SetFrameLevel(20)
   h:EnableMouse(false)
-  h.edges = {}
-  for i, e in ipairs({ { "TOPLEFT", "TOPRIGHT", true }, { "BOTTOMLEFT", "BOTTOMRIGHT", true },
-    { "TOPLEFT", "BOTTOMLEFT", false }, { "TOPRIGHT", "BOTTOMRIGHT", false } }) do
-    local line = h:CreateTexture(nil, "OVERLAY")
-    line:SetPoint(e[1])
-    line:SetPoint(e[2])
-    if e[3] then line:SetHeight(2) else line:SetWidth(2) end
-    line:SetColorTexture(c[1], c[2], c[3], 1)
-    h.edges[i] = line
-  end
+  h.edges = S.edges(h, "OVERLAY", 2, c)
   h.halo = h:CreateTexture(nil, "OVERLAY")
   h.halo:SetTexture(S.MEDIA .. "halo")
   h.halo:SetPoint("CENTER")
@@ -115,6 +106,10 @@ function Glow.update(slot, db)
     Glow.button = button
     h:ClearAllPoints()
     h:SetAllPoints(button)
+    -- just above the button, whatever layer its bar is drawn in
+    local strata, level = button.GetFrameStrata and button:GetFrameStrata(), button.GetFrameLevel and button:GetFrameLevel()
+    if type(strata) == "string" then h:SetFrameStrata(strata) end
+    h:SetFrameLevel((type(level) == "number" and level or 10) + 10)
     local w = button.GetWidth and button:GetWidth()
     w = type(w) == "number" and w > 0 and w or 45
     local size = w / (1 - 2 * HALO_INSET)

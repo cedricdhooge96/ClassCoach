@@ -10,6 +10,12 @@ ns.Options = Options
 -- Each entry: a section header, or one setting.
 --   key      where it is stored (ClassCoachDB, or ClassCoachCharDB with perChar)
 --   kind     "check", "slider" (min, max, step, unit) or "choice" (choices = function)
+local function professionChoices()
+  local list = { { "auto", "Suggest one for my class" } }
+  for _, name in ipairs(ns.ProfessionPicks.primary) do list[#list + 1] = { name, name } end
+  return list
+end
+
 local function layout()
   return {
     { header = "Coach (the fight)" },
@@ -29,10 +35,10 @@ local function layout()
       tip = "Your real mana, drawn by the game. It turns amber, then red, as the coach's advice changes." },
     { key = "cue", kind = "check", name = "Pulse the ring when a new key is needed", default = true,
       tip = "Most of a fight is one steady key. When something else comes up, or a spell was resisted, the ring pulses." },
-    { key = "cueSound", kind = "choice", name = "Sound with the pulse", default = "click",
+    { key = "cueSound", kind = "choice", fixed = true, name = "Sound with the pulse", default = "click",
       tip = "A short sound when the ring pulses.",
       choices = function() return { { "off", "None" }, { "click", "Soft click" }, { "ready", "Ready check" } } end },
-    { key = "barGlow", kind = "choice", name = "Light up the button to press on my action bars", default = "glow",
+    { key = "barGlow", kind = "choice", fixed = true, name = "Light up the button to press on my action bars", default = "glow",
       tip = "Marks the action-bar button of the step to press now. Works on the game's own action bars.",
       choices = function() return ns.BarGlow.STYLES end },
     { key = "clickable", kind = "check", name = "Click an icon to cast it (before a fight)", default = true,
@@ -66,23 +72,15 @@ local function layout()
       tip = "Class quests and other milestones for your level, where to quest, and which dungeon is in range." },
 
     { header = "Professions" },
-    { key = "professionGoal", kind = "choice", name = "What I want from my professions", default = "gear",
+    { key = "professionGoal", kind = "choice", fixed = true, name = "What I want from my professions", default = "gear",
       tip = "Decides which two professions the coach suggests for your class. The suggestion only shows while you have a profession slot free.",
       choices = function() return ns.ProfessionPicks.goals end },
-    { key = "professionA", perChar = true, kind = "choice", name = "My first profession", default = "auto",
+    { key = "professionA", perChar = true, kind = "choice", fixed = true, name = "My first profession", default = "auto",
       tip = "Pick one yourself for this character, or leave it to the goal above.",
-      choices = function()
-        local list = { { "auto", "Suggest one for my class" } }
-        for _, name in ipairs(ns.ProfessionPicks.primary) do list[#list + 1] = { name, name } end
-        return list
-      end },
-    { key = "professionB", perChar = true, kind = "choice", name = "My second profession", default = "auto",
+      choices = professionChoices },
+    { key = "professionB", perChar = true, kind = "choice", fixed = true, name = "My second profession", default = "auto",
       tip = "Pick one yourself for this character, or leave it to the goal above.",
-      choices = function()
-        local list = { { "auto", "Suggest one for my class" } }
-        for _, name in ipairs(ns.ProfessionPicks.primary) do list[#list + 1] = { name, name } end
-        return list
-      end },
+      choices = professionChoices },
     { key = "remindSecondary", kind = "check", name = "Suggest First Aid, Cooking and Fishing", default = true,
       tip = "In Forever these three use no profession slot, so every character can learn them all." },
 
@@ -129,6 +127,11 @@ function Options.sanitize(db, charDB)
         store[o.key] = o.default
       elseif o.kind == "slider" then
         if v ~= v or v < o.min or v > o.max then store[o.key] = o.default end   -- v ~= v: not a number
+      elseif o.kind == "choice" and o.fixed then
+        -- a list that never changes: a value that is not on it is damage
+        local known = false
+        for _, choice in ipairs(o.choices()) do if choice[1] == v then known = true end end
+        if not known then store[o.key] = o.default end
       end
     end
   end
