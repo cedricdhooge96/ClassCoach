@@ -1616,10 +1616,11 @@ elseif SCENARIO == "talents" then
   -- 4b. The look: a glow on the next talent, a veil over talents outside the build, and the card
   local holder = ns.Talents.holder
   local nextButton = win.buttons[at["Suppression"]]
-  check("the marks are drawn above the game's talent buttons (level 1000 and up), not just above its window",
-    holder:GetFrameLevel() == 1021 and holder:GetFrameStrata() == "HIGH" and holder.glow:GetFrameLevel() == 1011, tostring(holder:GetFrameLevel()) .. " " .. tostring(holder:GetFrameStrata()) .. " " .. tostring(holder.glow:GetFrameLevel()))
+  check("the marks are drawn in the layer above the whole talent window, under the game's dialogs",
+    holder:GetFrameStrata() == "DIALOG" and holder:GetFrameLevel() == 20 and holder.glow:GetFrameStrata() == "DIALOG" and holder.glow:GetFrameLevel() == 20,
+    tostring(holder:GetFrameLevel()) .. " " .. tostring(holder:GetFrameStrata()) .. " " .. tostring(holder.glow:GetFrameLevel()))
   nextButton.level = 1500; M.advance(1); tick(ns)
-  check("a window brought to the front: the glow follows it up", holder.glow:GetFrameLevel() == 1510, tostring(holder.glow:GetFrameLevel()))
+  check("a window brought to the front changes nothing: the marks stay above it", holder.glow:GetFrameStrata() == "DIALOG" and holder.glow:GetFrameLevel() == 20, tostring(holder.glow:GetFrameLevel()))
   nextButton.level = nil; M.advance(1); tick(ns)
   -- the game keeps a second, hidden button for the same talent: the one on screen gets the glow
   local hidden = { GetNodeID = function() return nextButton.node end, IsVisible = function() return false end,

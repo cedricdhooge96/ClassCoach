@@ -122,9 +122,10 @@ end
 -- Lays the glow over a target frame, just above it. Reads the target, never changes it.
 -- The level is checked every time: a window that is clicked comes to the front
 -- and its buttons move up with it. `floor`: a level to stay above as well.
-function Glow.attach(h, target, floor)
-  local strata = target.GetFrameStrata and target:GetFrameStrata()
-  local level = target.GetFrameLevel and target:GetFrameLevel()
+-- layer: draw in this frame strata at floor + 10, instead of just above the target in its own.
+function Glow.attach(h, target, floor, layer)
+  local strata = layer or (target.GetFrameStrata and target:GetFrameStrata())
+  local level = not layer and target.GetFrameLevel and target:GetFrameLevel() or nil
   level = math.max(type(level) == "number" and level or 10, type(floor) == "number" and floor or 0)
   if type(strata) == "string" and h:GetFrameStrata() ~= strata then h:SetFrameStrata(strata) end
   local want = math.min(level + 10, 9000)
@@ -140,12 +141,12 @@ function Glow.attach(h, target, floor)
 end
 
 -- Shows the glow on target with a style and colour; nil target or "off" hides it.
-function Glow.show(h, target, style, colorKey, floor)
+function Glow.show(h, target, style, colorKey, floor, layer)
   if not target or not Glow.dress(h, style, colorKey) then
     Glow.hide(h)
     return false
   end
-  Glow.attach(h, target, floor)
+  Glow.attach(h, target, floor, layer)
   if not h:IsShown() then h:Show() end
   return true
 end

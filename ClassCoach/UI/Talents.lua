@@ -21,6 +21,7 @@ ns.Talents = Talents
 local S, C = ns.Style, ns.Style.COLORS
 
 local MARKS = 5          -- the next talent and four after it
+local LAYER, LAYER_LEVEL = "DIALOG", 20   -- where the marks are drawn (see create)
 local VEILS = 80         -- talents dimmed at most
 local ROWS = 5           -- points listed on the card
 local CARD_W, ROW_H = 216, 34
@@ -170,6 +171,13 @@ end
 local function create()
   local holder = CreateFrame("Frame", "ClassCoachTalentMarks", UIParent)
   holder:EnableMouse(false)
+  holder:SetAllPoints(UIParent)   -- a frame with no place on screen may not draw what it holds
+  -- Above the whole talent window, not level by level inside its layer: in game,
+  -- marks a few levels above the talent buttons (in the same layer) still did not
+  -- show (0.15.4: button 1589, marks 1611, all "visible"). The game's dialogs (level
+  -- 100 and up in this layer) still come above the marks.
+  holder:SetFrameStrata(LAYER)
+  holder:SetFrameLevel(LAYER_LEVEL)
   holder.marks, holder.veils = {}, {}
   for i = 1, MARKS do holder.marks[i] = mark(holder) end
   holder.glow = ns.Glow.new("ClassCoachTalentGlow")
@@ -332,9 +340,8 @@ function Talents.update(state, db, level)
   Talents.db = db
   local plan = state.plan
 
-  -- which talent each of the game's buttons shows, and how high they are drawn
-  -- (the game draws its talent buttons at level 1000 and up, far above its window)
-  local buttons, seen, top, strata = {}, 0, read(t, "GetFrameLevel") or 0, nil
+  -- which talent each of the game's buttons shows (and how high they are drawn, for /coach talents)
+  local buttons, seen, top = {}, 0, read(t, "GetFrameLevel") or 0
   for button in t:EnumerateAllTalentButtons() do
     seen = seen + 1
     if seen > 400 then break end
@@ -343,17 +350,11 @@ function Talents.update(state, db, level)
     if ok and type(node) == "number" and (not buttons[node] or visible(button)) then
       buttons[node] = button
       top = math.max(top, read(button, "GetFrameLevel") or 0)
-      if not strata then
-        local okS, st = pcall(button.GetFrameStrata, button)
-        strata = okS and type(st) == "string" and st or nil
-      end
     end
   end
   Talents.seen, Talents.top, Talents.buttons = seen, top, buttons
-  strata = strata or t:GetFrameStrata()
-  if type(strata) == "string" and holder:GetFrameStrata() ~= strata then holder:SetFrameStrata(strata) end
-  local want = math.min(top + 20, 9000)
-  if holder:GetFrameLevel() ~= want then holder:SetFrameLevel(want) end
+  if holder:GetFrameStrata() ~= LAYER then holder:SetFrameStrata(LAYER) end
+  if holder:GetFrameLevel() ~= LAYER_LEVEL then holder:SetFrameLevel(LAYER_LEVEL) end
 
   -- the next talent: the glow and its tag; then numbered discs on the ones after it
   local wanted = {}
@@ -380,7 +381,7 @@ function Talents.update(state, db, level)
     end
   end
   for i = used + 1, MARKS do holder.marks[i].node = nil; holder.marks[i]:Hide() end
-  ns.Glow.show(holder.glow, glowOn, db.talentGlow or "glow", db.glowColor, top)
+  ns.Glow.show(holder.glow, glowOn, db.talentGlow or "glow", db.glowColor, LAYER_LEVEL - 10, LAYER)
   Talents.nextFound = glowOn ~= nil
 
   -- a veil over every talent that is not part of the build
