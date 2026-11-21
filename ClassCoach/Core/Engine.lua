@@ -237,6 +237,14 @@ local STEP = 1.5   -- seconds one press takes (the global cooldown)
 local Sim = {}
 function Sim:pressed(key)
   local meta = self.profile.spells[key]
+  -- The plan spends mana as it goes: a step it cannot afford any more drops out.
+  if self.mana then
+    local sp = self.spells[key]
+    self.mana = math.max(0, self.mana - (sp and sp.cost or 0)) + (meta and meta.restores or 0) * self.manaMax
+    if self.mana > self.manaMax then self.mana = self.manaMax end
+    self.manaPct = self.mana / self.manaMax * 100
+    self.manaLevel = ns.Mana.level(self.manaPct, self.profile.mana or {}, self.manaLevel)
+  end
   self.virtual[key] = (self.virtual[key] or 0) + 1
   self.virtualAt[key] = self.now
   if meta and meta.totem then self.virtualTotems[meta.totem] = true end
@@ -267,6 +275,11 @@ end
 function Sim:castsOnTarget(key)
   return self.base:castsOnTarget(key) + (self.virtual[key] or 0)
 end
+function Sim:usable(key)
+  local sp = self.spells[key]
+  if self.mana and sp and (sp.cost or 0) > self.mana then return false end
+  return self.base:usable(key)
+end
 function Sim:ready(key)
   local meta = self.profile.spells[key]
   if meta and meta.cd and self.virtualCd[meta.cd == true and key or meta.cd] then return false end
@@ -275,7 +288,11 @@ end
 
 local function simulate(profile, s)
   local sim = { base = s, profile = profile, virtual = {}, virtualAt = {}, virtualTotems = {}, virtualCd = {},
-    now = s.now, inCombat = true, fightTime = s.inCombat and (s.fightTime or 0) or 0 }
+    now = s.now, inCombat = true, fightTime = s.inCombat and (s.fightTime or 0) or 0, manaLevel = s.manaLevel, manaPct = s.manaPct }
+  if s.usesMana and s.manaPct and s.manaMax and s.manaMax > 0 then
+    sim.manaMax = s.manaMax
+    sim.mana = s.manaPct / 100 * s.manaMax
+  end
   return setmetatable(sim, { __index = function(_, k)
     local own = Sim[k]
     if own ~= nil then return own end
@@ -441,11 +458,13 @@ end
 -- Macros a profile offers (built from the spells you know)
 ---------------------------------------------------------------------------
 
--- The coach's plan for a fresh pull at full mana: the same steps the carousel
--- would walk through, ending with the filler. Macros are written from this,
--- so they follow the coach (your level, spells and usual kill time).
+-- The coach's plan for your next pull: the same steps the ring would walk
+-- through, ending with the filler. Macros and the smart key are written from
+-- this, so they follow the coach (your level, spells, usual kill time) and the
+-- mana you have now (full when that is unknown): each step spends its cost, so
+-- on low mana the plan reaches the wand or Life Tap sooner.
 function Engine.plan(profile, s, max)
-  local fresh = setmetatable({ manaLevel = "high", manaPct = 100, inCombat = false, fightTime = 0,
+  local fresh = setmetatable({ manaLevel = s.manaPct and s.manaLevel or "high", manaPct = s.manaPct or 100, inCombat = false, fightTime = 0,
     target = { exists = false, key = "plan" } }, { __index = s })
   return Engine.chain(profile, fresh, max or 8)
 end
@@ -1183,7 +1202,7 @@ function Engine.talentPlan(order, have)
     local key = talentKey(step.name)
     wanted[key] = (wanted[key] or 0) + 1
     local t = have and have.byName[key]
-    local s = { name = t and t.name or step.name, label = step.label or step.name, want = wanted[key], node = t and t.node,
+    local s = { name = t and t.name or step.name, label = step.label or step.name, want = wanted[key], node = t and t.node, icon = t and t.icon,
       max = t and t.max, known = t ~= nil, taken = t ~= nil and t.rank >= wanted[key] }
     if t and wanted[key] > t.max then s.known, s.taken = false, false end   -- the build asks for more ranks than exist
     plan.steps[k] = s
@@ -1231,6 +1250,36 @@ function Engine.upcomingTalents(plan, count)
       out[#out + 1] = { node = s.node, name = s.name, order = #out + 2 }
       if #out >= (count or 4) then break end
     end
+  end
+  return out
+end
+
+-- The next `count` points of a build, one line each, for the card beside the
+-- talent window: { name, rank = "2/5", icon, node, level, due } where `level` is
+-- when the build takes it (talent points come one a level from 10) and `due`
+-- means you can take it now.
+Engine.FIRST_TALENT_LEVEL = 10
+function Engine.talentSchedule(plan, level, count)
+  local out = {}
+  if not plan or not plan.next then return out end
+  for k = plan.next, #plan.steps do
+    local s = plan.steps[k]
+    if not s.taken then
+      local at = Engine.FIRST_TALENT_LEVEL - 1 + k
+      out[#out + 1] = { name = s.name, rank = ("%d/%d"):format(s.want, s.max or s.want), icon = s.icon, node = s.node,
+        known = s.known, level = at, due = level >= at }
+      if #out >= (count or 5) then break end
+    end
+  end
+  return out
+end
+
+-- Talents of the tree that are not part of the build: { [node] = true }.
+function Engine.outsideBuild(plan, have)
+  local inBuild, out = {}, {}
+  for _, s in ipairs(plan and plan.steps or {}) do if s.node then inBuild[s.node] = true end end
+  for _, t in ipairs(have and have.list or {}) do
+    if not inBuild[t.node] and (t.rank or 0) == 0 then out[t.node] = true end
   end
   return out
 end

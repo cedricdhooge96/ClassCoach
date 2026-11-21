@@ -55,15 +55,24 @@ local function hidden(v) if P.combat then return SECRET end return v end
 function UnitClass(u) if u == "player" then return P.className, P.class end end
 function UnitLevel(u) if u == "player" then return P.level end return P.target and P.target.level end
 function UnitPowerType() return P.powerType end
-function UnitPower(_, kind) if kind == 0 or kind == nil then return hidden(P.powerType == 0 and P.mana or 0) end end
+-- M.manaSecret: a client that hides your mana out of combat too (as Cedric's did).
+function UnitPower(_, kind)
+  if kind == 0 or kind == nil then
+    if M.manaSecret then return SECRET end
+    return hidden(P.powerType == 0 and P.mana or 0)
+  end
+end
 -- The percent is hidden in combat too, unless a test says this client shows it.
 CurveConstants = { ScaleTo100 = "ScaleTo100" }
 function UnitPowerPercent()
   local pct = P.maxMana > 0 and P.mana / P.maxMana * 100 or 0
   if M.percentReadable then return pct end
+  if M.manaSecret then return SECRET end
   return hidden(pct)
 end
 function UnitPowerMax(_, kind) if kind == 0 or kind == nil then return hidden(P.powerType == 0 and P.maxMana or 0) end end
+-- Mana per second back outside and inside the five-second rule (hidden in combat, like the rest).
+function GetPowerRegen() return hidden(P.regenIdle or 3), hidden(P.regenCasting or 0) end
 function UnitAffectingCombat(u) if u == "player" then return P.combat end end
 function InCombatLockdown() return P.combat end
 function IsInGroup() return false end
@@ -96,7 +105,22 @@ function IsResting() return P.resting or false end
 C_ClassTalents = {
   GetActiveConfigID = function() return 1 end,
   HasUnspentTalentPoints = function() return (P.talentPoints or 0) > 0 end,
+  GetLastSelectedSavedConfigID = function(spec) M.learnLog[#M.learnLog + 1] = "saved config for spec " .. tostring(spec); return 5 end,
+  -- Applies what was staged, as the talent window's Apply button does.
+  CommitConfig = function(saved)
+    M.learnLog[#M.learnLog + 1] = "commit " .. tostring(saved)
+    if M.refuseCommit then return false end
+    for _, t in ipairs(P.tree or {}) do
+      if t.staged then
+        P.talentPoints = math.max(0, (P.talentPoints or 0) - (t.staged - (t.rank or 0)))
+        t.rank, t.staged = t.staged, nil
+      end
+    end
+    return true
+  end,
 }
+M.learnLog = {}
+PlayerUtil = { GetCurrentSpecID = function() return 265 end }
 -- With P.tree set ({ { name, max, rank, staged } ... }) the character has ONE tree holding every talent of the
 -- class, as the Forever client does. Without it: three anonymous trees filled from P.talents.
 C_Traits = {
@@ -130,6 +154,26 @@ C_Traits = {
     if not t then return nil end
     M.names[definition + 10000] = t.name
     return { spellID = definition + 10000 }
+  end,
+  ConfigHasStagedChanges = function()
+    for _, t in ipairs(P.tree or {}) do if t.staged then return true end end
+    return false
+  end,
+  CanPurchaseRank = function(_, node)
+    local t = P.tree and P.tree[node - 7000]
+    return t ~= nil and (t.staged or t.rank or 0) < (t.max or 5) and (P.talentPoints or 0) > 0
+  end,
+  PurchaseRank = function(_, node)
+    local t = P.tree and P.tree[node - 7000]
+    if not t or (P.talentPoints or 0) <= 0 then return false end
+    t.staged = (t.staged or t.rank or 0) + 1
+    M.learnLog[#M.learnLog + 1] = "stage " .. t.name
+    return true
+  end,
+  RollbackConfig = function()
+    for _, t in ipairs(P.tree or {}) do t.staged = nil end
+    M.learnLog[#M.learnLog + 1] = "rollback"
+    return true
   end,
   GetTreeCurrencyInfo = function(_, tree)
     if P.noTalentCount then return {} end
@@ -286,6 +330,10 @@ function M.talentWindow(open)
     end,
     GetFrameStrata = function() return "HIGH" end,
     GetFrameLevel = function() return 10 end,
+    -- where it sits: 860 wide in the middle of a 1365 wide screen, unless a test moves it
+    GetLeft = function(self) return self.left or 252 end,
+    GetRight = function(self) return self.right or 1112 end,
+    GetEffectiveScale = function() return 1 end,
     buttons = buttons,
   }
   PlayerSpellsFrame = { TalentsFrame = talents }
@@ -370,6 +418,8 @@ local function widget()
     SetFontObject = function(self, object) rawset(self, "fontObject", object); rawset(self, "font", nil) end,
     GetFont = function(self) local f = rawget(self, "font"); if f then return f[1], f[2], f[3] end end,
     CreateMaskTexture = function() return widget() end,
+    CreateLine = function() return widget() end,
+    GetThumbTexture = function(self) local t = rawget(self, "thumb") or widget(); rawset(self, "thumb", t); return t end,
     AddMaskTexture = function(self, mask) rawset(self, "mask", mask) end,
     SetShown = function(self, on) self.shown = on and true or false end,
     SetSize = function(self, w, h) rawset(self, "width", w); rawset(self, "height", h) end,
@@ -489,6 +539,7 @@ function M.gameFrame(name, parent, more)
     end
     return true
   end
+  local fields = state.fields or {}   -- what else a test lets the addon read (a spellbook's spell, its page)
   local reads = {
     IsShown = function() return state.shown end, IsVisible = function() return visible(state) end,
     GetWidth = function() return state.width end, GetHeight = function() return state.height end,
@@ -501,6 +552,7 @@ function M.gameFrame(name, parent, more)
     __index = function(_, k)
       if k == "action" then return state.action end
       if LOOKS[k] then return reads[k] end
+      if fields[k] ~= nil then return fields[k] end
       violation(("the addon used %s:%s - the game's bars may be looked at, never changed"):format(name, tostring(k)))
     end,
     __newindex = function(_, k) violation(("the addon wrote the field %s.%s on a frame of the game"):format(name, tostring(k))) end,
@@ -515,6 +567,24 @@ for bar, parent in pairs({ ActionButton = "MainActionBar", MultiBarBottomLeftBut
   if parent ~= "MainActionBar" then M.gameFrame(parent, "UIParent", { width = 600 }) end
   for i = 1, 12 do M.gameFrame(bar .. i, parent) end
 end
+-- The game's spellbook: PlayerSpellsFrame.SpellBookFrame, its page of spells (PagedSpellsFrame) and,
+-- on each, the spell it shows. Look-only, like the bars. names: the spells on the open page.
+function M.spellbook(open, names)
+  local frames = {}
+  for i, name in ipairs(names or {}) do
+    M.gameFrame("MockSpellButton" .. i, nil, { width = 36, height = 36, strata = "HIGH", level = 300 })
+    M.gameFrame("MockSpellItem" .. i, nil, { fields = { spellBookItemInfo = { name = name }, Button = _G["MockSpellButton" .. i] } })
+    frames[i] = _G["MockSpellItem" .. i]
+  end
+  M.gameFrame("MockSpellPage", nil, { fields = { EnumerateFrames = function()
+    local i = 0
+    return function() i = i + 1; if frames[i] then return i, frames[i] end end
+  end } })
+  M.gameFrame("MockSpellBook", nil, { shown = open == true, fields = { PagedSpellsFrame = _G.MockSpellPage } })
+  PlayerSpellsFrame = PlayerSpellsFrame or {}
+  PlayerSpellsFrame.SpellBookFrame = _G.MockSpellBook
+end
+
 function M.fire(event, ...)
   for _, f in ipairs(M.frames) do
     if (f.events[event] or event == "ADDON_LOADED") and f.scripts.OnEvent then f.scripts.OnEvent(f, event, ...) end

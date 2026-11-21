@@ -383,8 +383,8 @@ if SCENARIO == "shaman" then
   check("settings page registered with the game", S.category ~= nil and S.category.name == "ClassCoach")
   local count = 0
   for _ in pairs(S.list) do count = count + 1 end
-  check("every option made it onto the page", count == 38 and #ns.Options.registered == 38 and #ns.Options.keys() == 38, count)
-  check("sections and action buttons", #S.headers == 6 and #S.buttons == 4, #S.headers .. "/" .. #S.buttons)
+  check("every option made it onto the page", count == 46 and #ns.Options.registered == 46 and #ns.Options.keys() == 46, count)
+  check("sections and action buttons", #S.headers == 7 and #S.buttons == 5, #S.headers .. "/" .. #S.buttons)
   check("options write to the saved settings", S.list.compact.tbl == ClassCoachDB and S.list.specChoice.tbl == ClassCoachCharDB)
   check("slider shows its unit", S.list.opacity.opts.format(60) == "60%" and S.list.scale.opts.format(1.1) == "1.10x")
   local specs = S.list.specChoice.getOptions()
@@ -715,10 +715,18 @@ elseif SCENARIO == "warlock" then
   SlashCmdList.CLASSCOACH("errors")
   SlashCmdList.CLASSCOACH("smart")
   local b = ns.Smart.button
-  check("smart key: secure button made and loaded", b ~= nil and b:GetAttribute("cc-count") == 4, b and b:GetAttribute("cc-count"))
+  check("smart key: secure button made and loaded", b ~= nil and b:GetAttribute("cc-count") == 3, b and b:GetAttribute("cc-count"))
   check("smart key: resets when no living enemy is targeted", M.drivers.ccreset.conditions == "[@target,harm,nodead] keep; reset")
   local steps = table.concat(ns.Smart.describe(), ", ")
-  check("smart key: steps are the coach's plan", steps == "1 Bane of Agony, 2 Corruption, 3 Immolate, 4 Shoot (stays here)", steps)
+  check("smart key at half mana: the plan leaves out Immolate (spare mana only)", steps == "1 Bane of Agony, 2 Corruption, 3 Shoot (stays here)", steps)
+  M.P.mana = 300; M.advance(2.5); tick(ns); M.advance(2.5); tick(ns)   -- a new plan is loaded once it holds for two checks
+  steps = table.concat(ns.Smart.describe(), ", ")
+  check("smart key: after drinking to full it is loaded again by itself, with Immolate", steps == "1 Bane of Agony, 2 Corruption, 3 Immolate, 4 Shoot (stays here)", steps)
+  check("a plan that only flickers is never loaded", (function()
+    local before = ns.C.planSeen
+    ns.C.planNext = "flicker"; M.advance(2.1); tick(ns)
+    return ns.C.planSeen == before
+  end)())
   target({ name = "Crab", level = 12, hostile = true, guid = "Creature-41" })
   M.advance(1); tick(ns)
   local kind, what = M.press(b)
@@ -749,7 +757,7 @@ elseif SCENARIO == "warlock" then
   -- The panel shows which key to press: Next, or Again after a resist.
   M.P.bindings["CLICK ClassCoachSmartButton:LeftButton"] = "1"
   M.P.bindings["CLICK ClassCoachSmartButton:RightButton"] = "2"
-  M.advance(0.5); f = tick(ns)
+  M.advance(2.1); f = tick(ns)   -- keys are read again every two seconds
   check("panel: Bane of Agony is on the smart key", f.name.text == "Bane of Agony" and f.key.text == "1", f.name.text .. "/" .. tostring(f.key.text))
   M.press(b); cast(980); M.fire("UNIT_COMBAT", "target", "RESIST", "", 0, 32)
   M.advance(0.1); f = tick(ns)
@@ -1423,7 +1431,7 @@ elseif SCENARIO == "talents" then
   local win = M.talentWindow(true)
   M.advance(1); tick(ns)
   local m = marks()
-  check("window open: NEXT on the next talent", m[1] and m[1].node == node("Suppression") and m[1].role == "next" and m[1].text == "NEXT",
+  check("window open: NEXT on the next talent", m[1] and m[1].node == node("Suppression") and m[1].role == "next" and m[1].text == "Next",
     m[1] and (m[1].node .. " " .. tostring(m[1].text)))
   check("and 2 on the talent after it", m[2] and m[2].node == node("Improved Corruption") and m[2].text == "2" and m[2].role == "later",
     m[2] and (m[2].node .. " " .. tostring(m[2].text)))
@@ -1445,6 +1453,76 @@ elseif SCENARIO == "talents" then
   ClassCoachDB.talentMarks = false; M.advance(1); tick(ns)
   check("the setting turns the marks off", #marks() == 0)
   ClassCoachDB.talentMarks = true; M.advance(1); tick(ns)
+
+  -- 4b. The look: a glow on the next talent, a veil over talents outside the build, and the card
+  local holder = ns.Talents.holder
+  local nextButton = win.buttons[at["Suppression"]]
+  check("the next talent wears the glow, in the default look", holder.glow.shown and holder.glow.target == nextButton and holder.glow.style == "glow",
+    tostring(holder.glow.style))
+  local outside, count = ns.Engine.outsideBuild(ns.C.talentState.plan, ns.C.talentState.have), 0
+  for _ in pairs(outside) do count = count + 1 end
+  check("talents the build never takes are veiled, and only those", count > 0 and ns.Talents.veiled == count and not outside[node("Suppression")]
+    and not outside[node("Improved Life Tap")], ns.Talents.veiled .. "/" .. count)
+  ClassCoachDB.talentGlow, ClassCoachDB.glowColor = "ants", "blue"; M.advance(1); tick(ns)
+  check("the talent's look and colour are yours to pick", holder.glow.style == "ants" and holder.glow.dashes[1].shown and holder.glow.colorKey == "blue")
+  ClassCoachDB.talentGlow, ClassCoachDB.glowColor = "glow", "gold"
+  ClassCoachDB.talentDim = false; M.advance(1); tick(ns)
+  check("dimming can be turned off", ns.Talents.veiled == 0)
+  ClassCoachDB.talentDim = true; M.advance(1); tick(ns)
+  local card = holder.card
+  check("the card sits beside the window, on the side with room", card.shown and card.where == "right", tostring(card.where))
+  local row1 = card.rows[1]
+  check("the card: the next point first, with its rank and the level the build takes it", row1.shown and row1.name.text == "Suppression"
+    and row1.detail.text == "Rank 1 of 5, at level 12" and row1.icon.texture ~= nil, row1.name.text .. " / " .. row1.detail.text)
+  check("five points listed, then progress", card.rows[5].shown and card.progress.text == "2 of 51 points", card.progress.text)
+  check("no Learn button unless you ask for it", not card.learn.shown)
+  win.left, win.right = 400, 1300; M.advance(1); tick(ns)
+  check("no room on the right: the card moves to the left", card.where == "left", tostring(card.where))
+  win.left, win.right = 100, 1300; M.advance(1); tick(ns)
+  check("no room on either side: inside the window's corner", card.where == "inside", tostring(card.where))
+  win.left, win.right = nil, nil
+  card.left, card.top = 40, 600
+  card.scripts.OnDragStop(card)
+  M.advance(1); tick(ns)
+  check("dragged: the card stays where you put it", card.where == "yours" and ClassCoachDB.talentCardPos[1] == 40 and card.point[2] == UIParent, tostring(card.where))
+  ClassCoachDB.talentCardPos = nil; M.advance(1); tick(ns)
+  check("put back: beside the window again", card.where == "right", tostring(card.where))
+  ClassCoachDB.talentList = false; M.advance(1); tick(ns)
+  check("the card can be turned off; the marks stay", not card.shown and #marks() == 5)
+  ClassCoachDB.talentList = true; M.advance(1); tick(ns)
+
+  -- 4c. A level-up: the toast names the talent, and Learn now (opt-in) learns it
+  M.P.level = 12; M.P.talentPoints = 1
+  M.fire("PLAYER_LEVEL_UP", 12); M.advance(1); tick(ns)
+  local toast = ns.Talents.toastFrame
+  check("level up: a note names the talent your build takes", toast and toast.shown and toast.name.text == "Suppression" and toast.detail.text == "Rank 1/5 of your build"
+    and not toast.learn.shown, toast and toast.name.text)
+  check("the card now says it is due", card.rows[1].detail.text == "Rank 1 of 5: take it now", card.rows[1].detail.text)
+  ClassCoachDB.learnNow = true; M.advance(1); tick(ns)
+  check("Learn now turned on: the card offers the talent", card.learn.shown and card.learn.label.text == "Learn Suppression", card.learn.label.text)
+  -- the talent window holds a change you have not applied: Learn now waits for you
+  tree[at["Nightfall"]].staged = 1
+  M.printed, M.learnLog = {}, {}
+  card.learn.scripts.OnClick(card.learn)
+  check("changes waiting in the talent window: nothing learned, and it says why", #M.learnLog == 0 and table.concat(M.printed, " "):find("Apply or undo them first", 1, true) ~= nil,
+    table.concat(M.printed, " "))
+  tree[at["Nightfall"]].staged = nil
+  M.refuseCommit = true; M.learnLog = {}
+  card.learn.scripts.OnClick(card.learn)
+  check("the game refuses: the staged point is rolled back", tree[at["Suppression"]].rank == 0 and tree[at["Suppression"]].staged == nil
+    and table.concat(M.learnLog, ", ") == "stage Suppression, saved config for spec 265, commit 5, rollback", table.concat(M.learnLog, ", "))
+  M.refuseCommit = nil; M.learnLog, M.printed = {}, {}
+  card.learn.scripts.OnClick(card.learn)
+  check("Learn now: staged and applied the way the talent window does it", tree[at["Suppression"]].rank == 1 and M.P.talentPoints == 0
+    and table.concat(M.printed, " "):find("Talent learned", 1, true) ~= nil, table.concat(M.learnLog, ", "))
+  M.fire("TRAIT_CONFIG_UPDATED"); M.advance(1); tick(ns)
+  check("and the marks move on", banner():find("Suppression (2 of 5)", 1, true) ~= nil and not card.learn.shown, banner())
+  M.P.combat = true; M.P.talentPoints = 1; M.learnLog = {}
+  check("never in a fight", ns.Talents.learn(node("Suppression")) == "combat" and #M.learnLog == 0)
+  M.P.combat = false
+  ClassCoachDB.learnNow = false
+  tree[at["Suppression"]].rank = 0; M.P.level = 11; M.fire("PLAYER_TALENT_UPDATE"); M.advance(3); tick(ns)
+  toast:Hide()
 
   -- 5. Choosing a build by hand
   M.printed = {}
@@ -2111,6 +2189,183 @@ elseif SCENARIO == "focus" then
   SlashCmdList.CLASSCOACH("check")
   check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
   check("no tick error", ns.C.lastError == nil, ns.C.lastError)
+
+---------------------------------------------------------------------------
+-- The settings window, the spellbook, the quiet coach, sharing settings, and
+-- a plan that follows your mana on a client that hides it.
+elseif SCENARIO == "ui" then
+  M.player({ class = "WARLOCK", className = "Warlock", level = 13, mana = 300, maxMana = 300,
+    spells = {
+      [686] = { name = "Shadow Bolt", cost = 25 }, [348] = { name = "Immolate", cost = 25 },
+      [172] = { name = "Corruption", cost = 35 }, [980] = { name = "Bane of Agony", cost = 25 }, [1454] = { name = "Life Tap", cost = 0 },
+      [687] = { name = "Demon Skin", cost = 50 }, [688] = { name = "Summon Imp", cost = 60 }, [5019] = { name = "Shoot", cost = 0 },
+    },
+    book = { 686, 348, 172, 980, 1454, 687, 688, 5019 }, equipped = { [18] = 11287 }, talents = { 3, 0, 0 },
+    pet = { family = "Imp" },
+    actions = { [8] = 172, [62] = 5019 }, bindings = { ACTIONBUTTON8 = "8", MULTIACTIONBAR1BUTTON2 = "SHIFT-2" },
+  })
+  M.P.buffs = { ["Demon Skin"] = true, ["Well Fed"] = true }
+  local ns = load()
+  local f = tick(ns)
+  local G, W = ns.Glow, ns.Window
+
+  -- 1. The shared glow
+  local g = G.new()
+  local spot = CreateFrame("Frame")
+  spot:SetSize(40, 40)
+  check("a glow lies over its target and takes no clicks", G.show(g, spot, "ants", "blue") and g.shown and g.target == spot and rawget(g, "mouse") == false)
+  check("marching ants: dashes in the colour you picked, and they move", g.dashes[1].shown and not g.halo.shown and g.colorKey == "blue" and g.scripts.OnUpdate ~= nil)
+  g.width, g.height = 40, 40
+  g.scripts.OnUpdate(g, 0.1)
+  local p1 = g.dashes[1].point[4]; M.advance(0.5); g.scripts.OnUpdate(g, 0.1)
+  check("...along the edge", g.dashes[1].point[4] ~= p1)
+  local _, _, flat = G.around(0.1, 40, 40)
+  local _, _, upright = G.around(0.35, 40, 40)
+  check("a dash lies flat on the top edge and upright on the sides", flat == true and upright == false)
+  check("a style that does not exist becomes the glow", G.style("rainbow") == "glow" and G.style("off") == "off")
+  G.show(g, spot, "off", "gold")
+  check("off hides it", not g.shown and rawget(g, "target") == nil)
+
+  -- 2. A step that is on no bar lights up in the spellbook
+  target({ name = "Boar", level = 12, hostile = true, guid = "Creature-1" })
+  M.advance(1); f = tick(ns)
+  check("the opener is on no bar: the coach says the spellbook lights it", f.name.text == "Bane of Agony" and f.status.text:find("Open your spellbook (it lights up there)", 1, true) ~= nil,
+    f.name.text .. " / " .. f.status.text)
+  M.spellbook(true, { "Shadow Bolt", "Corruption" })
+  M.advance(1); f = tick(ns)
+  check("the book is open on another page: turn the pages", f.status.text:find("on another page of your spellbook", 1, true) ~= nil, f.status.text)
+  M.spellbook(true, { "Shadow Bolt", "Bane of Agony", "Corruption" })
+  M.advance(1); f = tick(ns)
+  local book = ns.Spellbook
+  check("on this page: it is lit, ready to drag", book.lit == "Bane of Agony" and book.holder.shown and book.holder.target == _G.MockSpellButton2
+    and f.status.text:find("Drag the lit Bane of Agony", 1, true) ~= nil, f.status.text)
+  ClassCoachDB.spellbookGlow = false; M.advance(1); f = tick(ns)
+  check("the spellbook light can be turned off", book.lit == nil and not book.holder.shown)
+  ClassCoachDB.spellbookGlow = true
+  M.P.actions[7] = 980; M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(3); f = tick(ns)
+  check("once it is on a bar the spellbook goes dark", book.lit == nil and not f.status.text:find("spellbook", 1, true), f.status.text)
+  M.spellbook(false, {})
+
+  -- 3. Quiet when ready, loud when there is something to do
+  target(nil)
+  for _ = 1, 12 do M.advance(0.3); f = tick(ns) end
+  check("nothing targeted and nothing to prepare: the coach steps back", ns.Panel.quiet and math.abs(rawget(f, "alpha") - 0.5) < 0.01, tostring(rawget(f, "alpha")))
+  M.P.buffs["Demon Skin"] = nil; M.fire("UNIT_AURA", "player")
+  for _ = 1, 4 do M.advance(0.3); f = tick(ns) end
+  check("something to do before the pull: full again at once", not ns.Panel.quiet and rawget(f, "alpha") == 1, tostring(rawget(f, "alpha")))
+  M.P.buffs["Demon Skin"] = true; M.fire("UNIT_AURA", "player")
+  for _ = 1, 12 do M.advance(0.3); f = tick(ns) end
+  target({ name = "Boar", level = 12, hostile = true, guid = "Creature-2" })
+  for _ = 1, 3 do M.advance(0.3); f = tick(ns) end
+  check("an enemy targeted: full again", not ns.Panel.quiet and rawget(f, "alpha") == 1, tostring(rawget(f, "alpha")))
+  ClassCoachDB.readyAlpha = 100; target(nil)
+  for _ = 1, 12 do M.advance(0.3); f = tick(ns) end
+  check("at 100% it never fades", rawget(f, "alpha") == 1, tostring(rawget(f, "alpha")))
+  ClassCoachDB.readyAlpha = 50
+
+  -- 4. The settings window
+  check("the first time, the setup page opens by itself, once", W.isOpen() and W.current == "start" and ClassCoachDB.welcomed == true, tostring(W.current))
+  local start = W.frame.pages.start
+  check("setup: the smart key is not bound yet, and it says so", start.smartLine.text == "Not bound yet.")
+  check("setup: the build you follow and its next talent", start.buildLine.text:find("You follow", 1, true) ~= nil, start.buildLine.text)
+  W.frame.scripts.OnKeyDown(W.frame, "ESCAPE")
+  check("Esc closes it", not W.isOpen())
+  SlashCmdList.CLASSCOACH("")
+  check("/coach opens it again where you were", W.isOpen() and W.current == "start")
+  ClassCoach_OnAddonCompartmentClick()
+  check("the minimap's addon menu closes it", not W.isOpen())
+  check("the game's own Settings window is never opened by the addon", M.settings.opened == nil)
+  local page = W.show("Action bars")
+  check("a section page lists its options", page.byKey.barGlow ~= nil and page.byKey.glowColor ~= nil and page.byKey.spellbookGlow ~= nil and page.byKey.scale == nil)
+  local tile = page.previews[1]
+  check("the preview wears the glow you picked", tile.glow.shown and tile.glow.style == "glow" and tile.glow.target == tile.button)
+  page.byKey.barGlow.step(1)
+  check("a list steps through its choices and the preview follows", ClassCoachDB.barGlow == "sparkles" and tile.glow.style == "sparkles", tostring(ClassCoachDB.barGlow))
+  page.byKey.glowColor.step(1)
+  check("the colour too", ClassCoachDB.glowColor == "blue" and tile.glow.colorKey == "blue")
+  local sw = page.byKey.spellbookGlow
+  sw.scripts.OnClick(sw)
+  check("a switch turns a setting off, and shows it", ClassCoachDB.spellbookGlow == false and sw.on == false)
+  sw.scripts.OnClick(sw)
+  page = W.show("Coach")
+  local sl = page.byKey.readyAlpha
+  sl.slider.scripts.OnValueChanged(sl.slider, 73)
+  check("a slider snaps to its step", ClassCoachDB.readyAlpha == 75 and sl.text.text == "75%", tostring(ClassCoachDB.readyAlpha))
+  check("only the page you look at has a lit preview", not tile.glow.shown)
+  SlashCmdList.CLASSCOACH("set readyAlpha 40")
+  check("/coach set: the open page catches up", sl.text.text == "40%", sl.text.text)
+  page = W.show("Talents")
+  check("the talent page", page.byKey.learnNow ~= nil and page.byKey.talentDim ~= nil and page.previews[1] ~= nil)
+  for _ = 1, 30 do W.scrollBy(48) end
+  check("the page scrolls, and stops at its end", (W.offset or 0) >= 0 and W.offset <= math.max(0, page:GetHeight()))
+  M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED")
+  W.frame.scripts.OnKeyDown(W.frame, "ESCAPE")
+  check("in a fight the window leaves the keyboard alone", W.isOpen())
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
+
+  -- 5. Sharing settings as one line
+  page = W.show("share")
+  local line = page.out:GetText()
+  check("your settings as one line: only what you changed", line:find("^ClassCoach1 ") ~= nil and line:find("barGlow=sparkles", 1, true) ~= nil
+    and line:find("glowColor=blue", 1, true) ~= nil and line:find("readyAlpha=40", 1, true) ~= nil and not line:find("showCoach", 1, true), line)
+  page.out.scripts.OnTextChanged(page.out, true)
+  check("the line cannot be typed over by accident", page.out:GetText() == line)
+  page.inBox:SetText("ClassCoach1 scale=1.3 cue=off bogus=1 glowColor=pink professionA=Mining readyAlpha=999")
+  local use
+  for _, child in ipairs(M.frames) do if rawget(child, "label") and child.label.text == "Use these settings" then use = child end end
+  use.scripts.OnClick(use)
+  check("a shared line: what fits is used, the rest is named", ClassCoachDB.scale == 1.3 and ClassCoachDB.cue == false and ClassCoachDB.glowColor == "blue"
+    and ClassCoachDB.readyAlpha == 40 and page.result.text == "2 settings used. Not used: bogus, glowColor, professionA, readyAlpha.", page.result.text)
+  page.inBox:SetText("hello there"); use.scripts.OnClick(use)
+  check("anything else is refused", page.result.text == "That is not a ClassCoach settings line.")
+  local now = ns.Options.export(ClassCoachDB)
+  local copy = {}
+  local taken = ns.Options.import(now, copy, {})
+  check("a line read back gives the same settings", taken == select(2, now:gsub("=", "")) and copy.scale == 1.3 and copy.cue == false and ns.Options.export(copy) == now, now)
+  ClassCoachDB.scale, ClassCoachDB.cue = 1, true
+  W.close()
+
+  -- 6. The plan follows your mana, also when the game hides it
+  local Mana = ns.Mana
+  local L = Mana.ledger()
+  Mana.set(L, 0, 300, 300)
+  Mana.spend(L, 0, 100, 0)
+  Mana.tick(L, 4, { idle = 10 })
+  check("ledger: nothing comes back inside the five-second rule", L.mana == 200, L.mana)
+  Mana.tick(L, 9, { idle = 10 })
+  check("ledger: then the regen the game gives", math.abs(L.mana - 240) < 0.01, L.mana)
+  Mana.tick(L, 14, { idle = 10, drinking = true })
+  check("ledger: drinking fills you up fast", L.mana == 300, L.mana)
+  Mana.spend(L, 20, 0, 45)
+  check("ledger: Life Tap gives, never above your maximum", L.mana == 300)
+  Mana.spend(L, 21, 280, 0); Mana.fence(L, 25, nil)
+  check("ledger: what you can still afford sets a floor", L.mana == 25, L.mana)
+  Mana.fence(L, 0, 20)
+  check("ledger: and what you cannot, a ceiling", L.mana == 19, L.mana)
+
+  M.manaSecret = true
+  target(nil)
+  M.advance(3); f = tick(ns)
+  check("mana hidden out of combat too: the coach keeps its own count", ns.C.lastState.manaExact == false and ns.C.lastState.manaPct ~= nil, tostring(ns.C.lastState.manaPct))
+  local function planText()
+    local names = {}
+    for _, st in ipairs(ns.Engine.plan(ns.C.profile, ns.C.lastState)) do names[#names + 1] = st.label end
+    return table.concat(names, " > ")
+  end
+  local full = planText()
+  check("at full mana the plan has room for Immolate", full:find("Immolate", 1, true) ~= nil, full)
+  for _ = 1, 4 do cast(688) end   -- summoning eats mana; the count follows your casts
+  M.advance(1); f = tick(ns)
+  local low = planText()
+  check("after spending mana between fights the plan is shorter, from your own count", ns.C.lastState.manaPct < 30 and not low:find("Immolate", 1, true), low .. " @ " .. tostring(ns.C.lastState.manaPct))
+  check("and the coach asks you to drink before the pull", missing(ns):find("Mana", 1, true) ~= nil, missing(ns))
+  M.P.buffs["Drink"] = true; M.fire("UNIT_AURA", "player")
+  M.P.mana = 300   -- the game's own count, which only the probes see
+  for _ = 1, 10 do M.advance(3); f = tick(ns) end
+  M.P.buffs["Drink"] = nil; M.fire("UNIT_AURA", "player"); M.advance(1); f = tick(ns)
+  check("drinking: the count fills up and the full plan is back", ns.C.lastState.manaPct > 95 and planText() == full, tostring(ns.C.lastState.manaPct) .. " " .. planText())
+  M.manaSecret = false
+  check("no errors logged", errors() == 0, table.concat(ClassCoachDB.log or {}, " | "))
 end
 
 -- In every scenario: the addon never changed a frame of the game (see M.gameFrame in mock.lua).

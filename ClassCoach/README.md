@@ -6,12 +6,13 @@ A beginner's coach for WoW Forever that works for any class. One ring under your
 - **Before and after**: left of the ring what you already cast on this enemy, right of it what comes next, each with its key. The steps sit on a rising arc and get smaller the further they are from now. With nothing targeted it shows your pull plan. Only spells your character has learned are shown.
 - **Damage over time, per enemy**: each spell's seconds left, under its icon on the left. Switch enemies and each keeps its own timers. When a spell is about to matter again the right side says so ("in 8s").
 - **A cue when it matters**: most of a fight is one steady key. When something else comes up, or a spell was resisted, the ring pulses and a soft click plays.
-- **The button to press, lit on your action bars**: as a glow, a gold frame or sparkles, whichever you pick.
+- **The button to press, lit on your action bars**: as a glow, sparkles, marching ants or a frame, in the colour you pick. When the step is on none of your bars, it lights up in your spellbook instead, ready to drag onto one.
+- **Quiet when you are ready**: with nothing targeted and nothing to prepare, the coach steps back to half strength. Anything to do before a pull brings it back at once.
 - **Click to cast, before a fight**: click an amber "before you pull" icon to cast what fixes it, or the ring to start the pull.
 - **No wasted spells**: the addon learns how long your kills usually take. When an enemy should be nearly dead it stops suggesting new damage over time and tells you to finish it.
 - **Your demon** (Warlock): the pull advice changes with who is out. Voidwalker goes in first; with the Imp you just start casting.
 - **Macros**: `/coach macros` makes a few helper macros from the spells you know (see below).
-- **Mana**: the bar under the ring is your real mana, drawn by the game itself. It turns amber, then red, as the advice changes, e.g. "melee only" or "wand until it dies".
+- **Mana**: the bar under the ring is your real mana, drawn by the game itself. It turns amber, then red, as the advice changes, e.g. "melee only" or "wand until it dies". The pull plan and the smart key are planned against the mana you have (see "How mana works").
 - **Before you pull**: missing buffs, weapon buff, demon, wand and reagents as amber icons left of the ring, and in words under it: "Drink before the next pull" when mana is low.
 - **After each fight**: time, casts, mana spent, and up to two tips on what to do better.
 - **Level-ups**: which new spells to train and which talent to take.
@@ -37,6 +38,9 @@ ClassCoach is made for **World of Warcraft: Forever** (patch 1.60.x) and no othe
 
 | Command | What it does |
 |---|---|
+| `/coach` | Opens ClassCoach's settings window (also from the minimap's addon menu). `/coach help` lists every command |
+| `/coach setup` | The first-time setup page: bars, smart key, talent build, where the coach sits |
+| `/coach share` | Your settings as one line of text, to keep or to give to a friend |
 | `/coach set compact on` | Changes one setting from chat; `/coach set` lists them |
 | `/coach demo` | Plays the coach's states with your own spells, out of combat, so you can see and place it without fighting |
 | `/coach fonts` | A test card for ClassCoach's own typefaces: which sizes and uses this client draws |
@@ -55,7 +59,7 @@ ClassCoach is made for **World of Warcraft: Forever** (patch 1.60.x) and no othe
 | `/coach check` | Prints what the addon can read on your client. Useful when something looks wrong |
 | `/coach errors` | Lists problems ClassCoach caught in itself. `/coach errors on` makes the game show every addon's error on screen; `off` hides them again |
 
-Everything else is on the settings screen.
+Everything else is in the settings window.
 
 ## Profiles included
 
@@ -70,14 +74,14 @@ The profile is picked from your talent points (the tree with the most points); b
 
 ## Settings
 
-Press Esc, then Options > AddOns > ClassCoach. Everything is on one page and applies at once. (`/coach set` changes a single setting from chat, for example `/coach set compact on`. The addon never opens the game's settings panel itself: an addon doing that is a known way to upset action bars in combat.)
+Type `/coach`, or click ClassCoach in the minimap's addon menu. ClassCoach's own window opens: sections on the left, each setting on one row with what it does, and it applies at once. Drag the window by its title; Esc or the cross closes it. (The same settings are also under Esc > Options > AddOns > ClassCoach. The addon never opens the game's settings window itself: an addon doing that is a known way to upset action bars in combat.)
 
-- **Coach**: show or hide, size, compact (no explanation), how many steps show before and after the current one (0 to 4 each), the mana bar, the pulse and its sound, the look of the lit bar button (glow, gold frame, sparkles or off), and click to cast.
-- **Journey list**: show or hide, size, and which reminders you want (food, rested XP, trainer and talents, repairs and bags).
-- **Professions**: what you want from them (your own gear, gear and some gold, gold, or level 60), your own two if you prefer, and the three free ones.
-- **Look**: how dark the plate behind the text is, ClassCoach's own typefaces instead of the game's font (being tested), lock in place.
-- **Coaching**: profile for this character, skipping damage over time on dying enemies, when to suggest drinking, tips in chat, keeping macros up to date.
-- **Actions**: create or refresh macros, reset panel positions.
+- **Start here**: the first-time setup in four steps, also opened by itself the first time you log in: lay out your bars, bind the smart key, follow a talent build, place the coach.
+- **Coach**: show or hide, size, compact, how many steps show before and after the current one, the mana bar, how far the coach steps back when you are ready, the pulse and its sound, click to cast, warnings, the profile, drinking, tips in chat, the smart key. A button plays the demo.
+- **Action bars**: the look and colour of the lit button, with a live preview; the spellbook light; filling new spells in; fixed buttons; the macros. Buttons to fill, reset or undo your bars.
+- **Talents**: guiding you in the talent window, the look of the next talent (with a preview), dimming talents outside your build, the build card, the level-up note, and Learn now.
+- **Journey**, **Professions**, **Look**: as before.
+- **Share**: your settings as one line of text. Paste a line from a friend to use theirs; anything that does not fit is named and left alone. Settings for one character (the profile, your professions) are not in it.
 
 ## The coach and the journey list
 
@@ -105,14 +109,18 @@ The two move independently: drag the coach by its ring and the journey list anyw
 
 ## Talents
 
-Open the game's talent window (N). The talent to take next has a **gold frame and NEXT** above it, and the four after it carry a small 2, 3, 4, 5. A line at the bottom left names the build and the next talent. ClassCoach only marks; you click.
+Open the game's talent window. The talent to take next **lights up** (in the look and colour you pick) with "Next" above it, and the four after it carry a small round 2, 3, 4, 5. Talents your build never takes are **dimmed**.
+
+Beside the window sits a **build card**: the build you follow, how far along you are, and the next five points, each with its rank and the level the build takes it ("take it now" when you can). It goes on the side with room, or inside the window's corner when neither side has any; drag it anywhere and it stays there ("Put the build card back" in the settings undoes that).
+
+When you level up and have a point to spend, a short note at the top of the screen names the talent your build takes.
+
+**Learn now** (off by default, Settings > Talents): a button on the card and on the note learns that talent when you click it, the way the talent window does (it stages the point and applies it). Out of combat only. If the talent window holds changes you have not applied, it waits for you; if the game refuses, the point is rolled back and it says so.
 
 - **It follows what you already have.** The next talent is worked out from the points you have spent, not from your level, so it stays right if you took a point early or late. A point you have clicked but not applied yet already counts.
 - **Which build.** Each class comes with a leveling build and an Icy Veins build. With nothing spent you get the first; once you have spent points, the build that fits them best is followed. `/coach build` shows the list and where you are; `/coach build 2` pins one.
 - **Your own guide.** On the Icy Veins or Warcraft Tavern talent calculator, set up the build (or open the one a guide links to), copy the address from your browser and type `/coach build ` followed by the link. The link holds the talents in the order they were clicked, and that is the order ClassCoach follows.
 - **Nothing is guessed.** A link that names a talent your game does not have is refused with the reason. Points outside the build, or taken earlier than the build has them, are counted and shown.
-
-To switch the marks off: Options > AddOns > ClassCoach > "Mark my next talent in the talent window".
 
 ## Professions
 
@@ -189,7 +197,7 @@ Its limits, which come from how the game's secure buttons work:
 
 - **One press per spell.** The key moves on with every press, also when the spell could not be cast (still casting the last one, not ready, out of range). Pressing it faster than your spells go off skips steps. When that happens the coach shows the skipped spell's own key and lights its button; Restart puts the key back at the start.
 - **A new enemy needs Restart** when you switch straight from one living enemy to another. It goes back to the start by itself only when your target dies or you have no target.
-- **It walks the opening you would do at full mana.** When the coach changes its advice in a fight (low mana, an enemy about to die), follow the coach's key, not the smart key.
+- **It is planned at the mana you have before the pull.** Each planned spell spends its cost, so on low mana the steps reach your wand (or Life Tap) sooner, and when your mana changes between fights (you drank, you cast a buff) the key is loaded again by itself. In a fight the game does not let an addon change it: when the coach changes its advice there (mana lower than planned, an enemy about to die), follow the coach's key and the lit button.
 - The `CC Pull` macro is the other way to put the opening on one key: it only moves on when a spell really went off, but it cannot repeat a resisted spell and it starts over after its last step.
 
 What it is not: the addon does not decide during a fight what the key casts. The game forbids that, and nothing here works around it. The plan is loaded into the game's own secure button between fights; in a fight one press is still one cast, the same rule macros follow.
@@ -200,10 +208,11 @@ In combat the game hides enemy debuffs from addons, so ClassCoach counts from yo
 
 ## How mana works
 
-Forever hides your mana number from addons during combat, but lets them hand it to the game to draw. So:
+Forever hides your mana number from addons in combat, and on some clients out of combat too. The game still draws it for an addon. So:
 
-- **The bar and its percentage are real.** The game draws them; ClassCoach never sees the number in a fight.
-- **The advice level (high / medium / low) is worked out**, because the addon has to decide something without the number. It uses your mana when the fight started, minus what your casts cost, corrected by which spells the game says you can still afford. It can be off by a little in long fights; the bar is the truth.
+- **The bar and its percentage are real.** The game draws them; ClassCoach never needs the number for that.
+- **For planning, ClassCoach keeps its own count** when the game will not say: your mana minus what each of your casts cost (exact: the game says what a spell costs), plus what Life Tap gives back, plus regen once five seconds have passed since you last spent mana (the "five-second rule"), faster while you drink. Which spells the game says you can still afford keeps the count honest. It can be off by a little; the bar is the truth.
+- **The plan follows it.** The pull plan, the `CC Pull` macro and the smart key spend that count step by step, so a plan at 40% mana is shorter than one at full. Out of combat, below your "drink" setting, the coach asks you to drink first.
 
 `/coach check` reports whether the game accepted the bar on your client.
 
@@ -230,7 +239,7 @@ What that test also showed: with ClassCoach's own typefaces (Inter and Marcellus
 
 Since 0.13.1 all text starts on the game's own fonts, which have always worked here. Since 0.13.2 the typefaces are a setting (`/coach set ownFonts on`, off by default) that goes on a few seconds after login, checks every text really took its typeface, and leaves any that did not on the game's font. `/coach check` lists what five key texts report.
 
-Not yet seen in the real game: the lit bar button, click to cast, the pulse and its sound, the talent window marks, and the profession lines.
+Not yet seen in the real game: the lit bar button, click to cast, the pulse and its sound, the talent window marks, the profession lines, and everything new in 0.14.0 (the settings window, the talent glow, dimming, card, note and Learn now, the spellbook light, the quiet coach, and planning against ClassCoach's own mana count).
 
 ## Credits
 

@@ -237,6 +237,13 @@ function C.lendMacroKeys()
   end
 end
 
+-- The pull plan as one line ("Bane of Agony>Corruption>Shoot"), to notice when it changes.
+local function planLine(s)
+  local names = {}
+  for _, st in ipairs(Engine.plan(C.profile, s)) do names[#names + 1] = st.key end
+  return table.concat(names, ">")
+end
+
 -- Automatic macro rewrites are rationed. If something ever made the addon
 -- want to rewrite macros again and again, it stops doing so by itself for the
 -- rest of the session rather than hammer the game. /coach macros still works.
@@ -270,6 +277,7 @@ function C.syncMacros(onlyExisting)
   end
   C.lendMacroKeys()
   C.syncSmart()
+  if s then C.planSeen, C.planNext = planLine(s), nil end   -- what the macros and the key now hold
   return results
 end
 
@@ -539,27 +547,40 @@ end
 -- Mana
 ---------------------------------------------------------------------------
 
+-- Exact when the game lets us read it; otherwise ClassCoach's own count (Core/Mana.lua).
+-- Returns a percentage (or nil) and whether it is exact.
+local DRINKS = { ["Drink"] = true, ["Refreshment"] = true, ["Food & Drink"] = true }
 local function readMana(now, inCombat)
+  local L = C.ledger
   local cur, max = API.mana()
   if max then C.manaMax = max end
   if cur and C.manaMax and C.manaMax > 0 then
     C.lastMana = cur
+    Mana.set(L, now, cur, C.manaMax)
     return math.max(0, math.min(100, cur / C.manaMax * 100)), true
   end
   local pct = API.manaPct()
-  if pct then return pct, true end
-  if not inCombat then return nil, false end
+  if pct then
+    if C.manaMax then Mana.set(L, now, pct / 100 * C.manaMax, C.manaMax) end
+    return pct, true
+  end
   if C.manaAt and now - C.manaAt < 0.25 then return C.manaPct, false end
   C.manaAt = now
+  L.max = L.max or C.manaMax
+  local idle, casting = API.powerRegen()
+  local drinking = false
+  if not inCombat and C.buffs then
+    for name in pairs(DRINKS) do if C.buffs[name] then drinking = true end end
+  end
+  Mana.tick(L, now, { idle = idle, casting = casting, drinking = drinking })
   local probes = {}
   for _, p in ipairs(C.probes or {}) do
     local _, short = API.usable(p.id)
     if short ~= nil then probes[#probes + 1] = { cost = p.cost, affordable = not short } end
   end
-  local fight = C.tracker.fight
-  local _, pct = Mana.estimate(fight and fight.manaStart, C.tracker:spent() - (fight and fight.restored or 0), C.manaMax, probes)
-  C.manaPct = pct
-  return pct, false
+  Mana.fence(L, Mana.bracket(probes))
+  C.manaPct = Mana.pct(L)
+  return C.manaPct, false
 end
 
 ---------------------------------------------------------------------------
@@ -611,7 +632,7 @@ local function buildState(now)
     meta = C.profile.spells, demon = demon,
     killTime = ClassCoachDB.smartDots ~= false and kill and kill.n >= KILL_SAMPLES and kill.avg or nil,
     now = now, level = C.level or API.level(), inCombat = inCombat, inGroup = API.inGroup(),
-    usesMana = C.usesMana, manaPct = manaPct, manaExact = exact, manaLevel = C.manaLevel,
+    usesMana = C.usesMana, manaPct = manaPct, manaExact = exact, manaLevel = C.manaLevel, manaMax = C.manaMax,
     healthPct = (not inCombat) and API.healthPct() or nil, hasPet = hasPet,
     target = currentTarget(), hasWand = C.hasWand, buffs = buffs, mainHandBuff = mainHand,
     keys = C.keys, spells = C.spells, bookReady = next(C.spells) ~= nil, tracker = C.tracker, fightTime = C.tracker:fightTime(now),
@@ -657,6 +678,20 @@ local function tick()
   if C.barPending and not s.inCombat then
     C.barPending = false
     if ClassCoachDB.autoBar then safely("automatic bar fill", C.setupBar, nil, true) end
+  end
+  -- The pull plan follows your mana: when it changes between fights (you drank, or
+  -- spent mana on a buff), the CC Pull macro and the smart key are loaded again.
+  if not s.inCombat and now >= (C.planCheckAt or 0) then
+    C.planCheckAt = now + 2
+    local plan = planLine(s)
+    if not C.planSeen then
+      C.planSeen = plan
+    elseif plan ~= C.planSeen and plan == C.planNext then   -- the same new plan two checks running
+      safely("plan follows mana", C.syncMacros, true)
+      safely("plan follows mana", C.syncSmart)   -- also when automatic macro updates are off
+      C.planSeen = plan
+    end
+    C.planNext = plan
   end
   view.next = Engine.next(profile, s)
   local before, after = ns.Panel.steps(ClassCoachDB)
@@ -724,8 +759,17 @@ local function tick()
   -- A step that is on none of your bars: say where to get it, once nothing more pressing is being said.
   -- (On a bar without a key is fine: its button is lit and can be clicked.)
   local slot = now1 and C.slots and C.slots[now1.label] or nil
-  if now1 and not view.planning and not now1.keybind and not slot and not now1.melee and (view.status == nil or view.statusKind == "ok") then
-    view.status = now1.label .. " is not on your action bars. Drag it there from your spellbook, or type /coach bar."
+  local missingSpell = now1 and not now1.keybind and not slot and not now1.melee and now1.label or nil
+  -- ...and it lights up in your spellbook when that is open, ready to drag onto a bar
+  local _, book = safely("spellbook", ns.Spellbook.update, ClassCoachDB.showCoach ~= false and missingSpell or nil, ClassCoachDB, s.inCombat)
+  if missingSpell and not view.planning and (view.status == nil or view.statusKind == "ok") then
+    if book == "lit" then
+      view.status = "Drag the lit " .. missingSpell .. " from your spellbook onto an action bar."
+    elseif book == "elsewhere" then
+      view.status = missingSpell .. " is on another page of your spellbook: turn the pages until it lights up."
+    else
+      view.status = missingSpell .. " is not on your action bars. Open your spellbook (it lights up there), or type /coach bar."
+    end
     view.statusKind = "warn"
   end
   if not s.inCombat then view.restMacro = API.macroExists("CC Rest") and "CC Rest" or nil end
@@ -756,7 +800,7 @@ local function tick()
       C.refreshTalents()
       C.talentsRead, C.talentsStale = now, false
     end
-    ns.Talents.update(C.talentState, ClassCoachDB)
+    ns.Talents.update(C.talentState, ClassCoachDB, C.level)
   end)
 end
 
@@ -922,6 +966,7 @@ function handlers.UNIT_SPELLCAST_SUCCEEDED(unit, _, spellID)
   local sp = C.spells[key]
   -- Out of combat the next exact reading may come after combat starts: keep our own count right.
   if not C.tracker.fight and C.lastMana and cost and cost > 0 then C.lastMana = math.max(0, C.lastMana - cost) end
+  Mana.spend(C.ledger, GetTime(), cost or 0, meta and meta.restores and C.manaMax and meta.restores * C.manaMax or 0)
   C.tracker:cast(GetTime(), key, cost or 0, meta, t.key, sp and sp.duration)
 end
 
@@ -955,6 +1000,7 @@ function handlers.PLAYER_SWING()
 end
 
 function handlers.PLAYER_REGEN_DISABLED()
+  safely("settings window", ns.Window.combat, true)
   local t = API.target()
   C.petAtPull = C.lastState and C.lastState.hasPet
   C.demonAtPull = C.lastState and C.lastState.demon
@@ -990,6 +1036,7 @@ local function finishFight()
 end
 
 function handlers.PLAYER_REGEN_ENABLED()
+  safely("settings window", ns.Window.combat, false)
   C_Timer.After(0.3, function()
     safely("fight report", finishFight)
     if C.rescanDue then rescanSoon() end
@@ -1032,7 +1079,21 @@ function handlers.PLAYER_LEVEL_UP(level)
   local lines = Engine.levelUp(C.profile, level, state and state.plan.readable and Engine.nextTalent(state.plan) or nil)
   ns.Panel.flash(lines, 25)
   for _, l in ipairs(lines) do say(l) end
+  -- the talent to take, as a card at the top of the screen
+  if state and state.plan.readable then
+    safely("talent toast", ns.Talents.toast, Engine.talentSchedule(state.plan, level, 1)[1], ClassCoachDB, level)
+  end
   rescanSoon()
+end
+
+-- "Learn now" on the talent card or the toast: say how it went; the marks move on by themselves.
+ns.Talents.onLearn = function(result, why)
+  if result == "learned" then
+    say("Talent learned. The talent window now marks the next one.")
+  elseif why then
+    say(why)
+  end
+  C.talentsStale = true
 end
 
 function handlers.UNIT_AURA(unit)
@@ -1078,6 +1139,7 @@ local function start()
   ns.Options.sanitize(db, ClassCoachCharDB)
   for _, problem in ipairs(Profiles.problems or {}) do log("%s", problem) end
   C.tracker = Tracker.new()
+  C.ledger = Mana.ledger()
   C.level = API.level()
   C.faction = API.faction()
   chooseProfile()
@@ -1094,7 +1156,16 @@ local function start()
     reset = function() SlashCmdList.CLASSCOACH("reset") end,
     bar = function() SlashCmdList.CLASSCOACH("bar") end,
     barReset = function() SlashCmdList.CLASSCOACH("bar reset") end,
+    window = function() safely("settings window", ns.Window.show, "Coach") end,
   })
+  -- The first time: the setup page of the settings window, once, out of combat.
+  if not db.welcomed then
+    C_Timer.After(6, function()
+      if db.welcomed or API.inCombat() then return end
+      db.welcomed = true
+      safely("settings window", ns.Window.show, "start")
+    end)
+  end
 end
 
 local frame = CreateFrame("Frame")
@@ -1216,7 +1287,8 @@ local function check()
 end
 
 local HELP = {
-  "/coach set — change a setting from chat (the full page: Esc > Options > AddOns > ClassCoach)",
+  "/coach — the settings window (/coach setup: the first-time setup; /coach share: your settings as one line)",
+  "/coach set — change a setting from chat",
   "/coach pages — stop Shift+number from switching your main bar to an empty page",
   "/coach macros — create or refresh this class's helper macros (out of combat)",
   "/coach bar — lay out three bars by purpose: fight (main bar), react (Action Bar 2), prepare (Action Bar 3). Empty buttons only; \"preview\" just lists, \"replace\" overwrites",
@@ -1235,11 +1307,12 @@ local HELP = {
   "/coach check — what the addon can read on this client (for bug reports)",
 }
 
--- The settings page is opened by you, through the game's own menu. The addon
--- never opens it itself: an addon showing one of the game's panels is a known
--- way to make protected frames (action bars, the pet bar) misbehave in combat.
-local function openSettings()
-  say("Settings: press Esc, then Options > AddOns > ClassCoach. Or type /coach set to change one here.")
+-- The settings are ClassCoach's own window (UI/Window.lua). The addon never
+-- opens the game's Settings window itself: an addon showing one of the game's
+-- panels is a known way to make protected frames (action bars, the pet bar)
+-- misbehave in combat. The game's page (Esc > Options > AddOns) is there too.
+local function openSettings(page)
+  safely("settings window", ns.Window.toggle, page)
 end
 
 -- The minimap's addon menu (the client looks these up by name)
@@ -1249,7 +1322,7 @@ function ClassCoach_OnAddonCompartmentEnter(_, button)
     if not GameTooltip or not button then return end
     GameTooltip:SetOwner(button, "ANCHOR_LEFT")
     GameTooltip:SetText("ClassCoach", 1, 0.82, 0.2)
-    GameTooltip:AddLine("Esc > Options > AddOns > ClassCoach, or /coach set.", 0.9, 0.9, 0.9)
+    GameTooltip:AddLine("Click for the settings. /coach help lists the commands.", 0.9, 0.9, 0.9)
     GameTooltip:Show()
   end)
 end
@@ -1263,7 +1336,12 @@ local function command(msg)
   local db = ClassCoachDB
   if cmd == "" or cmd == "options" or cmd == "config" or cmd == "settings" then
     openSettings()
+  elseif cmd == "help" or cmd == "?" then
     for _, l in ipairs(HELP) do print("  " .. l) end
+  elseif cmd == "setup" or cmd == "start" then
+    safely("settings window", ns.Window.show, "start")
+  elseif cmd == "share" then
+    safely("settings window", ns.Window.show, "share")
   elseif cmd == "set" then
     -- /coach set compact on     /coach set opacity 40     /coach set (lists them)
     local key, value = arg:match("^(%S+)%s*(.*)$")
@@ -1288,6 +1366,7 @@ local function command(msg)
         if picked then store[option.key] = picked else say("Choose one of: " .. table.concat(names, ", ") .. ".") end
       end
       say(("%s = %s"):format(option.name, tostring(store[option.key])))
+      safely("settings window", ns.Window.refresh)
     end
   elseif cmd == "errors" then
     -- "/coach errors on": let the game show Lua errors, with the addon's name on each

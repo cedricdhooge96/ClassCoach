@@ -298,6 +298,39 @@ end
 
 -- Wraps a script handler (mouse-over, drag) so it can never raise an error
 -- into the game; a problem is noted in the addon's own log instead.
+-- A plain flat button in the coach's look: a tinted plate with a hairline edge.
+function Style.button(parent, label, width)
+  local S, C = Style, Style.COLORS
+  local b = CreateFrame("Button", nil, parent)
+  b:SetSize(width or 120, 24)
+  b.bg = b:CreateTexture(nil, "BACKGROUND")
+  b.bg:SetAllPoints()
+  b.bg:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.16)
+  b.edges = S.edges(b, "BORDER", 1, C.accent)
+  b.label = S.text(b, "bold", 12, C.accent)
+  b.label:SetPoint("CENTER")
+  b.label:SetJustifyH("CENTER")
+  S.set(b.label, label)
+  local function shade(self, a)
+    local c = self.off and C.line or C.accent
+    self.bg:SetColorTexture(c[1], c[2], c[3], a)
+  end
+  b:SetScript("OnEnter", function(self) if not self.off then shade(self, 0.32) end end)
+  b:SetScript("OnLeave", function(self) shade(self, 0.16) end)
+  b.shade = shade
+  return b
+end
+
+-- Greys a Style.button out (on = false) or brings it back; a greyed button ignores clicks.
+function Style.enable(b, on)
+  b.off = not on
+  b:EnableMouse(on and true or false)
+  local c = on and Style.COLORS.accent or Style.COLORS.muted
+  b.label:SetTextColor(c[1], c[2], c[3])
+  for _, e in ipairs(b.edges) do e:SetColorTexture(c[1], c[2], c[3], on and 1 or 0.5) end
+  b.shade(b, 0.16)
+end
+
 function Style.guard(fn)
   return function(...)
     local ok, err = pcall(fn, ...)

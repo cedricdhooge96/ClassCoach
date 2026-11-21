@@ -59,6 +59,16 @@ def halo(size):
     return Image.eval(Image.blend(img, soft, 0.7), lambda v: min(255, int(v * 1.8)))
 
 
+def pill(size):
+    """A capsule for the settings switches: it fills the middle half of the texture
+    (use SetTexCoord(0, 1, 0.25, 0.75)), so the file stays square."""
+    img = canvas(size)
+    full = size * OVER
+    top, bottom = full * 0.25 + OVER, full * 0.75 - OVER
+    ImageDraw.Draw(img).rounded_rectangle([OVER, top, full - OVER, bottom], radius=(bottom - top) / 2, fill=255)
+    return img.resize((size, size), Image.LANCZOS)
+
+
 def save(name, alpha):
     size = alpha.size[0]
     assert alpha.size == (size, size) and size & (size - 1) == 0, "sides must be a power of two"
@@ -81,3 +91,4 @@ if __name__ == "__main__":
     save("disc", disc(128))                # the dark ground behind a round icon
     save("pulse", glow(128))               # the cue when a new key is needed
     save("halo", halo(128))                # the glow around the action-bar button to press
+    save("pill", pill(64))                 # the track of a switch in the settings window

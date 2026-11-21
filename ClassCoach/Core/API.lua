@@ -123,6 +123,15 @@ function API.manaPct()
   return v
 end
 
+-- Mana per second coming back: outside the five-second rule and inside it
+-- (while casting). nil for a number the game hides or that makes no sense.
+function API.powerRegen()
+  local idle, casting = try(GetPowerRegen)
+  idle, casting = plain(idle), plain(casting)
+  local function sane(v) return type(v) == "number" and v == v and v >= 0 and v < 10000 and v or nil end
+  return sane(idle), sane(casting)
+end
+
 -- Draws your real mana on a status bar. The addon may not read the hidden
 -- number in combat, but the game accepts it for drawing: the bar is always
 -- true. Returns false if the game refuses.
@@ -163,9 +172,11 @@ local NEEDS = {
   "GetBindingKey", "GetBindingAction", "SetBinding", "SetBindingClick", "SaveBindings", "GetCurrentBindingSet", "RegisterStateDriver",
   "UnitAffectingCombat", "UnitCanAttack", "UnitClass", "UnitClassification", "UnitCreatureFamily", "UnitExists", "UnitFactionGroup",
   "UnitGUID", "UnitHealth", "UnitHealthMax", "UnitIsDead", "UnitIsUnit", "UnitLevel", "UnitName", "UnitPower", "UnitPowerMax",
-  "UnitPowerPercent", "UnitPowerType", "UnitXP", "UnitXPMax",
+  "UnitPowerPercent", "UnitPowerType", "UnitXP", "UnitXPMax", "GetPowerRegen",
   "C_ActionBar.GetActionBarPage", "C_ActionBar.SetActionBarPage", "C_ActionBar.GetActionText", "C_ActionBar.GetActionTexture",
   "C_CVar.GetCVar", "C_CVar.SetCVar", "C_ClassTalents.GetActiveConfigID", "C_ClassTalents.HasUnspentTalentPoints",
+  "C_ClassTalents.CommitConfig", "C_ClassTalents.GetLastSelectedSavedConfigID", "C_Traits.PurchaseRank", "C_Traits.CanPurchaseRank",
+  "C_Traits.ConfigHasStagedChanges", "C_Traits.RollbackConfig",
   "C_Container.GetContainerItemInfo", "C_Container.GetContainerNumFreeSlots", "C_Container.GetContainerNumSlots",
   "C_Item.GetItemCount", "C_Item.GetItemInfo", "C_Item.GetItemInfoInstant", "C_Item.GetItemSpell", "C_Item.GetWeaponEnchantInfo",
   "C_Item.PickupItem", "C_NamePlate.GetNamePlates", "C_Secrets.ShouldAurasBeSecret",
@@ -523,6 +534,31 @@ local function eachTalentTree(fn)
   end)
 end
 
+-- Learns one rank of a talent, the way the talent window does: stage it, then
+-- apply. Only ever called when you click "Learn now" (out of combat, opt-in).
+-- Returns "learned", or why not: "combat", "pending" (the talent window holds
+-- changes you have not applied), "cannot" (the game says no) or "failed".
+function API.learnTalent(node)
+  if API.inCombat() then return "combat" end
+  local config = plain(try(C_ClassTalents.GetActiveConfigID))
+  if type(config) ~= "number" or type(node) ~= "number" then return "failed" end
+  if plain(try(C_Traits.ConfigHasStagedChanges, config)) == true then return "pending" end
+  local entries = field(try(C_Traits.GetNodeInfo, config, node), "entryIDs")
+  local entry = type(entries) == "table" and plain(entries[1]) or nil
+  if plain(try(C_Traits.CanPurchaseRank, config, node, entry)) == false then return "cannot" end
+  if plain(try(C_Traits.PurchaseRank, config, node)) ~= true then
+    try(C_Traits.RollbackConfig, config)
+    return "cannot"
+  end
+  local spec = PlayerUtil and plain(try(PlayerUtil.GetCurrentSpecID)) or nil
+  local saved = type(spec) == "number" and plain(try(C_ClassTalents.GetLastSelectedSavedConfigID, spec)) or nil
+  if plain(try(C_ClassTalents.CommitConfig, saved)) ~= true then
+    try(C_Traits.RollbackConfig, config)
+    return "failed"
+  end
+  return "learned"
+end
+
 -- Talent points waiting to be spent: a number, true (some, count unknown),
 -- 0, or nil when the game won't say.
 function API.unspentTalents()
@@ -816,10 +852,10 @@ function API.talentKey(name)
 end
 
 -- Every talent in your talent window, by name:
---   { list = { { node, name, rank, bought, max } }, byName = { [key] = entry }, spent = points }
+--   { list = { { node, name, rank, bought, max, icon } }, byName = { [key] = entry }, spent = points }
 -- `rank` includes points you have clicked but not applied yet; `bought` does not.
 -- nil when the game won't say.
-local talentNames = {}   -- node id -> name (a talent keeps its name for the whole session)
+local talentNames, talentIcons = {}, {}   -- node id -> name, icon (a talent keeps both for the whole session)
 function API.talents()
   local out = { list = {}, byName = {}, spent = 0 }
   eachTalentTree(function(config, tree)
@@ -839,18 +875,20 @@ function API.talents()
           local definition = field(C_Traits.GetEntryInfo(config, entry), "definitionID")
           if type(definition) ~= "number" then return end
           local def = C_Traits.GetDefinitionInfo(definition)
+          local spell = field(def, "spellID") or field(def, "overriddenSpellID")
           name = field(def, "overrideName")
           if type(name) ~= "string" or name == "" then
-            local spell = field(def, "spellID") or field(def, "overriddenSpellID")
             name = type(spell) == "number" and API.spellName(spell) or nil
           end
           if type(name) ~= "string" or name == "" then return end
           talentNames[node] = name
+          talentIcons[node] = type(spell) == "number" and plain(try(C_Spell.GetSpellTexture, spell)) or nil
         end
         local bought, current, max = field(info, "ranksPurchased"), field(info, "currentRank"), field(info, "maxRanks")
         bought = (type(bought) == "number" and bought > 0 and bought <= 10) and bought or 0
         local rank = (type(current) == "number" and current > bought and current <= 10) and current or bought
-        local e = { node = node, name = name, rank = rank, bought = bought, max = (type(max) == "number" and max >= 1 and max <= 10) and max or 1 }
+        local e = { node = node, name = name, rank = rank, bought = bought, icon = talentIcons[node],
+          max = (type(max) == "number" and max >= 1 and max <= 10) and max or 1 }
         out.list[#out.list + 1] = e
         out.byName[API.talentKey(name)] = e
         out.spent = out.spent + bought

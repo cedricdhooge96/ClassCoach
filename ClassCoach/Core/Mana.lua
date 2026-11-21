@@ -1,11 +1,8 @@
--- Works out roughly how much mana you have during combat.
+-- Works out roughly how much mana you have when the game won't say.
 --
 -- The mana BAR on the panel is always true: the game draws it for us. But the
--- addon may not read the number in combat, so to decide what to suggest
--- (high / medium / low) we combine two clues:
---   1. mana at the start of the fight minus the cost of every spell you cast;
---   2. which of your spells the game says you can still afford, which brackets
---      the real value between the dearest affordable and cheapest unaffordable spell.
+-- addon may not read the number, so to plan (what to cast, when to drink) it
+-- keeps its own count, the ledger below.
 -- Pure Lua with no game calls, so it can be tested outside the game.
 local _, ns = ...
 
@@ -28,25 +25,63 @@ function Mana.bracket(probes)
   return floor, ceiling
 end
 
--- start: mana when the fight began (exact), spent: total cost of your casts,
--- max: your maximum mana. Returns the estimate and a percentage.
-function Mana.estimate(start, spent, max, probes)
-  local floor, ceiling = Mana.bracket(probes)
-  local est
-  if start then
-    est = start - (spent or 0)
-  elseif ceiling then
-    est = (floor + ceiling) / 2
-  else
-    est = max
-  end
-  if est and max and est > max then est = max end
-  if est and ceiling and est >= ceiling then est = ceiling - 1 end
-  if est and est < floor then est = floor end
-  if est and est < 0 then est = 0 end
-  local pct
-  if est and max and max > 0 then pct = math.min(100, est / max * 100) end
-  return est, pct, floor, ceiling
+-- The ledger: ClassCoach's own running count of your mana, for a client that
+-- hides it (Forever hides it in combat, and on some clients out of combat too).
+--   spent      what each of your casts cost (exact: the game says what a spell costs)
+--   given      what Life Tap and the like give back
+--   regen      mana comes back once five seconds have passed since you last spent
+--              any (the "five-second rule"); faster while you drink
+--   bracket    which spells the game says you can still afford fences it in
+-- L = { mana, max, at, lastSpend }. mana is nil until there is anything to go on.
+local FSR = 5
+local FALLBACK_REGEN = 0.006   -- share of your maximum per second, when the game won't say
+local DRINK_SECONDS = 20       -- water for your level fills you up in about this long
+
+function Mana.ledger() return {} end
+
+-- An exact reading: the count starts again from it.
+function Mana.set(L, now, mana, max)
+  if max then L.max = max end
+  L.mana, L.at = mana, now
+end
+
+-- One of your casts. cost and given are mana points.
+function Mana.spend(L, now, cost, given)
+  if (cost or 0) > 0 then L.lastSpend = now end
+  if not L.mana then return end
+  L.mana = math.max(0, L.mana - (cost or 0)) + (given or 0)
+  if L.max and L.mana > L.max then L.mana = L.max end
+end
+
+-- Brings the count up to `now`. rates = { idle = per second outside the rule,
+-- casting = per second inside it, drinking = true }; unknown rates are guessed.
+function Mana.tick(L, now, rates)
+  rates = rates or {}
+  local from = L.at or now
+  L.at = now
+  if not L.max or L.max <= 0 then return end
+  if not L.mana then L.mana = L.max end   -- nothing to go on yet: a fresh character is full
+  local dt = math.min(now - from, 900)
+  if dt <= 0 then return end
+  local idle = rates.idle or L.max * FALLBACK_REGEN
+  local casting = rates.casting or 0
+  local quietFrom = (L.lastSpend or -math.huge) + FSR   -- when the rule stops holding regen back
+  local inside = math.max(0, math.min(now, quietFrom) - from)
+  local gain = inside * casting + (dt - inside) * idle
+  if rates.drinking then gain = gain + dt * L.max / DRINK_SECONDS end
+  L.mana = math.min(L.max, L.mana + gain)
+end
+
+-- Keeps the count between what you can and cannot afford (see Mana.bracket).
+function Mana.fence(L, floor, ceiling)
+  if not L.mana then return end
+  if ceiling and L.mana >= ceiling then L.mana = ceiling - 1 end
+  if floor and L.mana < floor then L.mana = floor end
+end
+
+-- The count as a percentage of your maximum, or nil.
+function Mana.pct(L)
+  if L.mana and L.max and L.max > 0 then return math.max(0, math.min(100, L.mana / L.max * 100)) end
 end
 
 -- "high", "medium" or "low". The level only rises again once you are a few

@@ -1,22 +1,29 @@
--- Marks the next talent of your build inside the game's own talent window.
+-- Guides you through your build inside the game's own talent window.
 --
 -- Forever's talent window is PlayerSpellsFrame.TalentsFrame; each talent is a
 -- button that knows which talent it shows. ClassCoach reads that and lays its
 -- own frames over the buttons:
---   a gold frame and "NEXT" on the talent to take now,
---   a small 2, 3, 4, 5 on the talents after it,
---   one line at the bottom left naming the build and the next talent.
+--   the glow (your chosen look) and "Next" on the talent to take now,
+--   a small round 2, 3, 4, 5 on the talents after it,
+--   a dark veil over talents that are not part of your build,
+--   a card beside the window: the build, your progress, the next five points
+--   with the level each one comes at, and (when you turn it on) "Learn now".
+-- A level-up toast names the talent to take when you get a point.
 --
 -- Nothing here changes the game's window. The marks are ClassCoach's own
--- frames, they are not children of the game's buttons, they let every click
--- through, and ClassCoach never learns a talent for you.
+-- frames, they are not children of the game's buttons and they let every click
+-- through. A talent is only ever learned when you click "Learn now".
 local _, ns = ...
 
 local Talents = {}
 ns.Talents = Talents
 
-local GOLD = { 1.00, 0.82, 0.20 }
-local MARKS = 5   -- the next talent and four after it
+local S, C = ns.Style, ns.Style.COLORS
+
+local MARKS = 5          -- the next talent and four after it
+local VEILS = 80         -- talents dimmed at most
+local ROWS = 5           -- points listed on the card
+local CARD_W, ROW_H = 216, 34
 
 local function window()
   local spells = _G.PlayerSpellsFrame
@@ -31,57 +38,140 @@ local function visible(frame)
   return ok and shown == true
 end
 
-local function edge(parent, r, g, b, a)
-  local t = parent:CreateTexture(nil, "OVERLAY")
-  t:SetColorTexture(r, g, b, a)
-  return t
+-- A number the game frame gives about itself (its edge, its scale), or nil.
+local function read(f, method)
+  local fn = f[method]
+  if type(fn) ~= "function" then return nil end
+  local ok, v = pcall(fn, f)
+  return ok and type(v) == "number" and v == v and v or nil
 end
 
+-- A round number badge for the talents after the next one, and the "Next" tag.
 local function mark(holder)
   local m = CreateFrame("Frame", nil, holder)
   m:EnableMouse(false)
-  -- a 2-pixel gold frame just outside the talent's icon
-  m.edges = {}
-  for i = 1, 4 do m.edges[i] = edge(m, GOLD[1], GOLD[2], GOLD[3], 1) end
-  m.edges[1]:SetPoint("TOPLEFT", -3, 3);    m.edges[1]:SetPoint("TOPRIGHT", 3, 3);       m.edges[1]:SetHeight(2)
-  m.edges[2]:SetPoint("BOTTOMLEFT", -3, -3); m.edges[2]:SetPoint("BOTTOMRIGHT", 3, -3);   m.edges[2]:SetHeight(2)
-  m.edges[3]:SetPoint("TOPLEFT", -3, 3);    m.edges[3]:SetPoint("BOTTOMLEFT", -3, -3);   m.edges[3]:SetWidth(2)
-  m.edges[4]:SetPoint("TOPRIGHT", 3, 3);    m.edges[4]:SetPoint("BOTTOMRIGHT", 3, -3);   m.edges[4]:SetWidth(2)
-  m.tagBack = edge(m, 0.05, 0.05, 0.07, 0.92)
-  m.tag = m:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  m.tag:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
-  m.tagBack:SetPoint("TOPLEFT", m.tag, "TOPLEFT", -3, 2)
-  m.tagBack:SetPoint("BOTTOMRIGHT", m.tag, "BOTTOMRIGHT", 3, -2)
+  m.disc = m:CreateTexture(nil, "OVERLAY")
+  m.disc:SetTexture(S.MEDIA .. "disc")
+  m.disc:SetSize(18, 18)
+  S.tint(m.disc, C.dark, 0.92)
+  m.edge = m:CreateTexture(nil, "OVERLAY", nil, 1)
+  m.edge:SetTexture(S.MEDIA .. "ring_bold")
+  m.edge:SetAllPoints(m.disc)
+  S.tint(m.edge, C.accent)
+  m.tag = S.text(m, "bold", 10, C.accent)
+  m.tag:SetJustifyH("CENTER")
   m:Hide()
   return m
 end
 
--- role "next": the gold frame and NEXT above the icon. Otherwise the pick number at its top right corner.
+-- role "next": the tag sits on a small plate above the talent. Otherwise a numbered disc at its top right.
 local function dress(m, role, text)
-  for i = 1, 4 do
-    if role == "next" then m.edges[i]:Show() else m.edges[i]:Hide() end
+  m.disc:ClearAllPoints()
+  if role == "next" then
+    m.disc:SetSize(34, 16)
+    m.disc:SetPoint("BOTTOM", m, "TOP", 0, 3)
+    m.disc:SetTexture(nil)
+    local d = S.COLORS.dark
+    m.disc:SetColorTexture(d[1], d[2], d[3], 0.92)
+    m.edge:Hide()
+  else
+    m.disc:SetSize(18, 18)
+    m.disc:SetPoint("CENTER", m, "TOPRIGHT", -2, -2)
+    m.disc:SetTexture(S.MEDIA .. "disc")
+    S.tint(m.disc, S.COLORS.dark, 0.92)
+    m.edge:Show()
   end
   m.tag:ClearAllPoints()
-  if role == "next" then m.tag:SetPoint("BOTTOM", m, "TOP", 0, 5) else m.tag:SetPoint("CENTER", m, "TOPRIGHT", -1, -1) end
-  m.tag:SetText(text)
+  m.tag:SetPoint("CENTER", m.disc, "CENTER", 0, 0)
+  S.set(m.tag, text)
   m.role, m.text = role, text
+end
+
+local function veil(holder)
+  local v = holder:CreateTexture(nil, "OVERLAY")
+  v:SetColorTexture(0, 0, 0, 0.55)
+  v:Hide()
+  return v
+end
+
+local function row(card, i)
+  local r = CreateFrame("Frame", nil, card)
+  r:SetSize(CARD_W - 28, ROW_H)
+  r:SetPoint("TOPLEFT", card.rowsTop, "BOTTOMLEFT", 0, -(i - 1) * ROW_H)
+  r:EnableMouse(false)
+  r.icon = r:CreateTexture(nil, "ARTWORK")
+  r.icon:SetSize(22, 22)
+  r.icon:SetPoint("TOPLEFT", 0, -2)
+  S.round(r, r.icon)
+  r.name = S.text(r, "body", 12, C.ink)
+  r.name:SetPoint("TOPLEFT", r.icon, "TOPRIGHT", 9, 1)
+  r.name:SetWidth(CARD_W - 28 - 31)
+  r.name:SetWordWrap(false)
+  r.detail = S.text(r, "body", 10, C.muted)
+  r.detail:SetPoint("TOPLEFT", r.name, "BOTTOMLEFT", 0, -2)
+  return r
+end
+
+-- The card beside the talent window.
+local function makeCard(holder)
+  local card = CreateFrame("Frame", "ClassCoachTalentCard", holder)
+  card:SetSize(CARD_W, 120)
+  card.bg = card:CreateTexture(nil, "BACKGROUND")
+  card.bg:SetAllPoints()
+  card.bg:SetColorTexture(C.dark[1], C.dark[2], C.dark[3], 0.94)
+  card.rule = card:CreateTexture(nil, "BORDER")
+  card.rule:SetPoint("TOPLEFT"); card.rule:SetPoint("BOTTOMLEFT"); card.rule:SetWidth(2)
+  S.tint(card.rule, C.accent)
+  card.kicker = S.text(card, "body", 10, C.muted)
+  card.kicker:SetPoint("TOPLEFT", 14, -12)
+  S.set(card.kicker, "Your build")
+  card.title = S.text(card, "bold", 14, C.ink)
+  card.title:SetPoint("TOPLEFT", card.kicker, "BOTTOMLEFT", 0, -4)
+  card.title:SetWidth(CARD_W - 28)
+  card.title:SetWordWrap(true)
+  card.bar = CreateFrame("StatusBar", nil, card)
+  card.bar:SetSize(CARD_W - 28, 4)
+  card.bar:SetPoint("TOPLEFT", card.title, "BOTTOMLEFT", 0, -10)
+  card.bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+  card.bar:SetStatusBarColor(C.accent[1], C.accent[2], C.accent[3])
+  card.bar.track = card.bar:CreateTexture(nil, "BACKGROUND")
+  card.bar.track:SetAllPoints()
+  card.bar.track:SetColorTexture(C.line[1], C.line[2], C.line[3], 1)
+  card.progress = S.text(card, "body", 10, C.muted)
+  card.progress:SetPoint("TOPLEFT", card.bar, "BOTTOMLEFT", 0, -5)
+  card.rowsTop = CreateFrame("Frame", nil, card)
+  card.rowsTop:SetSize(1, 1)
+  card.rowsTop:SetPoint("TOPLEFT", card.progress, "BOTTOMLEFT", 0, -8)
+  card.rows = {}
+  for i = 1, ROWS do card.rows[i] = row(card, i) end
+  card.line = S.text(card, "body", 11, C.warn)   -- "Next: ..." when nothing is listed, or a warning
+  card.line:SetWidth(CARD_W - 28)
+  card.line:SetWordWrap(true)
+  card.learn = S.button(card, "Learn now")
+  card.learn:SetScript("OnClick", S.guard(function() Talents.learn() end))
+  -- The card is our own frame: it catches clicks on itself only, and you can
+  -- drag it anywhere. Where you put it is remembered.
+  card:EnableMouse(true)
+  card:SetMovable(true)
+  card:SetClampedToScreen(true)
+  card:RegisterForDrag("LeftButton")
+  card:SetScript("OnDragStart", function(self) self:StartMoving() end)
+  card:SetScript("OnDragStop", S.guard(function(self)
+    self:StopMovingOrSizing()
+    local left, top = self:GetLeft(), self:GetTop()
+    if Talents.db and type(left) == "number" and type(top) == "number" then Talents.db.talentCardPos = { left, top } end
+  end))
+  return card
 end
 
 local function create()
   local holder = CreateFrame("Frame", "ClassCoachTalentMarks", UIParent)
   holder:EnableMouse(false)
-  holder.marks = {}
+  holder.marks, holder.veils = {}, {}
   for i = 1, MARKS do holder.marks[i] = mark(holder) end
-  local banner = CreateFrame("Frame", nil, holder)
-  banner:EnableMouse(false)
-  banner:SetSize(360, 30)
-  banner.title = banner:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  banner.title:SetPoint("TOPLEFT")
-  banner.title:SetJustifyH("LEFT")
-  banner.line = banner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  banner.line:SetPoint("TOPLEFT", 0, -13)
-  banner.line:SetJustifyH("LEFT")
-  holder.banner = banner
+  holder.glow = ns.Glow.new("ClassCoachTalentGlow")
+  holder.card = makeCard(holder)
+  holder.banner = holder.card   -- what the tests and /coach check call it
   holder:Hide()
   Talents.holder = holder
   return holder
@@ -89,6 +179,7 @@ end
 
 function Talents.hide()
   local holder = Talents.holder
+  if holder then ns.Glow.hide(holder.glow) end
   if holder and Talents.shown then holder:Hide() end
   Talents.shown = false
 end
@@ -99,14 +190,109 @@ function Talents.open()
   return t ~= nil and visible(t)
 end
 
--- state = { build = { name }, plan, how }, see ClassCoach.lua. Returns true while marks are up.
-function Talents.update(state, db)
+-- Where you dragged it; else beside the window, on the side with room; else
+-- inside its bottom left corner.
+local function place(card, t, db)
+  card:ClearAllPoints()
+  local pos = db.talentCardPos
+  if type(pos) == "table" and type(pos[1]) == "number" and type(pos[2]) == "number" then
+    card:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", pos[1], pos[2])
+    card.where = "yours"
+    return
+  end
+  local right, left = read(t, "GetRight"), read(t, "GetLeft")
+  local scale = read(t, "GetEffectiveScale") or 1
+  local screen = read(UIParent, "GetWidth") or 1365
+  local uiScale = read(UIParent, "GetEffectiveScale") or 1
+  local need = (CARD_W + 12) * uiScale
+  if right and right * scale + need <= screen * uiScale then
+    card:SetPoint("TOPLEFT", t, "TOPRIGHT", 10, -40)
+    card.where = "right"
+  elseif left and left * scale >= need then
+    card:SetPoint("TOPRIGHT", t, "TOPLEFT", -10, -40)
+    card.where = "left"
+  else
+    card:SetPoint("BOTTOMLEFT", t, "BOTTOMLEFT", 18, 44)
+    card.where = "inside"
+  end
+end
+
+-- Fills the card. Returns the "Next: ..." line (also stored as card.text).
+local function fillCard(card, state, db, level)
+  local plan = state.plan
+  S.set(card.title, tostring(state.build and state.build.name or "your build")
+    .. (state.how == "auto" and " (fits your talents best)" or ""))
+  local total = #plan.steps
+  card.bar:SetMinMaxValues(0, math.max(1, total))
+  card.bar:SetValue(plan.taken or 0)
+  S.set(card.progress, ("%d of %d points"):format(plan.taken or 0, total))
+  local schedule = plan.readable and ns.Engine.talentSchedule(plan, level, ROWS) or {}
+  for i, r in ipairs(card.rows) do
+    local e = schedule[i]
+    if e then
+      r.icon:SetTexture(e.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+      S.set(r.name, e.name)
+      local rank = ("Rank %s"):format((e.rank:gsub("/", " of ")))
+      S.set(r.detail, e.due and (rank .. ": take it now") or ("%s, at level %d"):format(rank, e.level))
+      local c = e.due and C.accent or C.muted
+      r.detail:SetTextColor(c[1], c[2], c[3])
+      r.icon:SetDesaturated(not e.known)
+      r.entry = e
+      r:Show()
+    else
+      r.entry = nil
+      r:Hide()
+    end
+  end
+  local line
+  local nextStep = plan.next and plan.steps[plan.next]
+  if not plan.readable then
+    line = "The game did not give your talents, so nothing is marked."
+  elseif not plan.next then
+    line = "This build is complete."
+  elseif not nextStep.known then
+    line = "Next: " .. tostring(nextStep.label) .. "  (not in your talent window)"
+  else
+    line = "Next: " .. ns.Engine.nextTalent(plan)
+  end
+  local warn
+  if plan.readable and plan.extra > 0 then
+    warn = ("%d point%s outside this build"):format(plan.extra, plan.extra == 1 and "" or "s")
+  elseif plan.readable and plan.ahead > 0 then
+    warn = ("%d point%s taken earlier than this build does"):format(plan.ahead, plan.ahead == 1 and "" or "s")
+  end
+  card.text = warn and (line .. "  ·  " .. warn) or line
+  -- under the list: a warning, or the plain line when nothing is listed
+  local below = warn or (#schedule == 0 and line) or nil
+  card.line:ClearAllPoints()
+  card.line:SetPoint("TOPLEFT", card.rowsTop, "BOTTOMLEFT", 0, -(#schedule * ROW_H) - 4)
+  S.set(card.line, below or "")
+  local c = warn and C.warn or C.muted
+  card.line:SetTextColor(c[1], c[2], c[3])
+  card.line:SetShown(below ~= nil)
+  -- Learn now: only when you turned it on, out of combat, for a talent you can take now
+  local first = schedule[1]
+  local canLearn = db.learnNow == true and first and first.due and first.known and first.node and not ns.API.inCombat()
+  card.learn:ClearAllPoints()
+  card.learn:SetPoint("TOPLEFT", card.rowsTop, "BOTTOMLEFT", 0, -(#schedule * ROW_H) - (below and 26 or 6))
+  card.learn:SetWidth(CARD_W - 28)
+  if canLearn then S.set(card.learn.label, "Learn " .. first.name) end
+  card.learn.node = canLearn and first.node or nil
+  card.learn:SetShown(canLearn and true or false)
+  local height = 12 + 14 + 4 + 18 + 10 + 4 + 5 + 12 + 8 + #schedule * ROW_H + (below and 22 or 0) + (canLearn and 30 or 0) + 12
+  card:SetHeight(height)
+  return line
+end
+
+-- state = { build = { name }, plan, how, have }, see ClassCoach.lua. Returns true while marks are up.
+function Talents.update(state, db, level)
   local t = window()
   if not t or not visible(t) or not state or not state.plan or (db and db.talentMarks == false) then
     Talents.hide()
     return false
   end
   local holder = Talents.holder or create()
+  Talents.db = db
   local plan = state.plan
 
   -- which talent each of the game's buttons shows
@@ -118,20 +304,20 @@ function Talents.update(state, db)
     if ok and type(node) == "number" then buttons[node] = button end
   end
 
-  -- what to mark: the next talent, then the ones after it
+  local strata, level0 = t:GetFrameStrata(), t:GetFrameLevel()
+  if type(strata) == "string" then holder:SetFrameStrata(strata) end
+  if type(level0) == "number" then holder:SetFrameLevel(math.min(level0 + 200, 9000)) end
+
+  -- the next talent: the glow and its tag; then numbered discs on the ones after it
   local wanted = {}
   local nextStep = plan.next and plan.steps[plan.next]
   if nextStep and nextStep.known and nextStep.node then
-    wanted[1] = { node = nextStep.node, role = "next", text = "NEXT" }
+    wanted[1] = { node = nextStep.node, role = "next", text = "Next" }
   end
   for _, up in ipairs(ns.Engine.upcomingTalents(plan, MARKS - 1)) do
     wanted[#wanted + 1] = { node = up.node, role = "later", text = tostring(up.order) }
   end
-
-  local strata, level = t:GetFrameStrata(), t:GetFrameLevel()
-  if type(strata) == "string" then holder:SetFrameStrata(strata) end
-  if type(level) == "number" then holder:SetFrameLevel(math.min(level + 200, 9000)) end
-  local used = 0
+  local used, glowOn = 0, nil
   for _, w in ipairs(wanted) do
     local button = buttons[w.node]
     if button and used < MARKS and visible(button) then
@@ -142,34 +328,131 @@ function Talents.update(state, db)
       dress(m, w.role, w.text)
       m.node = w.node
       m:Show()
+      if w.role == "next" then glowOn = button end
     end
   end
   for i = used + 1, MARKS do holder.marks[i].node = nil; holder.marks[i]:Hide() end
+  ns.Glow.show(holder.glow, glowOn, db.talentGlow or "glow", db.glowColor)
 
-  -- the line at the bottom left of the talent window
-  local banner = holder.banner
-  banner:ClearAllPoints()
-  banner:SetPoint("BOTTOMLEFT", t, "BOTTOMLEFT", 18, 12)
-  banner.title:SetText("ClassCoach · " .. tostring(state.build and state.build.name or "your build")
-    .. (state.how == "auto" and " (fits your talents best)" or ""))
-  local line
-  if not plan.readable then
-    line = "The game did not give your talents, so nothing is marked."
-  elseif not plan.next then
-    line = "This build is complete."
-  elseif not nextStep.known then
-    line = "Next: " .. tostring(nextStep.label) .. "  (not in your talent window)"
+  -- a veil over every talent that is not part of the build
+  local outside = db.talentDim ~= false and plan.readable and ns.Engine.outsideBuild(plan, state.have) or {}
+  local veiled = 0
+  for node in pairs(outside) do
+    local button = buttons[node]
+    if button and veiled < VEILS and visible(button) then
+      veiled = veiled + 1
+      local v = holder.veils[veiled] or veil(holder)
+      holder.veils[veiled] = v
+      v:ClearAllPoints()
+      v:SetPoint("TOPLEFT", button, "TOPLEFT", 3, -3)
+      v:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -3, 3)
+      v:Show()
+    end
+  end
+  for i = veiled + 1, #holder.veils do holder.veils[i]:Hide() end
+  Talents.veiled = veiled
+
+  -- the card
+  local card = holder.card
+  if db.talentList ~= false then
+    place(card, t, db)
+    fillCard(card, state, db, level or 1)
+    card:Show()
   else
-    line = "Next: " .. ns.Engine.nextTalent(plan)
+    card.text = nil
+    card:Hide()
   end
-  if plan.readable and plan.extra > 0 then
-    line = line .. ("  ·  %d point%s outside this build"):format(plan.extra, plan.extra == 1 and "" or "s")
-  elseif plan.readable and plan.ahead > 0 then
-    line = line .. ("  ·  %d point%s taken earlier than this build does"):format(plan.ahead, plan.ahead == 1 and "" or "s")
-  end
-  banner.line:SetText(line)
-  banner.text = line
   if not Talents.shown then holder:Show() end
   Talents.shown = true
+  return true
+end
+
+---------------------------------------------------------------------------
+-- Learn now (opt-in)
+---------------------------------------------------------------------------
+
+local LEARN_SAYS = {
+  combat = "Talents can only be learned out of combat.",
+  pending = "Your talent window has changes you have not applied. Apply or undo them first.",
+  cannot = "The game would not learn that talent now. Click it in the talent window yourself.",
+  failed = "The game did not take it. Click the talent in the talent window yourself.",
+}
+
+-- The node to learn: the card's button, else the toast's.
+function Talents.learn(node)
+  node = node or (Talents.holder and Talents.holder.card.learn.node) or Talents.toastNode
+  if not node then return nil end
+  local result = ns.API.learnTalent(node)
+  if Talents.onLearn then Talents.onLearn(result, LEARN_SAYS[result]) end
+  return result
+end
+
+---------------------------------------------------------------------------
+-- The level-up toast
+---------------------------------------------------------------------------
+
+local TOAST_SECONDS = 9
+
+local function makeToast()
+  local f = CreateFrame("Frame", "ClassCoachToast", UIParent)
+  f:SetSize(340, 64)
+  f:SetPoint("TOP", UIParent, "TOP", 0, -150)
+  f:SetFrameStrata("MEDIUM")
+  f.bg = f:CreateTexture(nil, "BACKGROUND")
+  f.bg:SetAllPoints()
+  f.bg:SetColorTexture(C.dark[1], C.dark[2], C.dark[3], 0.94)
+  f.rule = f:CreateTexture(nil, "BORDER")
+  f.rule:SetPoint("TOPLEFT"); f.rule:SetPoint("BOTTOMLEFT"); f.rule:SetWidth(2)
+  S.tint(f.rule, C.accent)
+  f.icon = f:CreateTexture(nil, "ARTWORK")
+  f.icon:SetSize(40, 40)
+  f.icon:SetPoint("LEFT", 14, 0)
+  S.round(f, f.icon)
+  f.ring = f:CreateTexture(nil, "OVERLAY")
+  f.ring:SetTexture(S.MEDIA .. "ring")
+  f.ring:SetPoint("CENTER", f.icon)
+  f.ring:SetSize(46, 46)
+  S.tint(f.ring, C.accent)
+  f.kicker = S.text(f, "body", 10, C.muted)
+  f.kicker:SetPoint("TOPLEFT", f.icon, "TOPRIGHT", 12, 1)
+  f.name = S.text(f, "bold", 15, C.ink)
+  f.name:SetPoint("TOPLEFT", f.kicker, "BOTTOMLEFT", 0, -3)
+  f.name:SetWidth(180)
+  f.name:SetWordWrap(false)
+  f.detail = S.text(f, "body", 10, C.muted)
+  f.detail:SetPoint("TOPLEFT", f.name, "BOTTOMLEFT", 0, -3)
+  f.learn = S.button(f, "Learn", 70)
+  f.learn:SetPoint("RIGHT", -12, 0)
+  f.learn:SetScript("OnClick", S.guard(function()
+    local result = Talents.learn(Talents.toastNode)
+    if result == "learned" then f:Hide() end
+  end))
+  f:EnableMouse(true)
+  f:SetScript("OnMouseUp", function(self) self:Hide() end)   -- a click anywhere else on it puts it away
+  f:SetScript("OnUpdate", S.guard(function(self)
+    local left = (self.untilT or 0) - GetTime()
+    if self:IsMouseOver() then self.untilT = GetTime() + 2 return end   -- reading it: keep it
+    if left <= 0 then self:Hide() return end
+    self:SetAlpha(left < 1 and left or 1)
+  end))
+  f:Hide()
+  return f
+end
+
+-- At a level-up with a talent point: which talent to take, with Learn when you turned that on.
+-- entry: the first line of Engine.talentSchedule. Returns true when shown.
+function Talents.toast(entry, db, level)
+  if not entry or db.talentToast == false or (level or 0) < ns.Engine.FIRST_TALENT_LEVEL then return false end
+  local f = Talents.toastFrame or makeToast()
+  Talents.toastFrame = f
+  f.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+  S.set(f.kicker, ("Level %d: a talent point to spend"):format(level))
+  S.set(f.name, entry.name)
+  S.set(f.detail, ("Rank %s of your build"):format(entry.rank))
+  Talents.toastNode = entry.known and entry.due and entry.node or nil
+  f.learn:SetShown(db.learnNow == true and Talents.toastNode ~= nil and not ns.API.inCombat())
+  f.untilT = GetTime() + TOAST_SECONDS
+  f:SetAlpha(1)
+  f:Show()
   return true
 end

@@ -336,6 +336,19 @@ function Panel.render(view)
   -- Left: before a fight, what to fix first; in a fight, what you already cast here.
   local before, after = Panel.steps(db)
   local missing = (not view.inCombat) and view.missing or {}
+  -- Quiet when ready: with nothing targeted, nothing to prepare and nothing to
+  -- warn about, the coach steps back (the "ready" opacity setting). Anything
+  -- to do before the pull brings it straight back.
+  local quiet = view.planning and not view.inCombat and #missing == 0 and view.statusKind ~= "warn"
+    and not (Panel.msgUntil and GetTime() < Panel.msgUntil)
+  local goal = quiet and (db.readyAlpha or 100) / 100 or 1
+  local alpha = Panel.alpha or 1
+  if alpha ~= goal then
+    alpha = alpha < goal and math.min(goal, alpha + 0.25) or math.max(goal, alpha - 0.08)
+    Panel.alpha = alpha
+    f:SetAlpha(alpha)
+  end
+  Panel.quiet = quiet
   local shownLeft = 0
   for i = 1, MISSING_SLOTS do
     local s, item = f.missing[i], missing[i]
