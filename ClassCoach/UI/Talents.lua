@@ -381,7 +381,9 @@ function Talents.update(state, db, level)
     end
   end
   for i = used + 1, MARKS do holder.marks[i].node = nil; holder.marks[i]:Hide() end
-  ns.Glow.show(holder.glow, glowOn, db.talentGlow or "glow", db.glowColor, LAYER_LEVEL - 10, LAYER)
+  -- the glow means "spend a point here now": with no point to spend, only the Next tag shows
+  local canSpend = state.unspent == nil or state.unspent > 0
+  ns.Glow.show(holder.glow, canSpend and glowOn or nil, db.talentGlow or "glow", db.glowColor, LAYER_LEVEL - 10, LAYER)
   Talents.nextFound = glowOn ~= nil
 
   -- a veil over every talent that is not part of the build

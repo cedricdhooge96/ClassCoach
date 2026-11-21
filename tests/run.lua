@@ -1632,6 +1632,12 @@ elseif SCENARIO == "talents" then
   M.advance(1); tick(ns)
   check("the next talent wears the glow, in the default look", holder.glow.shown and holder.glow.target == nextButton and holder.glow.style == "glow",
     tostring(holder.glow.style))
+  local pointsBefore = M.P.talentPoints
+  M.P.talentPoints = 0; ns.C.talentsStale = true; M.advance(1); tick(ns)
+  check("no point to spend: no glow, the Next tag still says which one is next", not holder.glow.shown and holder.marks[1].shown and holder.marks[1].text == "Next",
+    tostring(holder.glow.shown) .. " " .. tostring(holder.marks[1].text))
+  M.P.talentPoints = pointsBefore; ns.C.talentsStale = true; M.advance(1); tick(ns)
+  check("a point to spend again: the glow is back", holder.glow.shown and holder.glow.target == nextButton)
   local outside, count = ns.Engine.outsideBuild(ns.C.talentState.plan, ns.C.talentState.have), 0
   for _ in pairs(outside) do count = count + 1 end
   check("talents the build never takes are veiled, and only those", count > 0 and ns.Talents.veiled == count and not outside[node("Suppression")]
