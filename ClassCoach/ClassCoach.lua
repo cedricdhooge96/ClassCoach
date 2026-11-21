@@ -1071,6 +1071,17 @@ function handlers.PLAYER_REGEN_DISABLED()
   ns.Trace.add("fight", "started on %s, mana %s, demon %s", ns.Trace.unit("target"), pct and ("%.0f%%"):format(pct) or "?", tostring(C.demonAtPull))
 end
 
+-- Texts that do not fit, noted once each per session (the saved log and the trace).
+local layoutNoted = {}
+function C.noteLayout(where)
+  for _, line in ipairs(ns.Style.layoutCheck()) do
+    if not layoutNoted[line] then
+      layoutNoted[line] = true
+      log("layout (%s): %s", where, line)
+    end
+  end
+end
+
 -- One line for the trace when what the coach shows changed: the ring, what comes
 -- next, where the smart key is, mana and the timers on this enemy.
 function C.traceView(view, s, smart)
@@ -1413,6 +1424,7 @@ local HELP = {
   "/coach errors — problems the addon caught itself (for bug reports)",
   "/coach check — what the addon can read on this client (for bug reports)",
   "/coach trace — the debug trace kept on this computer, if you allowed it (export, clear, consent)",
+  "/coach layout — asks the game which ClassCoach texts on screen do not fit (cut short, not drawn, over each other)",
 }
 
 -- The settings are ClassCoach's own window (UI/Window.lua). The addon never
@@ -1476,6 +1488,15 @@ local function command(msg)
       say(("%s = %s"):format(option.name, tostring(store[option.key])))
       safely("settings window", ns.Window.refresh)
     end
+  elseif cmd == "layout" then
+    -- asks the game which of ClassCoach's texts on screen do not fit
+    local issues = ns.Style.layoutCheck()
+    if #issues == 0 then say("Every ClassCoach text on screen fits.")
+    else
+      say(("%d texts on screen do not fit:"):format(#issues))
+      for i = 1, math.min(#issues, 15) do print("  " .. issues[i]) end
+    end
+    for _, line in ipairs(issues) do ns.Trace.add("layout", "%s", line) end
   elseif cmd == "trace" then
     ns.Trace.command(arg)
   elseif cmd == "talents" then

@@ -93,7 +93,11 @@ function Style.text(parent, face, size, color, flags)
   local safe = gameFont(size, flags)
   local fs = parent:CreateFontString(nil, "OVERLAY", safe)
   known[fs] = { safe = safe, face = face, size = size, flags = flags }
-  if Style.ownFonts then Style.pending = true end
+  -- Once the typefaces went on after login (Style.dress), a new text wears its own
+  -- at once: a layout measured in the game's font and then drawn in a wider one
+  -- runs out of its place (seen in game in the settings window).
+  if Style.ownFonts and Style.dressedOnce then Style.font(fs)
+  elseif Style.ownFonts then Style.pending = true end
   local c = color or Style.COLORS.ink
   fs:SetTextColor(c[1], c[2], c[3])
   fs:SetJustifyH("LEFT")
@@ -105,6 +109,8 @@ end
 -- text up after a few tries. Returns how many wear their typeface and how many do not.
 function Style.dress(on)
   Style.ownFonts = on == true
+  Style.dressedOnce = Style.ownFonts or nil
+  Style.fontEpoch = (Style.fontEpoch or 0) + 1
   Style.pending = false
   local dressed, plain = 0, 0
   for fs, k in pairs(known) do
@@ -131,6 +137,49 @@ function Style.set(fs, value)
     backToGameFont(fs, k)
     fs:SetText(value)
   end
+end
+
+-- In the real game: which of ClassCoach's texts do not fit. No tool outside the
+-- game can draw its fonts, so the game itself is asked: a text it cut short
+-- (IsTruncated), one that holds words and measures nothing (not drawn), and two
+-- texts of the same frame drawn over each other. Returns lines in words.
+function Style.layoutCheck()
+  local function call(fs, m)
+    local f = fs[m]
+    if type(f) ~= "function" then return nil end
+    local ok, v = pcall(f, fs)
+    if ok and not (issecretvalue and issecretvalue(v)) then return v end
+  end
+  local issues, byParent, seen = {}, {}, 0
+  for fs in pairs(known) do
+    seen = seen + 1
+    if seen > 2000 then break end
+    local text = call(fs, "GetText")
+    if type(text) == "string" and text ~= "" and call(fs, "IsVisible") == true then
+      local label = '"' .. text:gsub("%s+", " "):sub(1, 34) .. '"'
+      if call(fs, "IsTruncated") == true then issues[#issues + 1] = label .. " is cut short" end
+      if drawsNothing(fs) then issues[#issues + 1] = label .. " measures nothing: it is not drawn" end
+      local l, r, t, b = call(fs, "GetLeft"), call(fs, "GetRight"), call(fs, "GetTop"), call(fs, "GetBottom")
+      if type(l) == "number" and type(r) == "number" and type(t) == "number" and type(b) == "number" then
+        local p = call(fs, "GetParent") or "none"
+        byParent[p] = byParent[p] or {}
+        local list = byParent[p]
+        list[#list + 1] = { label = label, l = l, r = r, t = t, b = b }
+      end
+    end
+  end
+  for _, list in pairs(byParent) do
+    for i = 1, math.min(#list, 200) do
+      for j = i + 1, math.min(#list, 200) do
+        local a, c = list[i], list[j]
+        local wide = math.min(a.r, c.r) - math.max(a.l, c.l)
+        local high = math.min(a.t, c.t) - math.max(a.b, c.b)
+        if wide > 2 and high > 2 then issues[#issues + 1] = a.label .. " and " .. c.label .. " are drawn over each other" end
+      end
+    end
+  end
+  table.sort(issues)
+  return issues
 end
 
 -- One text in words, for /coach check: which font it reports, how wide it measures, whether it is shown.

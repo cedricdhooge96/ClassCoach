@@ -2302,6 +2302,38 @@ elseif SCENARIO == "focus" then
   check("and is left alone after that", S.healed == 1 and rawget(f.why, "font") == nil)
   check("one text in words, for /coach check", S.describe(f.name):find("^Marcellus%-Regular%.ttf 19, %d+ letters, width %?, shown$") ~= nil, S.describe(f.name))
   f.why.GetStringWidth = nil
+  -- seen in game: the settings window measured its rows in the game's font, then they were drawn in Inter and ran out of their place
+  local fresh = S.text(UIParent, "body", 12)
+  check("once the typefaces are on, a new text wears its own at once (measured as it will be drawn)", rawget(fresh, "font") ~= nil and fresh.font[1]:find("Inter") ~= nil)
+  ClassCoachDB.ownFonts = false; f = tick(ns)
+  local plainPage = ns.Window.show("Talents")
+  ClassCoachDB.ownFonts = true; M.advance(2.1); f = tick(ns)
+  local dressedPage = ns.Window.show("Talents")
+  check("a page laid out before the typefaces changed is built again", dressedPage ~= plainPage and not plainPage.shown and dressedPage.shown)
+  check("...and is not built again while nothing changed", ns.Window.show("Talents") == dressedPage)
+  local tile = dressedPage.previews[1]
+  check("the talent page's preview shows its highlight while in view", tile.glow.shown)
+  ns.Window.scrollBy(400)
+  check("scrolled out of view, the preview's highlight goes too (it is drawn above the window)", not tile.glow.shown and ns.Window.offset > 0, tostring(ns.Window.offset))
+  ns.Window.scrollBy(-1000)
+  check("scrolled back, it is there again", tile.glow.shown)
+  ns.Window.close()
+  -- /coach layout: the game itself says which texts do not fit
+  local a, b, cut = S.text(UIParent, "body", 12), S.text(UIParent, "body", 12), S.text(UIParent, "body", 12)
+  for _, t in ipairs({ a, b, cut }) do t:SetText("Show my build beside the talent window"); t.IsVisible = function() return true end end
+  a.GetLeft, a.GetRight, a.GetTop, a.GetBottom = function() return 0 end, function() return 200 end, function() return 100 end, function() return 70 end
+  b.GetLeft, b.GetRight, b.GetTop, b.GetBottom = function() return 0 end, function() return 200 end, function() return 80 end, function() return 60 end
+  cut.IsTruncated = function() return true end
+  local issues = table.concat(S.layoutCheck(), " | ")
+  check("/coach layout: two texts drawn over each other, and a text cut short, are named", issues:find("are drawn over each other", 1, true) ~= nil
+    and issues:find("is cut short", 1, true) ~= nil, issues)
+  M.printed = {}
+  SlashCmdList.CLASSCOACH("layout")
+  check("...in chat", table.concat(M.printed, " "):find("do not fit", 1, true) ~= nil)
+  for _, t in ipairs({ a, b, cut }) do t:SetText("") end
+  M.printed = {}
+  SlashCmdList.CLASSCOACH("layout")
+  check("and says so when everything fits", table.concat(M.printed, " "):find("fits", 1, true) ~= nil, table.concat(M.printed, " "))
   ClassCoachDB.ownFonts = false; f = tick(ns)
   local card = S.probe()
   check("/coach fonts: a line of results per typeface and for the game's own font, every size plain and with a width", #card == 5 and card[1]:find("^Inter%-Regular  9:") ~= nil

@@ -57,6 +57,7 @@ ClassCoach is made for **World of Warcraft: Forever** (patch 1.60.x) and no othe
 | `/coach hide` / `show` | Hides or shows the coach |
 | `/coach reset` | Puts the coach and the journey list back where they started |
 | `/coach spec Enhancement` | Picks a profile by hand; `/coach spec auto` goes back to automatic |
+| `/coach layout` | Asks the game which ClassCoach texts on screen do not fit (cut short, not drawn, drawn over each other) |
 | `/coach trace` | The debug trace, if you allowed it: `export`, `clear`, `consent` |
 | `/coach check` | Prints what the addon can read on your client. Useful when something looks wrong |
 | `/coach errors` | Lists problems ClassCoach caught in itself. `/coach errors on` makes the game show every addon's error on screen; `off` hides them again |

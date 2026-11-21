@@ -237,6 +237,7 @@ local function preview(page, y, icon, styleKey, caption)
     local level = Window.frame and Window.frame:GetFrameLevel()
     tile.glow:SetFrameLevel((type(level) == "number" and level or 10) + 20)
   end
+  tile.top = -y      -- where it sits in the page, to know when it is scrolled out of sight
   page.previews[#page.previews + 1] = tile
   return tile, y - 76 - 18
 end
@@ -256,8 +257,11 @@ end
 
 local function refreshPage(page)
   for _, c in ipairs(page.controls) do c.refresh() end
-  for _, p in ipairs(page.previews) do p.refresh() end
   if page.update then page.update() end
+  -- the previews follow the scroll position (Window.scrollBy shows only those in view)
+  local f = Window.frame
+  if f and f.pages[Window.current] == page then Window.scrollBy(0)
+  else for _, p in ipairs(page.previews) do p.refresh() end end
 end
 
 local function sectionPage(content, info)
@@ -551,6 +555,12 @@ function Window.scrollBy(dy)
   local most = math.max(0, page:GetHeight() - visible)
   Window.offset = math.max(0, math.min(most, (Window.offset or 0) + dy))
   f.scroll:SetVerticalScroll(Window.offset)
+  -- A preview's highlight is drawn above the window, not inside its scrolling part:
+  -- show it only while its tile is fully in view.
+  for _, t in ipairs(page.previews) do
+    local inView = t.top >= Window.offset and t.top + 76 <= Window.offset + visible
+    if inView then t.refresh() else ns.Glow.hide(t.glow) end
+  end
   f.thumb:SetShown(most > 0)
   if most > 0 then
     local share = visible / page:GetHeight()
@@ -569,10 +579,17 @@ function Window.show(id)
   info = info or Window.PAGES[2]
   for _, p in pairs(f.pages) do p:Hide() end
   local page = f.pages[info.id]
+  -- A page laid out before the typefaces changed has the wrong line heights: build it again.
+  if page and page.fontEpoch ~= S.fontEpoch then
+    page:Hide()
+    for _, t in ipairs(page.previews) do ns.Glow.hide(t.glow) end
+    page = nil
+  end
   if not page then
     if info.id == "start" then page = startPage(f.content)
     elseif info.id == "share" then page = sharePage(f.content)
     else page = sectionPage(f.content, info) end
+    page.fontEpoch = S.fontEpoch
     f.pages[info.id] = page
   end
   f.content:SetHeight(page:GetHeight())
@@ -589,6 +606,8 @@ function Window.show(id)
   Window.current, Window.offset = info.id, 0
   Window.scrollBy(0)
   S.set(f.sub, subtitle())
+  -- the game itself measures the page once it is drawn: anything that does not fit is noted (/coach layout)
+  if C_Timer and ns.C and ns.C.noteLayout then C_Timer.After(0.5, function() pcall(ns.C.noteLayout, "settings, " .. info.name) end) end
   if not f:IsShown() then
     f:Show()
     keyboard(true)
