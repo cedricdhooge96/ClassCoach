@@ -109,6 +109,8 @@ local function row(card, i)
   r.name:SetWordWrap(false)
   r.detail = S.text(r, "body", 10, C.muted)
   r.detail:SetPoint("TOPLEFT", r.name, "BOTTOMLEFT", 0, -2)
+  r.detail:SetWidth(CARD_W - 28 - 31)
+  r.detail:SetWordWrap(false)
   return r
 end
 
@@ -327,7 +329,8 @@ function Talents.update(state, db, level)
     seen = seen + 1
     if seen > 400 then break end
     local ok, node = pcall(button.GetNodeID, button)
-    if ok and type(node) == "number" then
+    -- the game may keep more than one button for a talent: the one on screen wins
+    if ok and type(node) == "number" and (not buttons[node] or visible(button)) then
       buttons[node] = button
       top = math.max(top, read(button, "GetFrameLevel") or 0)
       if not strata then

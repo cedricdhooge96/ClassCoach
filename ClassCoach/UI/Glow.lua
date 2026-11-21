@@ -2,7 +2,7 @@
 -- next talent, a spell to drag out of the spellbook, and the preview in the
 -- settings. A glow is ClassCoach's own frame laid over the target: it is never
 -- a child of the target, never takes a click and never changes the target.
---   glow      a soft halo that breathes
+--   glow      a soft halo that breathes, inside a thin frame
 --   frame     a steady frame
 --   sparkles  bright points running around the edge
 --   ants      short dashes marching around the edge
@@ -102,8 +102,8 @@ function Glow.dress(h, style, colorKey)
   local c = Glow.color(colorKey)
   for _, line in ipairs(h.edges) do
     line:SetColorTexture(c[1], c[2], c[3], 1)
-    line:SetShown(style == "frame" or style == "sparkles")
-    line:SetAlpha(style == "sparkles" and 0.45 or 1)
+    line:SetShown(style ~= "ants" and style ~= "off")
+    line:SetAlpha((style == "sparkles" or style == "glow") and 0.5 or 1)
   end
   ns.Style.tint(h.halo, c)
   h.halo:SetShown(style == "glow")

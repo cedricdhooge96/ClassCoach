@@ -158,7 +158,8 @@ local function buildsFor(profile)
   for _, b in ipairs(profile.builds or {}) do
     local order, problem = Engine.decodeBuild(b.link, C.class, ns.TalentLinks)
     if order then
-      list[#list + 1] = { name = b.name, link = b.link, order = order }
+      -- a build marked `first` goes before the profile's own: it is the default
+      table.insert(list, b.first and 1 or #list + 1, { name = b.name, link = b.link, order = order })
     else
       log("build %s: %s", tostring(b.name), tostring(problem))
     end

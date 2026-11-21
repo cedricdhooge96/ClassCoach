@@ -111,14 +111,14 @@ The two move independently: drag the coach by its ring and the journey list anyw
 
 Open the game's talent window. The talent to take next **lights up** (in the look and colour you pick) with "Next" above it, and the four after it carry a small round 2, 3, 4, 5. Talents your build never takes are **dimmed**.
 
-Beside the window sits a **build card**: the build you follow, how far along you are, and the next talents, ranks of one talent on one line ("Ranks 1 to 4 of 5: take them now", or the levels they come at). "Now" only ever means a point you have to spend. It goes on the side with room, or inside the window's corner when neither side has any; drag it anywhere and it stays there ("Put the build card back" in the settings undoes that).
+Beside the window sits a **build card**: the build you follow, how far along you are, and the next talents, ranks of one talent on one line ("Ranks 1 to 5: now to level 18", or the levels they come at). "Now" only ever means a point you have to spend. It goes on the side with room, or inside the window's corner when neither side has any; drag it anywhere and it stays there ("Put the build card back" in the settings undoes that).
 
 When you level up and have a point to spend, a short note at the top of the screen names the talent your build takes.
 
 **Learn now** (off by default, Settings > Talents): a button on the card and on the note learns that talent when you click it, the way the talent window does (it stages the point and applies it). Out of combat only. If the talent window holds changes you have not applied, it waits for you; if the game refuses, the point is rolled back and it says so.
 
 - **It follows what you already have.** The next talent is worked out from the points you have spent, not from your level, so it stays right if you took a point early or late. A point you have clicked but not applied yet already counts.
-- **Which build.** Each class comes with a leveling build and an Icy Veins build. With nothing spent you get the first; once you have spent points, the build that fits them best is followed. `/coach build` shows the list and where you are; `/coach build 2` pins one.
+- **Which build.** Each class comes with a leveling build and an Icy Veins build; for the Warlock the default is Icy Veins' Forever leveling build (Suppression at 10 to 13, Improved Corruption at 14 to 18, ..., Wrack at 51), checked level by level against the guide's own level slider. With nothing spent you get the first; once you have spent points, the build that fits them best is followed. `/coach build` shows the list and where you are; `/coach build 2` pins one.
 - **Your own guide.** On the Icy Veins or Warcraft Tavern talent calculator, set up the build (or open the one a guide links to), copy the address from your browser and type `/coach build ` followed by the link. The link holds the talents in the order they were clicked, and that is the order ClassCoach follows.
 - **Nothing is guessed.** A link that names a talent your game does not have is refused with the reason. Points outside the build, or taken earlier than the build has them, are counted and shown.
 

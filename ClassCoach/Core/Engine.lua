@@ -1290,15 +1290,17 @@ function Engine.talentSchedule(plan, level, count, unspent)
   return rows
 end
 
--- One row of that schedule in words: "Ranks 1 to 4 of 5: take them now".
+-- One row of that schedule in words, short enough for one line of the card:
+-- "Rank 2 of 5: now", "Ranks 1 to 5: now to level 18", "Ranks 1 to 3, levels 26 to 28".
 function Engine.describeTalentRow(r)
   if r.fromRank == r.toRank then
     local rank = ("Rank %d of %d"):format(r.fromRank, r.max)
-    return r.due and (rank .. ": take it now") or ("%s, at level %d"):format(rank, r.level)
+    return r.due and (rank .. ": now") or ("%s, level %d"):format(rank, r.level)
   end
-  local ranks = ("Ranks %d to %d of %d"):format(r.fromRank, r.toRank, r.max)
-  if r.allDue then return ranks .. ": take them now" end
-  if r.due then return ("%s: the first now, the rest by level %d"):format(ranks, r.toLevel) end
+  local ranks = ("Ranks %d to %d"):format(r.fromRank, r.toRank)
+  if r.toRank < r.max then ranks = ranks .. (" of %d"):format(r.max) end
+  if r.allDue then return ranks .. ": now" end
+  if r.due then return ("%s: now to level %d"):format(ranks, r.toLevel) end
   return ("%s, levels %d to %d"):format(ranks, r.level, r.toLevel)
 end
 

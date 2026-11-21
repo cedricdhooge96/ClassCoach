@@ -1429,8 +1429,14 @@ elseif SCENARIO == "talents" then
 
   -- 2. Nothing spent: the profile's own build, from its first point
   local s = state()
-  check("nothing spent: the default build", s.build.name:find("Warcraft Tavern", 1, true) ~= nil and s.how == "auto", s.build.name)
-  check("its first point", ns.Engine.nextTalent(s.plan) == "Improved Corruption (1 of 5)", ns.Engine.nextTalent(s.plan))
+  check("nothing spent: the default build is Icy Veins' leveling build", s.build.name == "Icy Veins: Affliction leveling (40/11/0)" and s.how == "auto", s.build.name)
+  check("its first point: Suppression, as the guide's level 10", ns.Engine.nextTalent(s.plan) == "Suppression (1 of 5)", ns.Engine.nextTalent(s.plan))
+  local order = {}
+  for i = 1, 9 do order[i] = s.plan.steps[i].name end
+  check("levels 10 to 18 as on the guide: Suppression x4, Improved Corruption x5", table.concat(order, ",")
+    == "Suppression,Suppression,Suppression,Suppression,Improved Corruption,Improved Corruption,Improved Corruption,Improved Corruption,Improved Corruption", table.concat(order, ","))
+  check("level 41 Demonic Sacrifice, level 51 Wrack", s.plan.steps[32].name == "Demonic Sacrifice" and s.plan.steps[42].name == "Wrack" and #s.plan.steps == 51,
+    s.plan.steps[32].name .. "/" .. s.plan.steps[42].name)
   check("every point of the default build is a talent of the tree", #s.plan.unknown == 0, table.concat(s.plan.unknown, ", "))
 
   -- 3. Two points already in Improved Life Tap, the way the Icy Veins build starts
@@ -1482,6 +1488,14 @@ elseif SCENARIO == "talents" then
   nextButton.level = 1500; M.advance(1); tick(ns)
   check("a window brought to the front: the glow follows it up", holder.glow:GetFrameLevel() == 1510, tostring(holder.glow:GetFrameLevel()))
   nextButton.level = nil; M.advance(1); tick(ns)
+  -- the game keeps a second, hidden button for the same talent: the one on screen gets the glow
+  local hidden = { GetNodeID = function() return nextButton.node end, IsVisible = function() return false end,
+    GetFrameLevel = function() return 1001 end, GetFrameStrata = function() return "HIGH" end }
+  win.buttons[#win.buttons + 1] = hidden
+  M.advance(1); tick(ns)
+  check("two buttons for one talent: the glow goes on the one you can see", holder.glow.target == nextButton, tostring(holder.glow.target == hidden))
+  win.buttons[#win.buttons] = nil
+  M.advance(1); tick(ns)
   check("the next talent wears the glow, in the default look", holder.glow.shown and holder.glow.target == nextButton and holder.glow.style == "glow",
     tostring(holder.glow.style))
   local outside, count = ns.Engine.outsideBuild(ns.C.talentState.plan, ns.C.talentState.have), 0
@@ -1498,9 +1512,9 @@ elseif SCENARIO == "talents" then
   check("the card sits beside the window, on the side with room", card.shown and card.where == "right", tostring(card.where))
   local row1 = card.rows[1]
   check("the card: the next point first, with its rank and the level the build takes it", row1.shown and row1.name.text == "Suppression"
-    and row1.detail.text == "Ranks 1 to 5 of 5: the first now, the rest by level 15" and row1.icon.texture ~= nil, row1.name.text .. " / " .. row1.detail.text)
+    and row1.detail.text == "Ranks 1 to 5: now to level 15" and row1.icon.texture ~= nil, row1.name.text .. " / " .. row1.detail.text)
   M.P.talentPoints = 0; M.fire("PLAYER_TALENT_UPDATE"); M.advance(3); tick(ns)
-  check("no point to spend: nothing says now, and the levels count from your next point", row1.detail.text == "Ranks 1 to 5 of 5, levels 12 to 16", row1.detail.text)
+  check("no point to spend: nothing says now, and the levels count from your next point", row1.detail.text == "Ranks 1 to 5, levels 12 to 16", row1.detail.text)
   M.P.talentPoints = 1; M.fire("PLAYER_TALENT_UPDATE"); M.advance(3); tick(ns)
   check("five points listed, then progress", card.rows[5].shown and card.progress.text == "2 of 51 points", card.progress.text)
   check("no Learn button unless you ask for it", not card.learn.shown)
@@ -1525,7 +1539,7 @@ elseif SCENARIO == "talents" then
   local toast = ns.Talents.toastFrame
   check("level up: a note names the talent your build takes", toast and toast.shown and toast.name.text == "Suppression" and toast.detail.text == "Rank 1 of 5 in your build"
     and not toast.learn.shown, toast and toast.name.text)
-  check("the card counts from your level now", card.rows[1].detail.text == "Ranks 1 to 5 of 5: the first now, the rest by level 16", card.rows[1].detail.text)
+  check("the card counts from your level now", card.rows[1].detail.text == "Ranks 1 to 5: now to level 16", card.rows[1].detail.text)
   ClassCoachDB.learnNow = true; M.advance(1); tick(ns)
   check("Learn now turned on: the card offers the talent", card.learn.shown and card.learn.label.text == "Learn Suppression", card.learn.label.text)
   -- the talent window holds a change you have not applied: Learn now waits for you
@@ -1556,17 +1570,17 @@ elseif SCENARIO == "talents" then
   M.printed = {}
   SlashCmdList.CLASSCOACH("build")
   local said = table.concat(M.printed, "\n")
-  check("/coach build lists the builds and where you are", said:find("1. Warcraft Tavern", 1, true) ~= nil and said:find("2. Icy Veins: Wrack Build", 1, true) ~= nil
+  check("/coach build lists the builds and where you are", said:find("1. Icy Veins: Affliction leveling", 1, true) ~= nil and said:find("2. Warcraft Tavern", 1, true) ~= nil and said:find("3. Icy Veins: Wrack Build", 1, true) ~= nil
     and said:find("<- you follow this one", 1, true) ~= nil and said:find("2 of 51 points taken. Next: Suppression (1 of 5).", 1, true) ~= nil, said)
-  SlashCmdList.CLASSCOACH("build 1")
+  SlashCmdList.CLASSCOACH("build 2")
   M.advance(1); tick(ns)
-  check("/coach build 1: that build, with your stray points named", ns.C.talentState.how == "chosen" and banner():find("Next: Improved Corruption (1 of 5)", 1, true) ~= nil
+  check("/coach build 2: that build, with your stray points named", ns.C.talentState.how == "chosen" and banner():find("Next: Improved Corruption (1 of 5)", 1, true) ~= nil
     and banner():find("2 of your points are in talents this build takes later.", 1, true) ~= nil, banner())
   local stray = ns.Engine.talentPlan({ { name = "Suppression" } }, ns.API.talents())
   check("points the build never asks for are counted as outside it", stray.extra == 2 and stray.offPlan[1].name == "Improved Life Tap")
   M.printed = {}
   SlashCmdList.CLASSCOACH("build 9")
-  check("a number that is not on the list", table.concat(M.printed, " "):find("no build number 9", 1, true) ~= nil and ClassCoachCharDB.build == 1)
+  check("a number that is not on the list", table.concat(M.printed, " "):find("no build number 9", 1, true) ~= nil and ClassCoachCharDB.build == 2)
 
   -- 6. A link from a guide
   M.printed = {}

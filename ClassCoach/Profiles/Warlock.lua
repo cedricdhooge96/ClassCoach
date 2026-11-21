@@ -320,6 +320,10 @@ ns.RegisterProfile({
   -- already spent, the one that fits them best is followed.
   talentsName = "Warcraft Tavern: Affliction leveling (41/7/3)",
   builds = {
+    -- Icy Veins' Forever leveling guide (checked level by level against its level
+    -- slider, 21 Nov 2026): Suppression 10-13, Improved Corruption 14-18, ... Wrack 51.
+    { name = "Icy Veins: Affliction leveling (40/11/0)", first = true,
+      link = "https://www.icy-veins.com/wow-forever/warlock-talent-calculator#tc-111122222366999bbaaadjjjjjllnnnqaa30fffffg0eee55577~70755-d1899b7d" },
     { name = "Icy Veins: Wrack Build (Affliction)",
       link = "https://www.icy-veins.com/wow-forever/warlock-talent-calculator#tc-00111112222266999aaaaabbdfffffgjjjjjllnnnqBBBBBeee8~70959-a8fe1dab" },
   },
