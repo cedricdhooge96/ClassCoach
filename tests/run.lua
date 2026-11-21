@@ -143,7 +143,9 @@ if SCENARIO == "shaman" then
   check("no missing list in words", not f.status.text:find("No shield"), f.status.text)
   check("food is a journey to-do, not a pull blocker", journey(ns):find("No food buff") ~= nil and not f.status.text:find("food"), journey(ns))
   check("journey: xp and rested", journey(ns):find("0%% · not rested") ~= nil and journey(ns):find("No rested XP") ~= nil, journey(ns))
-  check("journey rows carry icons", ns.Journey.frame.rows[1].icon.texture == "Interface\\Icons\\INV_Misc_Food_15", tostring(ns.Journey.frame.rows[1].icon.texture))
+  local foodRow
+  for _, r in ipairs(ns.Journey.frame.rows) do if r.shown and r.label.text:find("No food buff") then foodRow = r end end
+  check("journey rows carry icons", foodRow and foodRow.icon.texture == "Interface\\Icons\\INV_Misc_Food_15", journey(ns))
   check("journey: next trainer level", journey(ns):find("New spells at level 16") ~= nil, journey(ns))
   M.P.xp, M.P.rested, M.P.talentPoints, M.P.durability, M.P.freeSlots = 430, 180, 1, 12, 1
   M.P.buffs["Well Fed XP Boost"] = true; M.fire("UNIT_AURA", "player")
@@ -177,18 +179,24 @@ if SCENARIO == "shaman" then
 
   target({ name = "Rockjaw Trogg", level = 11, hostile = true, guid = "Creature-1" })
   f = tick(ns)
-  check("opener is Flame Shock", f.name.text == "Flame Shock", f.name.text)
-  check("opener keybind", f.key.text == "S3", f.key.text)
-  check("chain after the opener", nextText(f) == "Searing Totem > Melee", nextText(f))
+  -- Icy Veins: drop totems before engaging, then pull with Lightning Bolt
+  check("pull plan starts with the Earth totem", f.name.text == "Strength of Earth Totem", f.name.text)
+  check("then the Fire totem, then the pull", nextText(f) == "Searing Totem > Lightning Bolt", nextText(f))
   check("chain label", f.chainLabel.text == "next", f.chainLabel.text)
   check("mana bar exact out of combat", f.bar.value == 300 and f.barText.text == "100%", f.barText.text)
+  cast(8075); M.P.totems[2] = true; M.advance(1.5); f = tick(ns)
+  check("Earth totem down: the Fire totem", f.name.text == "Searing Totem" and nextText(f) == "Lightning Bolt > Earth Shock", f.name.text .. " / " .. nextText(f))
+  cast(3599); M.P.totems[1] = true; M.advance(1.5); f = tick(ns)
+  check("totems down: pull with Lightning Bolt", f.name.text == "Lightning Bolt", f.name.text)
+  check("opener keybind", f.key.text == "1", f.key.text)
+  check("chain after the pull: Earth Shock, then melee", nextText(f) == "Earth Shock > Melee", nextText(f))
 
   -- Fight (the game already hides the enemy's name when combat starts)
   local beforePull = journey(ns)
   M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED")
   cast(529)
   M.advance(1.5); f = tick(ns)
-  check("in combat: Flame Shock next", f.name.text == "Flame Shock", f.name.text)
+  check("in combat: Earth Shock next", f.name.text == "Earth Shock", f.name.text)
   check("journey panel stays up in combat, as it was before the pull", journey(ns) ~= "(hidden)" and journey(ns) == beforePull, journey(ns))
   ClassCoachDB.journeyInCombat = false; tick(ns)
   check("unless you turn that off", journey(ns) == "(hidden)", journey(ns))
@@ -196,15 +204,21 @@ if SCENARIO == "shaman" then
   check("turned back on mid-fight it comes back", journey(ns) == beforePull, journey(ns))
   check("mana bar is handed the real hidden value", f.bar.value == M.SECRET)
   check("mana text written by the game", f.barText.secretText == true and f.barText.text == "%.0f%%", f.barText.text)
-  cast(8050)
-  M.advance(1.5); f = tick(ns)
-  check("then Searing Totem (mana high)", f.name.text == "Searing Totem", f.name.text .. " / " .. f.barText.text)
-  cast(3599)
-  M.advance(1.5); f = tick(ns)
-  check("then Earth Shock (no Stormstrike yet)", f.name.text == "Earth Shock", f.name.text .. " / " .. f.barText.text)
+  -- Earth Shock cast: during the global cooldown the game reads every spell "active"
+  -- with the times hidden. The shock must not come back as "ready" then (the ring jumped).
   cast(8044); M.P.cooldowns[8044] = M.now + 6; M.P.cooldowns[8042] = M.now + 6
+  M.gcdUntil = M.now + 1.5
+  M.advance(0.3); f = tick(ns)
+  check("right after the shock, in the global cooldown: melee, not the shock again", f.name.text == "Melee", f.name.text)
+  check("and the shock is planned back in about 6 seconds", nextText(f):find("^Earth Shock in [56]s") ~= nil, nextText(f))
   M.advance(1.5); f = tick(ns)
-  check("shock on cooldown: melee", f.name.text == "Melee", f.name.text)
+  check("after the global cooldown: still melee", f.name.text == "Melee", f.name.text)
+  local seen = {}
+  for _ = 1, 10 do M.advance(0.5); f = tick(ns); seen[#seen + 1] = f.name.text end
+  local changes = 0
+  for i = 2, #seen do if seen[i] ~= seen[i - 1] then changes = changes + 1 end end
+  check("the ring holds still while the shock cools down, then shows it once", seen[1] == "Melee" and seen[#seen] == "Earth Shock" and changes == 1, table.concat(seen, ","))
+  M.gcdUntil = nil
   M.advance(6); cast(8044); M.advance(4); cast(8044); M.advance(2)
   f = tick(ns)
   check("mana now medium or low", ns.C.lastState.manaPct < 55 and ns.C.lastState.manaLevel ~= "high", ns.C.lastState.manaPct)
@@ -409,7 +423,7 @@ if SCENARIO == "shaman" then
   check("options write to the saved settings", S.list.compact.tbl == ClassCoachDB and S.list.specChoice.tbl == ClassCoachCharDB)
   check("slider shows its unit", S.list.opacity.opts.format(60) == "60%" and S.list.scale.opts.format(1.1) == "1.10x")
   local specs = S.list.specChoice.getOptions()
-  check("profile choices for this class", #specs == 2 and specs[1].value == "auto" and specs[2].value == "Enhancement", #specs)
+  check("profile choices for this class", #specs == 3 and specs[1].value == "auto" and specs[2].value == "Enhancement" and specs[3].value == "Restoration", #specs)
   SlashCmdList.CLASSCOACH("")
   ClassCoach_OnAddonCompartmentClick()
   check("the addon never opens the game's settings panel itself", S.opened == nil, tostring(S.opened))
@@ -462,6 +476,37 @@ if SCENARIO == "shaman" then
   check("...nor counted as an enemy of the fight", ns.C.tracker.fight and not ns.C.tracker.fight.onTarget[ns.Tracker.SELF] and ns.C.tracker.fight.targets == 0)
   M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(1)
 
+  -- No shield before a pull: the plan, the pull macro and the smart key start with it
+  -- (built out of combat; in a fight a macro cannot check buffs or mana).
+  M.P.buffs = { ["Well Fed"] = true }; M.P.totems = { [1] = true, [2] = true }
+  M.fire("UNIT_AURA", "player")
+  target({ name = "Rockjaw Trogg", level = 11, hostile = true, guid = "Creature-77" })
+  M.advance(1); f = tick(ns)
+  check("no shield: the pull plan starts with Lightning Shield", f.name.text == "Lightning Shield" and nextText(f) == "Lightning Bolt > Earth Shock",
+    f.name.text .. " / " .. nextText(f))
+  SlashCmdList.CLASSCOACH("macros")
+  local pullMacro = M.macros[GetMacroIndexByName("CC Pull")]
+  check("the pull macro: the shield, then the pull", pullMacro and pullMacro.body == "#showtooltip\n/castsequence reset=target/combat Lightning Shield, Lightning Bolt",
+    pullMacro and pullMacro.body)
+  M.P.buffs["Lightning Shield"] = true; M.fire("UNIT_AURA", "player"); M.advance(1); f = tick(ns)
+  SlashCmdList.CLASSCOACH("macros")
+  pullMacro = M.macros[GetMacroIndexByName("CC Pull")]
+  check("shield up: it drops out of the plan and the macro", f.name.text == "Lightning Bolt"
+    and pullMacro and pullMacro.body == "#showtooltip\n/cast Lightning Bolt", pullMacro and pullMacro.body)
+  M.P.mana = 50; M.P.buffs["Lightning Shield"] = nil; M.fire("UNIT_AURA", "player"); M.advance(1); f = tick(ns)
+  check("no shield but little mana: no shield on the plan", f.name.text ~= "Lightning Shield", f.name.text)
+  M.P.mana = 300; M.P.buffs["Lightning Shield"] = true; M.fire("UNIT_AURA", "player")
+
+  -- Restoration (a dual spec): alone it levels with Icy Veins' damage plan
+  ClassCoachCharDB.specChoice = "Restoration"; M.advance(1); f = tick(ns)
+  check("Restoration profile picked", ns.C.profile.spec == "Restoration", ns.C.profile.spec)
+  check("Restoration alone: pull with Lightning Bolt", f.name.text == "Lightning Bolt", f.name.text)
+  check("Restoration talents: Icy Veins' order", (ns.Engine.talentFor(ns.C.profile, 12) or ""):find("Tidal Focus") ~= nil,
+    tostring(ns.Engine.talentFor(ns.C.profile, 12)))
+  ClassCoachCharDB.specChoice = "auto"; M.advance(1); tick(ns)
+  target(nil)
+  check("no errors after the shield and Restoration checks", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
+
 elseif SCENARIO == "priest" then
   M.player({
     class = "PRIEST", className = "Priest", level = 14, mana = 400, maxMana = 400,
@@ -485,7 +530,8 @@ elseif SCENARIO == "priest" then
   target({ name = "Kobold", level = 13, hostile = true, guid = "Creature-2" })
   f = tick(ns)
   check("shield before the pull", f.name.text == "Power Word: Shield", f.name.text)
-  check("priest chain", nextText(f) == "Shadow Word: Pain > Mind Blast", nextText(f))
+  -- after the shield (no fight yet) the plan follows the pull list, as the ring will: Mind Blast from range
+  check("priest chain", nextText(f) == "Mind Blast > Shadow Word: Pain", nextText(f))
   cast(17); M.advance(1.5); f = tick(ns)
   check("opener Mind Blast", f.name.text == "Mind Blast", f.name.text)
   M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
@@ -1067,7 +1113,11 @@ elseif SCENARIO == "sweep" then
       ["Lightning Shield"] = 8, ["Flame Shock"] = 10, ["Searing Totem"] = 10, ["Flametongue Weapon"] = 10,
       ["Strength of Earth Totem"] = 10, ["Frost Shock"] = 20, ["Lesser Healing Wave"] = 20, ["Healing Stream Totem"] = 20,
       ["Stormstrike"] = 25, ["Mana Spring Totem"] = 26, ["Windfury Weapon"] = 30, ["Reincarnation"] = 30,
-      ["Windfury Totem"] = 32, ["Chain Heal"] = 40, ["Rage of the Farseer"] = 40 } },
+      ["Windfury Totem"] = 32, ["Chain Heal"] = 40, ["Rage of the Farseer"] = 40,
+      ["Earthbind Totem"] = 6, ["Stoneclaw Totem"] = 8, ["Fire Nova"] = 12, ["Frostbrand Weapon"] = 20, ["Ghost Wolf"] = 20,
+      ["Totemic Recall"] = 20, ["Call of the Elements"] = 20, ["Magma Totem"] = 26, ["Flametongue Totem"] = 28,
+      ["Grounding Totem"] = 30, ["Chain Lightning"] = 32, ["Grace of Air Totem"] = 42,
+      ["Water Shield"] = 46 } },   -- Water Shield: the Enhancement build's talent at 46
     PRIEST = { name = "Priest", wand = true, learn = {
       ["Smite"] = 1, ["Lesser Heal"] = 1, ["Power Word: Fortitude"] = 1, ["Shoot"] = 1, ["Shadow Word: Pain"] = 4,
       ["Power Word: Shield"] = 6, ["Renew"] = 8, ["Mind Blast"] = 10, ["Inner Fire"] = 12, ["Flash Heal"] = 20,
@@ -1081,7 +1131,9 @@ elseif SCENARIO == "sweep" then
   check(WANT .. " has a profile", profile.class == WANT, profile.class)
   for key in pairs(def.learn) do check(WANT .. " test knows " .. key, profile.spells[key] ~= nil) end
   for key in pairs(profile.spells) do
-    if key ~= "Water Shield" and key ~= "Summon Incubus" then check(WANT .. " learn level for " .. key, def.learn[key] ~= nil) end
+    -- Restoration's talent spells: never in the Enhancement book this sweep uses
+    local otherSpec = { ["Summon Incubus"] = true, ["Riptide"] = true, ["Nature's Swiftness"] = true, ["Mana Tide Totem"] = true }
+    if not otherSpec[key] then check(WANT .. " learn level for " .. key, def.learn[key] ~= nil) end
   end
   local idOf, fake = {}, 90000
   for key, meta in pairs(profile.spells) do

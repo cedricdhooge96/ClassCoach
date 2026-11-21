@@ -58,6 +58,8 @@ spells = {
 - `core = true`: a main spell. The generic "most of your mana went on X" tip skips it.
 - `learn = 8`: the level the trainer sells it. From that level the checklist says "Not trained: X" until it is learned.
 - `cd = true`: it has a cooldown, so the chain preview won't show it twice in a row. Spells sharing one cooldown use the same name: `cd = "shock"`.
+- `cdTime = 6`: that cooldown in seconds. In a fight Forever hides cooldown times and, during the global cooldown, reads every spell as busy; with `cdTime` the coach counts the cooldown from your own last cast instead of guessing "ready" (which made the ring jump back and forth). A clear answer from the game (a reset) still wins.
+- Opener entries that are totems or buffs on yourself (`totem`, `self`) don't start the fight: the plan carries on down the opener list, so a pull plan can be "shield, totems, then the pull spell".
 - `debuff = 18`: it leaves damage over time on the enemy for about that long. The real length is read from the spell's description when possible; this is the fallback. The coach then tracks it per enemy and stops suggesting it on enemies about to die (add `always = true` to a priority entry to opt out).
 - `harm = true`: it damages or hinders the enemy, so it can be resisted. (Spells with `debuff` count already.) Add `travel = true` when it flies to the enemy, so its result arrives later.
 - `auto = true`: it repeats by itself once started (a wand). It is never treated as "on cooldown".

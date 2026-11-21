@@ -26,7 +26,8 @@ Advisory only: it never presses anything for you.
 
 | Class | Spec | Status |
 |---|---|---|
-| Shaman | Enhancement | Full |
+| Shaman | Enhancement | Full (Icy Veins' leveling plan and talents) |
+| Shaman | Restoration | Talents, totems and cooldowns; alone it levels like Icy Veins says. Whom to heal stays your call: the game hides party health from addons in a fight |
 | Priest | Discipline | Full |
 | Warlock | Affliction | Full |
 | Anything else | General | Mana estimate, checklist and fight report |

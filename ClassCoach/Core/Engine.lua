@@ -27,10 +27,28 @@ function State:spell(key) return self.spells[key] end
 function State:known(key) return self.spells[key] ~= nil end
 
 -- true / false / nil (unknown). Unknown is treated as "probably fine".
+-- When the game cannot say (in a fight Forever hides cooldown times, and during
+-- the global cooldown every spell reads "active"), a spell with `cdTime`
+-- (seconds) in the profile is counted from your own last cast of it, or of any
+-- spell sharing its `cd` group. Without this the coach showed a shock "ready"
+-- right after you cast one, then took it back a moment later (the Enhancement
+-- ring jumping around). A clear answer from the game always wins (a reset).
 function State:ready(key)
   local sp = self.spells[key]
   if not sp then return false end
-  return self.check.ready(sp.id)
+  local game = self.check.ready(sp.id)
+  if game ~= nil then return game end
+  local meta = self.meta and self.meta[key]
+  if meta and meta.cdTime and self.tracker then
+    local since = self.tracker:sinceCast(key, self.now)
+    if type(meta.cd) == "string" then
+      for other, m in pairs(self.meta) do
+        if m.cd == meta.cd and other ~= key then since = math.min(since, self.tracker:sinceCast(other, self.now)) end
+      end
+    end
+    return since >= meta.cdTime
+  end
+  return nil
 end
 
 function State:usable(key)
@@ -251,7 +269,7 @@ function Sim:pressed(key)
   self.virtual[key] = (self.virtual[key] or 0) + 1
   self.virtualAt[key] = self.now
   if meta and meta.totem then self.virtualTotems[meta.totem] = true end
-  if meta and meta.cd then self.virtualCd[meta.cd == true and key or meta.cd] = true end
+  if meta and meta.cd then self.virtualCd[meta.cd == true and key or meta.cd] = self.now end
   self:advance(STEP)
 end
 function Sim:advance(seconds)
@@ -278,6 +296,11 @@ function Sim:timeOnTarget()
   local real = self.base:timeOnTarget()
   return real + (self.now - self.base.now)
 end
+-- A buff on yourself pressed earlier in this plan is up from then on.
+function Sim:buff(keyOrName)
+  if (self.virtual[keyOrName] or 0) > 0 then return true end
+  return State.buff(self, keyOrName)
+end
 function Sim:totemUp(element)
   if self.virtualTotems[element] then return true end
   return State.totemUp(self, element)
@@ -294,9 +317,34 @@ function Sim:usable(key)
   if self.mana and sp and (sp.cost or 0) > self.mana then return false end
   return self.base:usable(key)
 end
+-- Seconds until a spell with `cdTime` is back, counted from your own casts (0 = ready, nil = unknown).
+local function cooldownLeft(s, key, meta)
+  if not (meta and meta.cdTime and s.tracker) then return nil end
+  local since = s.tracker:sinceCast(key, s.now)
+  if type(meta.cd) == "string" then
+    for other, m in pairs(s.meta or {}) do
+      if m.cd == meta.cd and other ~= key then since = math.min(since, s.tracker:sinceCast(other, s.now)) end
+    end
+  end
+  return math.max(0, meta.cdTime - since)
+end
+
 function Sim:ready(key)
   local meta = self.profile.spells[key]
-  if meta and meta.cd and self.virtualCd[meta.cd == true and key or meta.cd] then return false end
+  local pressed = meta and meta.cd and self.virtualCd[meta.cd == true and key or meta.cd]
+  if pressed then
+    -- pressed in this plan: back after its cooldown, when the profile knows it
+    if not (meta.cdTime and self.now - pressed >= meta.cdTime) then return false end
+    return true
+  end
+  -- not pressed in this plan: a cooldown counted from your own casts runs out as the plan goes on
+  -- (unless the game says it is ready now: a reset)
+  local left = self.base:ready(key) ~= true and cooldownLeft(self.base, key, meta) or nil
+  if left and left > 0 then
+    if left > self.now - self.base.now then return false end
+    if not self.base:known(key) then return false end
+    return true
+  end
   local now = self.base:ready(key)
   -- "Not ready" right now, for a spell with no cooldown of its own, can only be the
   -- global cooldown (every wand shot starts one): over by the time this step comes.
@@ -329,6 +377,13 @@ local function later(profile, s, sim)
     local lasts = sim:duration(key)
     if lasts and at + lasts > sim.now then times[#times + 1] = at + lasts end
   end
+  -- the moments a spell with a known cooldown is back (a shock, Stormstrike)
+  for key, meta in pairs(profile.spells) do
+    local left = meta.cdTime and sim.base:known(key) and sim.base:ready(key) ~= true and cooldownLeft(sim.base, key, meta)
+    if left and left > 0 then times[#times + 1] = s.now + left end
+    local pressed = meta.cdTime and meta.cd and sim.virtualCd[meta.cd == true and key or meta.cd]
+    if pressed and pressed + meta.cdTime > sim.now then times[#times + 1] = pressed + meta.cdTime end
+  end
   -- the moment this enemy outlasts your usual kill: what was skipped as "nearly dead" comes back
   if s.killTime then
     local over = s.killTime - sim:timeOnTarget()
@@ -358,6 +413,7 @@ function Engine.chain(profile, s, max, fight)
   local first = Engine.next(profile, s) or opening(profile, s)
   local sim = simulate(profile, s)
   local current = first
+  local opening = not s.inCombat
   while current and #steps < max do
     steps[#steps + 1] = current
     if current.filler then
@@ -374,7 +430,16 @@ function Engine.chain(profile, s, max, fight)
       current = again   -- pressed below like any other step
     end
     sim:pressed(current.key)
-    local nextStep = pick(profile.priority, sim) or filler(profile, sim)
+    -- Before the pull, a totem or a buff on yourself does not start the fight:
+    -- the plan goes on with the pull list (the next totem, then the pull spell).
+    local nextStep
+    local meta = profile.spells[current.key]
+    if opening and meta and (meta.totem or meta.self) then
+      nextStep = pick(profile.opener or {}, sim)
+    else
+      opening = false
+    end
+    nextStep = nextStep or pick(profile.priority, sim) or filler(profile, sim)
     if nextStep.key == current.key then break end   -- would repeat: nothing new to show
     current = nextStep
   end
