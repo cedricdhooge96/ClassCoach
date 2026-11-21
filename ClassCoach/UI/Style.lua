@@ -25,13 +25,15 @@ Style.COLORS = {
 -- Text.
 --
 -- Every text starts as one of the game's own fonts, picked by size. That is the
--- look that is known to work in Forever, also for text with a set width (the
--- lines that wrap, the journey list).
+-- look that is known to work in Forever, and what a text falls back to.
 --
--- ClassCoach's own typefaces (Inter, Marcellus) are an option, off by default:
--- in the first test in the game they drew correctly on short labels, and not
--- at all on text with a set width and on the smallest key badges. `/coach fonts`
--- draws a test card to find out which sizes and uses the game accepts.
+-- ClassCoach's own typefaces (Inter, Marcellus) are an option. What the game
+-- showed so far: set while the addon loads at login, they drew on some texts
+-- and nothing at all on others; set later (the /coach fonts test card), every
+-- typeface drew at every size, with and without a set width. So they are never
+-- set at creation. Style.dress puts them on a few seconds after login, checks
+-- each text really took its typeface, and puts any that did not back on its
+-- game font.
 local GAME_FONTS = {   -- { from this design size up, the font, the same with an outline }
   { 17, "GameFontHighlightLarge", "GameFontHighlightLarge" },
   { 13.5, "GameFontHighlightMedium", "GameFontHighlightMedium" },
@@ -39,6 +41,7 @@ local GAME_FONTS = {   -- { from this design size up, the font, the same with an
   { 0, "GameFontHighlightSmall", "GameFontHighlightSmallOutline" },
 }
 local SMALLEST = "GameFontHighlightSmall"
+local MAX_TRIES = 5
 local function gameFont(size, flags)
   for _, row in ipairs(GAME_FONTS) do
     if size >= row[1] then
@@ -50,45 +53,94 @@ local function gameFont(size, flags)
   return SMALLEST
 end
 
-local known = setmetatable({}, { __mode = "k" })   -- text -> { safe = the game font it started as, healed }
+-- text -> { safe = its game font, face, size, flags, own = wearing its typeface, tries, healed }
+local known = setmetatable({}, { __mode = "k" })
 
--- Puts one of ClassCoach's own typefaces on a text. If the game refuses it, the text goes back to its game font.
-function Style.font(fs, face, size, flags)
-  local own = FACES[face]
-  if not own then return false end
-  local ok, set = pcall(fs.SetFont, fs, FONTS .. own, size, flags or "")
-  if ok and set ~= false then return true end
-  Style.fontMissing = own
-  local safe = known[fs] and _G[known[fs].safe]
-  if safe then pcall(fs.SetFontObject, fs, safe) end
-  return false
+local function sameFile(a, b)
+  return type(a) == "string" and type(b) == "string" and a:lower():gsub("/", "\\") == b:lower():gsub("/", "\\")
+end
+
+local function drawsNothing(fs)
+  local text = fs.GetText and fs:GetText()
+  local w = fs.GetStringWidth and fs:GetStringWidth()
+  return type(text) == "string" and text ~= "" and type(w) == "number" and w <= 0
+end
+
+local function backToGameFont(fs, k)
+  k.own = false
+  if _G[k.safe] then pcall(fs.SetFontObject, fs, _G[k.safe]) end
+end
+
+-- Puts a text's own typeface on it and checks that it took. Returns true when it did.
+function Style.font(fs)
+  local k = known[fs]
+  local file = k and FACES[k.face] and (FONTS .. FACES[k.face])
+  if not file then return false end
+  k.tries = (k.tries or 0) + 1
+  local ok, set = pcall(fs.SetFont, fs, file, k.size, k.flags or "")
+  local took = ok and set ~= false and sameFile(select(2, pcall(fs.GetFont, fs)), file) and not drawsNothing(fs)
+  if took then
+    k.own = true
+  else
+    Style.fontMissing = FACES[k.face]
+    backToGameFont(fs, k)
+  end
+  return took
 end
 
 -- A text. `flags` is "OUTLINE" for text that sits straight on the game world, with no plate behind it.
 function Style.text(parent, face, size, color, flags)
   local safe = gameFont(size, flags)
   local fs = parent:CreateFontString(nil, "OVERLAY", safe)
-  known[fs] = { safe = safe }
-  if Style.ownFonts then Style.font(fs, face, size, flags) end
+  known[fs] = { safe = safe, face = face, size = size, flags = flags }
+  if Style.ownFonts then Style.pending = true end
   local c = color or Style.COLORS.ink
   fs:SetTextColor(c[1], c[2], c[3])
   fs:SetJustifyH("LEFT")
   return fs
 end
 
--- Sets a text. With ClassCoach's own typefaces on, a text that comes out with
--- no width at all was not drawn: it goes back to its game font for good.
+-- Puts ClassCoach's typefaces on every text (on = true) or takes them off again.
+-- Safe to call again: it only touches texts that still need it, and gives a
+-- text up after a few tries. Returns how many wear their typeface and how many do not.
+function Style.dress(on)
+  Style.ownFonts = on == true
+  Style.pending = false
+  local dressed, plain = 0, 0
+  for fs, k in pairs(known) do
+    if not on then
+      if k.own then backToGameFont(fs, k) end
+      k.tries, k.healed = 0, nil
+    elseif not k.own and not k.healed and (k.tries or 0) < MAX_TRIES then
+      if not Style.font(fs) and k.tries < MAX_TRIES then Style.pending = true end
+    end
+    if k.own then dressed = dressed + 1 else plain = plain + 1 end
+  end
+  Style.dressed, Style.plain = dressed, plain
+  return dressed, plain
+end
+
+-- Sets a text. A text that wears its own typeface and comes out with no width
+-- was not drawn: it goes back to its game font for good.
 function Style.set(fs, value)
   fs:SetText(value)
   local k = known[fs]
-  if not Style.ownFonts or not k or k.healed or value == nil or value == "" then return end
-  local w = fs.GetStringWidth and fs:GetStringWidth()
-  if type(w) == "number" and w <= 0 then
+  if k and k.own and drawsNothing(fs) then
     k.healed = true
     Style.healed = (Style.healed or 0) + 1
-    if _G[k.safe] then pcall(fs.SetFontObject, fs, _G[k.safe]) end
+    backToGameFont(fs, k)
     fs:SetText(value)
   end
+end
+
+-- One text in words, for /coach check: which font it reports, how wide it measures, whether it is shown.
+function Style.describe(fs)
+  local ok, path, size = pcall(fs.GetFont, fs)
+  local file = ok and type(path) == "string" and path:match("[^\\/]+$") or "no font"
+  local text = fs.GetText and fs:GetText()
+  local w = fs.GetStringWidth and fs:GetStringWidth()
+  return ("%s %s, %d letters, width %s, %s"):format(file, type(size) == "number" and ("%.0f"):format(size) or "?",
+    type(text) == "string" and #text or 0, type(w) == "number" and ("%.0f"):format(w) or "?", fs:IsShown() and "shown" or "hidden")
 end
 
 -- /coach fonts: a test card. Each of ClassCoach's typefaces and the game's own
@@ -136,7 +188,7 @@ function Style.probe()
     -- T/F/n/E: what SetFont answered (true, false, nothing, an error); w/0: whether the text has a width; =/x: whether the text reports this file
     return (not ok and "E" or set == true and "T" or set == false and "F" or "n")
       .. ((type(w) == "number" and w > 0) and "w" or "0")
-      .. ((type(took) == "string" and took:lower():gsub("/", "\\") == file:lower():gsub("/", "\\")) and "=" or "x")
+      .. (sameFile(took, file) and "=" or "x")
   end
   local lines = {}
   for col, column in ipairs(columns) do

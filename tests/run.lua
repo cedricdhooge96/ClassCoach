@@ -1631,24 +1631,39 @@ elseif SCENARIO == "focus" then
   check("a size the game has no font for takes the next one down, and never a font that does not exist",
     f.key.template == "GameFontHighlight" and f.dots.template == "GameFontHighlightSmall" and _G.GameFontHighlightMedium == nil, tostring(f.key.template))
   local S = ns.Style
-  S.ownFonts = true
-  local own = S.text(f, "title", 19)
-  check("with ClassCoach's typefaces on, the name is set in Marcellus and labels in Inter", own.font[1]:find("Marcellus%-Regular%.ttf$") ~= nil and own.font[2] == 19
-    and S.text(f, "body", 11, nil, "OUTLINE").font[1]:find("Inter%-Regular%.ttf$") ~= nil and S.text(f, "bold", 9).font[1]:find("Inter%-Bold%.ttf$") ~= nil, tostring(own.font[1]))
+  ClassCoachDB.ownFonts = true; tick(ns)
+  check("ClassCoach's typefaces are never set while the addon loads", not S.ownFonts and rawget(f.name, "font") == nil)
+  M.advance(4); f = tick(ns)
+  check("a few seconds after login they go on: the name in Marcellus, the rest in Inter", S.ownFonts and f.name.font[1]:find("Marcellus%-Regular%.ttf$") ~= nil and f.name.font[2] == 19
+    and f.why.font[1]:find("Inter%-Regular%.ttf$") ~= nil and f.key.font[1]:find("Inter%-Bold%.ttf$") ~= nil and f.barText.font[3] == "OUTLINE"
+    and S.dressed > 40 and S.plain == 0, tostring(S.dressed) .. "/" .. tostring(S.plain))
+  check("the level is not set in Marcellus, whose 1 reads as a capital I", ns.Journey.frame.title.font[1]:find("Inter%-Bold%.ttf$") ~= nil)
+  ClassCoachDB.ownFonts = false; f = tick(ns)
+  check("switched off, every text is back on its game font at once", not S.ownFonts and rawget(f.name, "font") == nil and rawget(f.name, "fontObject") == GameFontHighlightLarge
+    and S.dressed == 0, tostring(S.dressed))
+  -- a client that refuses the files
   M.refuseFonts = true
-  local refused = S.text(f, "title", 19)
-  check("a typeface the game refuses: the text goes back to its game font", rawget(refused, "font") == nil and rawget(refused, "fontObject") == GameFontHighlightLarge
-    and S.fontMissing == "Marcellus-Regular.ttf", tostring(rawget(refused, "fontObject")))
+  ClassCoachDB.ownFonts = true; f = tick(ns)
+  check("a typeface the game refuses: the text keeps its game font", rawget(f.name, "font") == nil and rawget(f.name, "fontObject") == GameFontHighlightLarge
+    and S.fontMissing ~= nil and S.dressed == 0 and S.pending == true, tostring(S.fontMissing))
+  local sets = 0
+  local realSetFont = f.name.SetFont
+  f.name.SetFont = function(...) sets = sets + 1; return realSetFont(...) end
+  for _ = 1, 20 do M.advance(2.1); tick(ns) end
+  check("it is tried a few more times, then left alone", sets == 4 and S.pending == false, sets)
   M.refuseFonts = false
-  -- what the first test in the game showed: a typeface that loads and still draws nothing
-  local blank = S.text(f, "body", 12)
-  blank.GetStringWidth = function(self) return rawget(self, "font") and 0 or 40 end
-  S.set(blank, "Cast it right away.")
-  check("a text that comes out with no width is put back on the game's font, once", rawget(blank, "fontObject") == GameFontHighlight and rawget(blank, "font") == nil
-    and blank.text == "Cast it right away." and S.healed == 1, tostring(S.healed))
-  S.set(blank, "Again."); S.set(blank, "")
-  check("and is left alone after that", S.healed == 1 and blank.text == "")
-  S.ownFonts = false
+  ClassCoachDB.ownFonts = false; tick(ns); ClassCoachDB.ownFonts = true; f = tick(ns)
+  check("switching the setting off and on tries again", f.name.font ~= nil and S.plain == 0, tostring(S.plain))
+  -- what the first test in the game showed: a typeface that is set and still draws nothing
+  f.why.GetStringWidth = function(self) return rawget(self, "font") and 0 or 40 end
+  M.advance(1); f = tick(ns)
+  check("a text that comes out with no width is put back on the game's font, once", rawget(f.why, "fontObject") == GameFontHighlight and rawget(f.why, "font") == nil
+    and f.why.text ~= "" and S.healed == 1, tostring(S.healed))
+  for _ = 1, 5 do M.advance(2.1); tick(ns) end
+  check("and is left alone after that", S.healed == 1 and rawget(f.why, "font") == nil)
+  check("one text in words, for /coach check", S.describe(f.name):find("^Marcellus%-Regular%.ttf 19, %d+ letters, width %?, shown$") ~= nil, S.describe(f.name))
+  f.why.GetStringWidth = nil
+  ClassCoachDB.ownFonts = false; f = tick(ns)
   local card = S.probe()
   check("/coach fonts: a line of results per typeface and for the game's own font, every size plain and with a width", #card == 5 and card[1]:find("^Inter%-Regular  9:") ~= nil
     and card[4]:find("^game font") ~= nil and select(2, card[3]:gsub("%d+:%u%w%p/%u%w%p", "")) == 10 and S.probeFrame.shown, card[3])

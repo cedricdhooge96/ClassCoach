@@ -208,7 +208,9 @@ The offline tests play every level from 1 to 60 for the three class profiles aga
 
 Seen in the real game (0.13.0, a level 11 Warlock): the gold ring, the round icons, the key badge, the mana bar, the steps and their caption, and the journey list's headers and icons all draw as designed, and `/coach check` reads spells, keys, professions and the smart key.
 
-What that test also showed: with ClassCoach's own typefaces (Inter and Marcellus), short labels drew correctly, but every text with a set width (the spell's name, the explanation, the journey list's lines) and the smallest key badges drew nothing. Since 0.13.1 all text uses the game's own fonts, which have always worked here. The typefaces are a setting, off by default, until `/coach fonts` has shown which uses this client accepts.
+What that test also showed: with ClassCoach's own typefaces (Inter and Marcellus) set while the addon loaded, short labels drew correctly, but the spell's name, the explanation, the journey list's lines and the smallest key badges drew nothing. The `/coach fonts` test card, run later in the same session, drew every typeface at every size, with and without a set width. So the files and sizes are fine; what went wrong is tied to setting them at login.
+
+Since 0.13.1 all text starts on the game's own fonts, which have always worked here. Since 0.13.2 the typefaces are a setting (`/coach set ownFonts on`, off by default) that goes on a few seconds after login, checks every text really took its typeface, and leaves any that did not on the game's font. `/coach check` lists what five key texts report.
 
 Not yet seen in the real game: the lit bar button, click to cast, the pulse and its sound, the talent window marks, and the profession lines.
 

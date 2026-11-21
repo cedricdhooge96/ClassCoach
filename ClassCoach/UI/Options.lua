@@ -88,7 +88,7 @@ local function layout()
     { key = "opacity", kind = "slider", name = "Background behind text", default = 60, min = 0, max = 100, step = 5, unit = "%",
       tip = "How dark the plate behind the coach's text and the journey list is. It keeps the words readable on bright ground." },
     { key = "ownFonts", kind = "check", name = "Use ClassCoach's own typefaces (being tested)", default = false,
-      tip = "Inter and Marcellus instead of the game's font. Off for now: in the game they did not draw on every text. Takes effect after /reload." },
+      tip = "Inter and Marcellus instead of the game's font. Applies at once. A text that will not take its typeface keeps the game's font." },
     { key = "locked", kind = "check", name = "Lock the panels in place", default = false,
       tip = "Unlocked, drag the coach by its ring and the journey list anywhere on it. Locked, the ring lets clicks through." },
 

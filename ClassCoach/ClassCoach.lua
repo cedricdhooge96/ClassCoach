@@ -575,6 +575,12 @@ local function tick()
   end
   if not s.inCombat then view.restMacro = API.macroExists("CC Rest") and "CC Rest" or nil end
   if C.trouble then view.status, view.statusKind = C.trouble, "warn" end
+  -- ClassCoach's own typefaces: put on or taken off when the setting changes, and tried again for a text that did not take one.
+  local ownFonts = ClassCoachDB.ownFonts == true
+  if now >= (C.fontsFrom or 0) and (ownFonts ~= (ns.Style.ownFonts == true) or (ownFonts and ns.Style.pending and now >= (C.nextDress or 0))) then
+    C.nextDress = now + 2
+    safely("fonts", ns.Style.dress, ownFonts)
+  end
   C.lastView = view
   if C.demo then
     C.playDemo(now, view)
@@ -924,7 +930,7 @@ local function start()
   local mana, max = API.mana()
   C.lastMana, C.manaMax = mana, max
   ClassCoachDB.gameFont = nil   -- 0.13.0's setting; the game's font is now the default
-  ns.Style.ownFonts = ClassCoachDB.ownFonts == true
+  C.fontsFrom = GetTime() + 3   -- ClassCoach's typefaces go on a few seconds after login, never while the addon loads
   ns.Panel.create(ClassCoachCharDB, ClassCoachDB)
   ns.Journey.create(ClassCoachCharDB, ClassCoachDB)
   C.optionsReady = ns.Options.build(ClassCoachDB, ClassCoachCharDB, {
@@ -1028,8 +1034,15 @@ local function check()
   add("click to cast: buttons made %s%s; clickable now: %s", tostring(ns.Click.holder ~= nil), ns.Click.error and (" (" .. ns.Click.error .. ")") or "",
     #clicks > 0 and table.concat(clicks, ", ") or "nothing")
   add("bar highlight: style %s, on slot %s; cues played %s", tostring(ClassCoachDB.barGlow), tostring(ns.BarGlow.slot), tostring(ns.Panel.cues or 0))
-  add("fonts: %s", not ns.Style.ownFonts and "the game's own (ClassCoach's typefaces are off; /coach fonts tests them)"
-    or ("ClassCoach's own; refused: %s; texts put back on the game font because they drew nothing: %d"):format(tostring(ns.Style.fontMissing or "none"), ns.Style.healed or 0))
+  add("fonts: %s", not ns.Style.ownFonts and "the game's own (ClassCoach's typefaces are off: /coach set ownFonts on)"
+    or ("ClassCoach's own on %d texts, the game's on %d; last refused: %s; put back because they drew nothing: %d"):format(ns.Style.dressed or 0,
+      ns.Style.plain or 0, tostring(ns.Style.fontMissing or "none"), ns.Style.healed or 0))
+  local pf, jf = ns.Panel.frame, ns.Journey.frame
+  if pf and jf then
+    for _, t in ipairs({ { "name", pf.name }, { "why", pf.why }, { "next key", pf.upcoming[1].key.text }, { "list line", jf.rows[1].label }, { "list hint", jf.hint } }) do
+      add("  text %s: %s", t[1], ns.Style.describe(t[2]))
+    end
+  end
   add("main bar page %s; Shift+1..6 switch pages: %s", tostring(API.barPage()),
     tostring(API.plain(API.try(GetBindingAction, "SHIFT-2")) == "ACTIONPAGE2"))
   add("actions the game blocked this session: %s", C.blocked and table.concat(C.blocked, " | ") or "none")
