@@ -251,6 +251,8 @@ C_Spell = {
     local own = untilTime ~= nil and M.now < untilTime
     -- The global cooldown as Forever reports it in a fight: active, times hidden, and
     -- isOnGCD not to be trusted (nil) outside a SPELL_UPDATE_COOLDOWN event.
+    -- WoW Forever may not know the game's "global cooldown" spell at all ("Returns nil if spell is not found")
+    if id == 61304 and M.noGcdSpell then return nil end
     if not own and M.gcdUntil and M.now < M.gcdUntil then
       return { isActive = true, isOnGCD = M.gcdFlag, startTime = hidden(M.gcdUntil - 1.5), duration = hidden(1.5) }
     end

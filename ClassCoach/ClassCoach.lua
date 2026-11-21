@@ -990,12 +990,14 @@ function handlers.UNIT_SPELLCAST_START(unit, _, spellID)
   local id = API.plain(spellID)
   if not id then return end
   C.castStart = { id = id, key = currentTarget().key, at = GetTime() }
+  API.noteCast(GetTime())
 end
 
 function handlers.UNIT_SPELLCAST_SUCCEEDED(unit, _, spellID)
   if API.plain(unit) ~= "player" then return end
   local id = API.plain(spellID)
   if not id then return end
+  API.noteCast(GetTime())
   local key = castKey(id)
   if not key then return end
   local cost = C.costById[id]

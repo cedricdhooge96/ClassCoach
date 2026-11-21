@@ -467,6 +467,10 @@ end
 -- trusted inside a SPELL_UPDATE_COOLDOWN event (the game's own documentation). So a
 -- spell that reads "active" while the global cooldown runs (every wand shot starts
 -- one) cannot be told apart from a real cooldown: that is "unknown", never "not ready".
+-- When you last cast anything (a wand shot too): the global cooldown follows it.
+local lastCastAt = -100
+function API.noteCast(now) lastCastAt = now end
+
 function API.ready(id)
   local info = try(C_Spell.GetSpellCooldown, id)
   if type(info) == "table" then
@@ -476,7 +480,12 @@ function API.ready(id)
       if not active or field(info, "isOnGCD") == true then return true end
       if duration then return duration <= 1.5 end
       local gcd = try(C_Spell.GetSpellCooldown, GCD_SPELL)
-      if type(gcd) == "table" and field(gcd, "isActive") == true then return nil end
+      if type(gcd) == "table" then
+        if field(gcd, "isActive") == true then return nil end
+      elseif GetTime and GetTime() - lastCastAt <= 1.6 then
+        -- this client does not know the global-cooldown spell: right after a cast, it is that
+        return nil
+      end
       return false
     end
     local start = field(info, "startTime")

@@ -873,6 +873,8 @@ elseif SCENARIO == "wand" then
   -- Regression (seen in game, 0.14.5): while the wand fires, the global cooldown runs.
   -- Forever then reports every spell's cooldown as active with its times hidden, and the
   -- coach read that as "not ready": the step after the wand disappeared.
+  for _, noGcd in ipairs({ false, true }) do
+  M.noGcdSpell = noGcd
   for _, kill in ipairs({ "none", 8, 12, 16, 25 }) do
     for _, keyed in ipairs({ false, true }) do
       M.player({
@@ -905,13 +907,15 @@ elseif SCENARIO == "wand" then
       go(5019); M.advance(1)
       M.gcdUntil = M.now + 1   -- a wand shot just went off: the global cooldown runs
       f = tick(ns)
-      local tag = ("kill time %s, smart key %s"):format(tostring(kill), keyed and "bound" or "unused")
+      local tag = ("kill time %s, smart key %s%s"):format(tostring(kill), keyed and "bound" or "unused", noGcd and ", no global-cooldown spell on this client" or "")
       check(tag .. ": wand firing during the global cooldown, the next step still shows", f.name.text == "Shoot" and nextText(f):find("^Corruption in %d+s") ~= nil,
         f.name.text .. " / " .. nextText(f))
       M.gcdUntil = nil
       M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(1)
     end
   end
+  end
+  M.noGcdSpell = nil
 
   -- Regression (seen in game, 0.15.0): Shoot only in a macro on your bar ("CC Wand", or
   -- one you wrote) still got "Shoot is not on your action bars".

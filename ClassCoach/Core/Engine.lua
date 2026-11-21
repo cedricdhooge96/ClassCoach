@@ -297,7 +297,11 @@ end
 function Sim:ready(key)
   local meta = self.profile.spells[key]
   if meta and meta.cd and self.virtualCd[meta.cd == true and key or meta.cd] then return false end
-  return self.base:ready(key)
+  local now = self.base:ready(key)
+  -- "Not ready" right now, for a spell with no cooldown of its own, can only be the
+  -- global cooldown (every wand shot starts one): over by the time this step comes.
+  if now == false and not (meta and meta.cd) and self.now - self.base.now >= STEP then return true end
+  return now
 end
 
 local function simulate(profile, s)
