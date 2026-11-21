@@ -604,6 +604,16 @@ elseif SCENARIO == "warlock" then
   target({ name = "Gnoll", level = 11, hostile = true, guid = "Creature-5" })
   f = tick(ns)
   check("back on the first: its timers are remembered", f.name.text == "Shoot" and timers(f):find("Corruption") ~= nil, f.name.text .. " / " .. timers(f))
+  -- Immolate started on this enemy, then you pick the other one before it lands: it is this enemy's
+  M.fire("UNIT_SPELLCAST_START", "player", "cast-1", 348)
+  M.advance(1)
+  target({ name = "Gnoll", level = 11, hostile = true, guid = "Creature-6" })
+  cast(348); M.advance(1); f = tick(ns)
+  check("a cast lands on the enemy it was started on: the new target still needs Immolate",
+    ns.C.tracker:debuffLeft("g:Creature-6", "Immolate", M.now) == 0 and ns.C.tracker:debuffLeft("g:Creature-5", "Immolate", M.now) > 0,
+    tostring(ns.C.tracker:debuffLeft("g:Creature-6", "Immolate", M.now)))
+  target({ name = "Gnoll", level = 11, hostile = true, guid = "Creature-5" })
+  M.advance(0.5); f = tick(ns)
 
   M.P.mana = 50; M.advance(3); f = tick(ns)
   check("low mana: Life Tap", f.name.text == "Life Tap", f.name.text)

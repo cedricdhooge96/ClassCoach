@@ -970,6 +970,15 @@ local function castKey(id)
   return name
 end
 
+-- A spell with a cast time lands on the enemy it was started on, also when you
+-- pick another one before it lands: remember who that was.
+function handlers.UNIT_SPELLCAST_START(unit, _, spellID)
+  if API.plain(unit) ~= "player" then return end
+  local id = API.plain(spellID)
+  if not id then return end
+  C.castStart = { id = id, key = currentTarget().key, at = GetTime() }
+end
+
 function handlers.UNIT_SPELLCAST_SUCCEEDED(unit, _, spellID)
   if API.plain(unit) ~= "player" then return end
   local id = API.plain(spellID)
@@ -981,11 +990,15 @@ function handlers.UNIT_SPELLCAST_SUCCEEDED(unit, _, spellID)
   local meta = C.profile.spells[key]
   if meta and meta.summons then ClassCoachCharDB.demon = meta.summons end
   local t = currentTarget()
+  local onKey = t.key
+  local started = C.castStart
+  if started and started.id == id and GetTime() - started.at < 10 then onKey = started.key end
+  C.castStart = nil
   local sp = C.spells[key]
   -- Out of combat the next exact reading may come after combat starts: keep our own count right.
   if not C.tracker.fight and C.lastMana and cost and cost > 0 then C.lastMana = math.max(0, C.lastMana - cost) end
   Mana.spend(C.ledger, GetTime(), cost or 0, meta and meta.restores and C.manaMax and meta.restores * C.manaMax or 0)
-  C.tracker:cast(GetTime(), key, cost or 0, meta, t.key, sp and sp.duration)
+  C.tracker:cast(GetTime(), key, cost or 0, meta, onKey, sp and sp.duration)
 end
 
 -- The game reports "something was resisted on your target" without saying
@@ -1212,7 +1225,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
     self:SetScript("OnUpdate", onUpdate)
     for e in pairs(handlers) do
       local fine
-      if e == "UNIT_SPELLCAST_SUCCEEDED" or e == "UNIT_AURA" then
+      if e == "UNIT_SPELLCAST_SUCCEEDED" or e == "UNIT_SPELLCAST_START" or e == "UNIT_AURA" then
         fine = pcall(self.RegisterUnitEvent, self, e, "player")
       elseif e == "UNIT_COMBAT" then
         -- only your target: this event fires for every unit around you otherwise
