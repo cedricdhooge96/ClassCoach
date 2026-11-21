@@ -227,6 +227,7 @@ Like QuestieTrace (Questie's recorder), ClassCoach can keep a record of what it 
 
 - With "Yes" every play session is recorded: your target (an NPC by name and level, a player only as "a player"), each cast and the enemy it landed on, resists, the start and end of each fight, and each time what the coach shows changes (the ring, what comes next, where the smart key is, your mana, the timers on the enemy). Player names, realm names and player ids are never written down.
 - It stays on your computer, in ClassCoach's own saved file (`WTF\Account\<account>\SavedVariables\ClassCoach.lua`), which the game writes at `/reload`, logout and quit. At most 10 sessions of 3000 lines; the oldest go first.
+- Ten seconds after login it also notes what `/coach check` says, and every minute any ClassCoach text on screen that does not fit (`/coach layout`); `/coach check` itself lands in it too. So one export carries what a bug report needs.
 - `/coach trace` says what it is doing. `/coach trace export` shows the last session to copy (`export all` for every kept one); its "Save to disk" button reloads your interface so the game writes the file. `/coach trace clear` forgets them; `/coach trace consent` changes your answer.
 
 ## Safety

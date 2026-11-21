@@ -615,7 +615,13 @@ function C.journeyData(now)
   if j and now - j.at < 2 then return j end
   -- Reading every bag slot is the costly part: only when the bags changed.
   if not C.suppliesCache or C.suppliesStale then
-    C.suppliesCache, C.suppliesStale = API.supplies(C.level or API.level()), false
+    if not C.knownSupplies then
+      local k = { drinks = {}, foods = {} }
+      for _, row in ipairs(ns.JourneyData and ns.JourneyData.drinks or {}) do k.drinks[row[2]] = true end
+      for _, row in ipairs(ns.JourneyData and ns.JourneyData.foods or {}) do k.foods[row[2]] = true end
+      C.knownSupplies = k
+    end
+    C.suppliesCache, C.suppliesStale = API.supplies(C.level or API.level(), C.knownSupplies), false
   end
   local talents = C.talentState
   j = { at = now, xp = API.xp(), talentPoints = API.unspentTalents(), durability = API.durability(),
@@ -1269,11 +1275,17 @@ local function start()
     barReset = function() SlashCmdList.CLASSCOACH("bar reset") end,
     window = function() safely("settings window", ns.Window.show, "Coach") end,
   })
-  -- The debug trace: asks once, then records on this computer if you said yes (UI/Trace.lua)
+  -- The debug trace: asks once, then records on this computer if you said yes (UI/Trace.lua).
+  -- Ten seconds in (the typefaces are on by then) it notes what /coach check says, and the
+  -- texts on screen that do not fit; then every minute the texts again (each problem once).
   C_Timer.After(4, function()
     safely("trace", ns.Trace.onLogin, { version = API.addonVersion(),
       who = ("%s %s level %s"):format(C.profile and C.profile.spec or "?", C.class or "?", tostring(C.level)) })
   end)
+  C_Timer.After(10, function() if ns.Trace.recording() and C.check then safely("trace", C.check, true) end end)
+  if C_Timer.NewTicker then
+    C_Timer.NewTicker(60, function() if ns.Trace.recording() then safely("trace", C.noteLayout, "on screen") end end)
+  end
   -- The first time: the setup page of the settings window, once, out of combat.
   if not db.welcomed then
     C_Timer.After(6, function()
@@ -1329,7 +1341,8 @@ local function describe(v)
   return tostring(v)
 end
 
-local function check()
+-- quiet = true: only into the trace (no chat), for the snapshot after login
+local function check(quiet)
   local out = {}
   local function add(fmt, ...) out[#out + 1] = fmt:format(...) end
   local _, build, _, interface = API.try(GetBuildInfo)
@@ -1400,9 +1413,14 @@ local function check()
   add("buffs readable %s, weapon buff %s, wand %s", tostring(C.buffs ~= nil), tostring(API.mainHandBuff()), tostring(C.hasWand))
   add("events refused: %s", #C.refused > 0 and table.concat(C.refused, " ") or "none")
   add("errors logged: %d (see ClassCoachDB.log after /reload)", ClassCoachDB.log and #ClassCoachDB.log or 0)
+  -- everything above also goes into the debug trace, so /coach trace export carries it
+  for _, l in ipairs(out) do ns.Trace.add("check", "%s", l) end
+  for _, l in ipairs(ns.Style.layoutCheck()) do ns.Trace.add("layout", "%s", l) end
+  if quiet then return end
   for _, l in ipairs(out) do print("|cff9aa0a8" .. l .. "|r") end
   ClassCoachDB.report = out
 end
+C.check = check
 
 local HELP = {
   "/coach — the settings window (/coach setup: the first-time setup; /coach share: your settings as one line)",

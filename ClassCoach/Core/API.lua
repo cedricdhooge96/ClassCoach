@@ -700,13 +700,21 @@ end
 --   { food = n, drink = n, best = { food = item, drink = item, bandage = item, healthstone = item, hearth = item,
 --     healingpotion = item, manapotion = item }, kindOf = { [itemID] = kind } }       item = { id, name, level }
 -- "best" is the strongest one you can use at your level. The game marks food
--- and water alike as "Food & Drink"; the item's use ("Food" / "Drink") tells
--- them apart on English clients, otherwise an item counts as both. Potions
+-- and water alike as "Food & Drink". What an item is: the name of its use
+-- ("Drink", "Food"), else its name in the coach's vendor lists (`known`:
+-- { drinks = { [name] = true }, foods = ... }). An item still unknown counts in
+-- both totals (so "out of water" is never claimed wrongly) but is never called
+-- the best of either: cooked food whose use the game did not name was once
+-- offered as "your water" (Blood Sausage, in game). Potions
 -- are told apart by name ("Healing Potion", "Mana Potion"), so on other
 -- languages they are not found. Alchemy's "Discolored" healing potions are
 -- left out: they heal at a price.
 local HEARTHSTONE = 6948
-function API.supplies(playerLevel)
+local DRINK_USE = { Drink = true }
+local FOOD_USE = { Food = true }
+local BOTH_USE = { ["Food & Drink"] = true, Refreshment = true }
+function API.supplies(playerLevel, known)
+  known = known or {}
   if not C_Container or not C_Container.GetContainerNumSlots then return nil end
   local out = { food = 0, drink = 0, best = {}, kindOf = {} }
   local any = false
@@ -730,9 +738,19 @@ function API.supplies(playerLevel)
           consider("hearth", id, name or "Hearthstone", 0)
         elseif classID == 0 and subID == 5 then
           local use = plain(try(C_Item.GetItemSpell, id))
-          local isFood, isDrink = use ~= "Drink", use ~= "Food"
-          if isFood then out.food = out.food + count; if usable then consider("food", id, name, minLevel) end end
-          if isDrink then out.drink = out.drink + count; if usable then consider("drink", id, name, minLevel) end end
+          local isDrink, isFood
+          if DRINK_USE[use] then isDrink = true
+          elseif FOOD_USE[use] then isFood = true
+          elseif BOTH_USE[use] then isDrink, isFood = true, true
+          elseif name and known.drinks and known.drinks[name] then isDrink = true
+          elseif name and known.foods and known.foods[name] then isFood = true
+          elseif type(use) == "string" then isFood = true   -- a use with another name ("Well Fed"): food
+          end
+          local sure = isDrink or isFood
+          if isFood or not sure then out.food = out.food + count end
+          if isDrink or not sure then out.drink = out.drink + count end
+          if usable and isFood then consider("food", id, name, minLevel) end
+          if usable and isDrink then consider("drink", id, name, minLevel) end
         elseif classID == 0 and subID == 7 then
           if usable then consider("bandage", id, name, minLevel) end
         elseif classID == 0 and subID == 1 and type(name) == "string" then

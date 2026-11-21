@@ -339,6 +339,18 @@ if SCENARIO == "shaman" then
       if l.text == "Buy water: 2 left" and l.hint:find("For your level: Melon Juice") then return true end
     end end)() == true)
   check("proposal: better water exists", journey(ns):find("Better water exists for your level") ~= nil, journey(ns))
+  -- Seen in game: carrying only cooked food (Blood Sausage) while the game did not name its use "Food",
+  -- the coach called it water and said "Better water exists: you carry Blood Sausage".
+  for _, use in ipairs({ "nil", "Well Fed" }) do
+    M.P.bag = { { id = 3220, count = 5, class = 0, sub = 5, use = use ~= "nil" and use or nil, name = "Blood Sausage", min = 5 } }
+    M.fire("BAG_UPDATE_DELAYED"); M.advance(3); tick(ns)
+    check(("food whose use the game names %s is never called water"):format(use), not journey(ns):find("Better water", 1, true), journey(ns))
+  end
+  M.P.bag = { { id = 1179, count = 5, class = 0, sub = 5, name = "Ice Cold Milk", min = 5 } }
+  M.fire("BAG_UPDATE_DELAYED"); M.advance(3); tick(ns)
+  local better
+  for _, l in ipairs(ns.C.lastJourney.lines or {}) do if l.text == "Better water exists for your level" then better = l.hint end end
+  check("a drink the game does not name is still known by its name (vendor water of the coach's list)", better ~= nil and better:find("You carry Ice Cold Milk", 1, true) ~= nil, tostring(better))
   M.fire("MERCHANT_CLOSED"); M.P.bag = nil; M.P.level = 12; M.fire("PLAYER_LEVEL_UP", 12); M.advance(3); tick(ns)
 
   -- The panels must never grow over the action bars
@@ -950,6 +962,13 @@ elseif SCENARIO == "trace" then
   M.advance(5); tick(ns)
   check("next login: it records again by itself, and says so", ns.Trace.recording() and table.concat(M.printed, " "):find("debug trace is being recorded", 1, true) ~= nil,
     table.concat(M.printed, " "))
+  M.printed = {}
+  M.advance(6); tick(ns)
+  check("ten seconds in, what /coach check says goes into the trace, quietly", all():find("check   client build", 1, true) ~= nil
+    and all():find("check   fonts:", 1, true) ~= nil and not table.concat(M.printed, " "):find("client build", 1, true), all():sub(-400))
+  SlashCmdList.CLASSCOACH("check")
+  local now = ns.Trace.text()
+  check("/coach check also lands in the trace", select(2, now:gsub("check   client build", "")) == 2, select(2, now:gsub("check   client build", "")))
   check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
   check("hands off the game's frames", #M.violations == 0, table.concat(M.violations, "; "))
 
