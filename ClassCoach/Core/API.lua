@@ -158,7 +158,7 @@ end
 -- client does not have, so a change in a Forever patch shows up by name.
 local NEEDS = {
   "issecretvalue", "GetTime", "GetBuildInfo", "PlaySound", "GetProfessions", "GetProfessionInfo", "InCombatLockdown", "IsInGroup", "IsResting", "GetXPExhaustion", "GetTotemInfo",
-  "GetInventoryItemID", "GetInventoryItemDurability", "CanMerchantRepair", "GetActionInfo", "GetActionBarToggles", "PlaceAction",
+  "GetInventoryItemID", "GetInventoryItemDurability", "CanMerchantRepair", "GetActionInfo", "GetActionBarToggles", "PlaceAction", "PickupAction",
   "PickupMacro", "ClearCursor", "CreateMacro", "EditMacro", "GetMacroBody", "GetMacroIndexByName", "GetMacroInfo", "GetNumMacros",
   "GetBindingKey", "GetBindingAction", "SetBinding", "SetBindingClick", "SaveBindings", "GetCurrentBindingSet", "RegisterStateDriver",
   "UnitAffectingCombat", "UnitCanAttack", "UnitClass", "UnitClassification", "UnitCreatureFamily", "UnitExists", "UnitFactionGroup",
@@ -589,6 +589,20 @@ function API.freeBagSlots()
   return free
 end
 
+-- How many of your four bag slots have no bag in them. nil when the game won't say.
+function API.emptyBagSlots()
+  local empty, any = 0, false
+  for bag = 1, 4 do
+    local slots = plain(try(C_Container.GetContainerNumSlots, bag))
+    if type(slots) == "number" then
+      any = true
+      if slots == 0 then empty = empty + 1 end
+    end
+  end
+  if not any then return nil end
+  return empty
+end
+
 -- "Alliance" / "Horde"
 function API.faction()
   local f = plain(try(UnitFactionGroup, "player"))
@@ -596,11 +610,14 @@ function API.faction()
 end
 
 -- What you carry for the road. Returns
---   { food = n, drink = n, best = { food = item, drink = item, bandage = item, healthstone = item, hearth = item },
---     kindOf = { [itemID] = kind } }       item = { id, name, level }
+--   { food = n, drink = n, best = { food = item, drink = item, bandage = item, healthstone = item, hearth = item,
+--     healingpotion = item, manapotion = item }, kindOf = { [itemID] = kind } }       item = { id, name, level }
 -- "best" is the strongest one you can use at your level. The game marks food
 -- and water alike as "Food & Drink"; the item's use ("Food" / "Drink") tells
--- them apart on English clients, otherwise an item counts as both.
+-- them apart on English clients, otherwise an item counts as both. Potions
+-- are told apart by name ("Healing Potion", "Mana Potion"), so on other
+-- languages they are not found. Alchemy's "Discolored" healing potions are
+-- left out: they heal at a price.
 local HEARTHSTONE = 6948
 function API.supplies(playerLevel)
   if not C_Container or not C_Container.GetContainerNumSlots then return nil end
@@ -631,6 +648,12 @@ function API.supplies(playerLevel)
           if isDrink then out.drink = out.drink + count; if usable then consider("drink", id, name, minLevel) end end
         elseif classID == 0 and subID == 7 then
           if usable then consider("bandage", id, name, minLevel) end
+        elseif classID == 0 and subID == 1 and type(name) == "string" then
+          if usable and name:find("Healing Potion", 1, true) and not name:find("Discolored", 1, true) then
+            consider("healingpotion", id, name, minLevel)
+          elseif usable and name:find("Mana Potion", 1, true) then
+            consider("manapotion", id, name, minLevel)
+          end
         elseif type(name) == "string" and name:find("Healthstone$") then
           consider("healthstone", id, name, minLevel)
         end
@@ -722,6 +745,33 @@ function API.placeAction(slot, what)
   try(PlaceAction, slot)
   try(ClearCursor)
   return not API.slotEmpty(slot)
+end
+
+-- Empties an action button. Returns true when it is empty afterwards.
+function API.clearAction(slot)
+  if API.inCombat() then return false end
+  try(ClearCursor)
+  try(PickupAction, slot)
+  try(ClearCursor)   -- dropping what was picked up removes it from the bar; the spell, macro or item itself stays yours
+  return API.slotEmpty(slot)
+end
+
+-- What an action button holds, in the form API.placeAction takes: { spell = id },
+-- { macro = name } or { item = id }. Anything else (a mount, an equipment set)
+-- comes back as { other = kind }: it can be seen and cleared, not put back.
+-- nil for an empty button.
+function API.slotContent(slot)
+  local kind, id = try(GetActionInfo, slot)
+  kind, id = plain(kind), plain(id)
+  if kind == nil then return nil end
+  if kind == "spell" and id then return { spell = id } end
+  if kind == "item" and id then return { item = id } end
+  if kind == "macro" then
+    local name = plain(try(C_ActionBar.GetActionText, slot))
+    if not name and id then name = plain(try(GetMacroInfo, id)) end
+    if type(name) == "string" and name ~= "" then return { macro = name } end
+  end
+  return { other = tostring(kind) }
 end
 
 -- Do you carry an item with this name? (true / false)
@@ -898,4 +948,53 @@ function API.sound(kind)
   local id = (type(SOUNDKIT) == "table" and SOUNDKIT[sound[1]]) or sound[2]
   local ok, played = pcall(PlaySound, id, "Master")
   return ok and played ~= false
+end
+
+---------------------------------------------------------------------------
+-- Are the game's action bars on screen? (read only)
+---------------------------------------------------------------------------
+-- ClassCoach never hides, moves, resizes or re-parents the game's bars. This
+-- only LOOKS at them, so that when they vanish the addon can say which frame
+-- went and what the game was doing. Walks from a bar's first button up to
+-- the screen and names the first frame that is hidden, transparent or has
+-- lost its place.
+local WATCHED = { { "ActionButton1", "main bar" }, { "MultiBarBottomLeftButton1", "Action Bar 2" }, { "MultiBarBottomRightButton1", "Action Bar 3" } }
+
+local function frameName(f)
+  local name = f.GetName and plain(try(f.GetName, f))
+  return type(name) == "string" and name or "a frame without a name"
+end
+
+-- One bar: { name, there = the bar exists, visible, why = "MainActionBar is hidden" }.
+local function lookAt(buttonName, barName)
+  local out = { name = barName, there = false, visible = false }
+  local f = _G[buttonName]
+  if type(f) ~= "table" then return out end
+  out.there = true
+  out.visible = plain(try(f.IsVisible, f)) == true
+  if out.visible then return out end
+  for _ = 1, 8 do   -- a button is never more than a few frames below the screen
+    if type(f) ~= "table" or f == UIParent then break end
+    local shown = f.IsShown and plain(try(f.IsShown, f))
+    local alpha = f.GetAlpha and plain(try(f.GetAlpha, f))
+    local points = f.GetNumPoints and plain(try(f.GetNumPoints, f))
+    if shown == false then out.why = frameName(f) .. " is hidden" break end
+    if type(alpha) == "number" and alpha < 0.05 then out.why = frameName(f) .. " is transparent" break end
+    if points == 0 then out.why = frameName(f) .. " has lost its place on screen (no anchor)" break end
+    f = f.GetParent and try(f.GetParent, f)
+  end
+  out.why = out.why or "the game does not say why"
+  return out
+end
+
+-- Every watched bar, plus what the game says about special bars. Safe in combat.
+function API.barState()
+  local bars = {}
+  for i, w in ipairs(WATCHED) do bars[i] = lookAt(w[1], w[2]) end
+  local flags = {}
+  for _, name in ipairs({ "HasOverrideActionBar", "HasVehicleActionBar", "HasTempShapeshiftActionBar", "HasBonusActionBar" }) do
+    local fn = _G[name]
+    if type(fn) == "function" and plain(try(fn)) == true then flags[#flags + 1] = name end
+  end
+  return { bars = bars, flags = flags, page = API.barPage(), combat = API.inCombat() }
 end

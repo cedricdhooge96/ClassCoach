@@ -285,6 +285,16 @@ function C.syncSmart()
   return ns.Smart.load(steps, gate)
 end
 
+-- What the coach would put on your three bars right now.
+function C.barPlan(s)
+  local supplies = s.journey and s.journey.supplies
+  return Engine.bars(C.profile, s, {
+    macro = API.macroExists,
+    book = function(name) local entry = C.book and C.book[name]; return entry and entry.ids[#entry.ids] or nil end,
+    item = function(kind) return supplies and supplies.best[kind] end,
+  })
+end
+
 -- Lays out the profile's suggested bars: the fight on your main bar, reactions
 -- on Action Bar 2, preparation on Action Bar 3. mode:
 --   nil        fill only empty buttons; a taken spot sends the entry to the
@@ -322,11 +332,7 @@ function C.setupBar(mode, quiet)
     local count = API.itemCount(old)
     return count == 0 or (supplies and supplies.kindOf[old] == e.kindOfItem)
   end
-  local plan = Engine.bars(C.profile, s, {
-    macro = API.macroExists,
-    book = function(name) local entry = C.book and C.book[name]; return entry and entry.ids[#entry.ids] or nil end,
-    item = function(kind) return supplies and supplies.best[kind] end,
-  })
+  local plan = C.barPlan(s)
   local total, off = 0, {}
   for _, group in ipairs(Engine.BAR_GROUPS) do
     local entries, bar = plan[group], BAR_OF[group]
@@ -380,6 +386,131 @@ function C.setupBar(mode, quiet)
   return total
 end
 
+local function sameAction(a, b)
+  return a ~= nil and b ~= nil and ((a.spell ~= nil and a.spell == b.spell) or (a.macro ~= nil and a.macro == b.macro) or (a.item ~= nil and a.item == b.item))
+end
+
+-- /coach bar reset: makes the three bars exactly the coach's layout. Every
+-- button of a bar the layout uses gets its entry or is emptied. What the bars
+-- held before is remembered, so /coach bar undo puts it back. Nothing is lost
+-- for good either way: a spell stays in your spellbook, a macro in /macro, an
+-- item in your bags.
+function C.resetBars()
+  local s = C.lastState
+  if not (C.profile.bars or C.profile.bar) then say("No bar layout for " .. C.profile.spec .. " yet.") return false end
+  if not s then say("Still loading: try again in a moment.") return false end
+  if API.inCombat() then say("The action bars can only be changed out of combat.") return false end
+  C.syncMacros(false)   -- the layout uses the CC macros
+  local plan = C.barPlan(s)
+  local backup = { slots = {} }
+  local off, lost, failed = {}, 0, {}
+  for _, group in ipairs(Engine.BAR_GROUPS) do
+    local entries, bar = plan[group], BAR_OF[group]
+    local info = API.barInfo(bar)
+    if #entries > 0 and API.barShown(bar) == false then
+      off[#off + 1] = info.name
+    elseif #entries > 0 then
+      local wanted = {}
+      for _, e in ipairs(entries) do wanted[e.index] = e end
+      local set, kept, cleared = 0, 0, 0
+      for i = 1, 12 do
+        local slot = info.first + i - 1
+        local had = API.slotContent(slot)
+        backup.slots[slot] = had or false
+        local e = wanted[i]
+        if e and sameAction(had, e) then
+          kept = kept + 1
+        elseif e then
+          if had and had.other then lost = lost + 1 end
+          if API.placeAction(slot, e) then set = set + 1 else failed[#failed + 1] = e.label end
+        elseif had then
+          if had.other then lost = lost + 1 end
+          if API.clearAction(slot) then cleared = cleared + 1 end
+        end
+      end
+      say(("%s, %s: %d set, %d already right, %d emptied."):format(BAR_TITLE[group], info.name, set, kept, cleared))
+    end
+  end
+  if next(backup.slots) then ClassCoachCharDB.barBackup = backup end
+  if #failed > 0 then say("Could not be placed: " .. table.concat(failed, ", ") .. ".") end
+  if #off > 0 then say("Switched off, so left alone: " .. table.concat(off, ", ") .. ". Turn it on in Esc > Options > Action Bars, then run this again.") end
+  if lost > 0 then
+    say(("%d button%s held something undo cannot put back (for example a mount): drag %s onto a bar again yourself."):format(lost,
+      lost == 1 and "" or "s", lost == 1 and "it" or "those"))
+  end
+  say("Your bars are now the coach's layout. Changed your mind? /coach bar undo puts back what was there.")
+  rescanKeysSoon()
+  return true
+end
+
+function C.undoBars()
+  local backup = ClassCoachCharDB.barBackup
+  if type(backup) ~= "table" or type(backup.slots) ~= "table" or not next(backup.slots) then say("There is no bar reset to undo.") return false end
+  if API.inCombat() then say("The action bars can only be changed out of combat.") return false end
+  local restored, failed = 0, 0
+  for slot, had in pairs(backup.slots) do
+    if type(slot) == "number" and slot >= 1 and slot <= 180 then
+      local now = API.slotContent(slot)
+      if had == false then
+        if now and API.clearAction(slot) then restored = restored + 1 end
+      elseif type(had) == "table" and not had.other and not sameAction(now, had) then
+        if API.placeAction(slot, had) then restored = restored + 1 else failed = failed + 1 end
+      end
+    end
+  end
+  ClassCoachCharDB.barBackup = nil
+  say(("Put back: %d button%s as before the reset.%s"):format(restored, restored == 1 and "" or "s",
+    failed > 0 and (" %d could not be put back (a deleted macro, or an item you no longer carry)."):format(failed) or ""))
+  rescanKeysSoon()
+  return true
+end
+
+---------------------------------------------------------------------------
+-- The game's action bars: watched, never touched
+---------------------------------------------------------------------------
+-- ClassCoach does not hide, move or resize the game's bars. When they vanish
+-- anyway (another addon, or the game blocking its own interface after an
+-- addon interfered), this notices the moment, keeps what it could see, and
+-- says so once, with what the game blamed.
+local function barLines(state)
+  local lines = {}
+  for _, b in ipairs(state.bars) do
+    lines[#lines + 1] = ("%s: %s"):format(b.name, not b.there and "not found on this client" or b.visible and "on screen" or ("NOT on screen: " .. b.why))
+  end
+  lines[#lines + 1] = ("in combat %s; main bar page %s; special bar: %s"):format(tostring(state.combat), tostring(state.page),
+    #state.flags > 0 and table.concat(state.flags, ", ") or "none")
+  local blocked = C.blocked or {}
+  lines[#lines + 1] = "the game blocked: " .. (#blocked > 0 and table.concat(blocked, "; ") or "nothing this session")
+  return lines
+end
+
+function C.watchBars(now)
+  if now < (C.nextBarLook or 0) then return end
+  C.nextBarLook = now + 1
+  if API.plain(API.try(UIParent.IsShown, UIParent)) == false then return end   -- you hid the whole interface yourself (Alt+Z)
+  local state = API.barState()
+  local main = state.bars[1]
+  if not main.there then return end
+  if main.visible then
+    C.barsSeen = true
+    if C.barsGone then
+      C.barsGone = nil
+      log("action bars back on screen")
+    end
+  elseif C.barsSeen and not C.barsGone and #state.flags == 0 then
+    -- they were there and now are not, and the game shows no special bar (vehicle and the like) in their place
+    C.barsGone = state
+    C.barsLost = (C.barsLost or 0) + 1
+    for _, line in ipairs(barLines(state)) do log("bars gone: %s", line) end
+    if not C.barsSaid then
+      C.barsSaid = true
+      local blamed = C.blocked and C.blocked[#C.blocked]
+      say(("Your action bars left the screen (%s). ClassCoach did not do that: it never hides or moves them. %s /reload brings them back. Type /coach bars and send me the lines."):format(
+        main.why, blamed and ("The game last blocked: " .. blamed .. ".") or "The game has not blamed any addon yet."))
+    end
+  end
+end
+
 ---------------------------------------------------------------------------
 -- Mana
 ---------------------------------------------------------------------------
@@ -428,7 +559,7 @@ function C.journeyData(now)
   local talents = C.talentState
   j = { at = now, xp = API.xp(), talentPoints = API.unspentTalents(), durability = API.durability(),
     talentsSpent = talents and talents.have and talents.have.spent or nil, professions = API.professions(),
-    freeSlots = API.freeBagSlots(), hasItem = API.hasItem, supplies = C.suppliesCache,
+    freeSlots = API.freeBagSlots(), emptyBagSlots = API.emptyBagSlots(), hasItem = API.hasItem, supplies = C.suppliesCache,
     atVendor = C.atVendor == true, canRepair = C.atVendor and API.canRepair() or false }
   C.journey = j
   return j
@@ -575,6 +706,7 @@ local function tick()
   end
   if not s.inCombat then view.restMacro = API.macroExists("CC Rest") and "CC Rest" or nil end
   if C.trouble then view.status, view.statusKind = C.trouble, "warn" end
+  safely("bar watch", C.watchBars, now)
   -- ClassCoach's own typefaces: put on or taken off when the setting changes, and tried again for a text that did not take one.
   local ownFonts = ClassCoachDB.ownFonts == true
   if now >= (C.fontsFrom or 0) and (ownFonts ~= (ns.Style.ownFonts == true) or (ownFonts and ns.Style.pending and now >= (C.nextDress or 0))) then
@@ -937,6 +1069,7 @@ local function start()
     macros = function() SlashCmdList.CLASSCOACH("macros") end,
     reset = function() SlashCmdList.CLASSCOACH("reset") end,
     bar = function() SlashCmdList.CLASSCOACH("bar") end,
+    barReset = function() SlashCmdList.CLASSCOACH("bar reset") end,
   })
 end
 
@@ -1030,6 +1163,8 @@ local function check()
   local st = ns.Smart.status()
   add("smart key: button %s, %s steps, at step %s, keys next=%s again=%s restart=%s", tostring(ns.Smart.button ~= nil), st.count,
     tostring(st.step), tostring(st.keys.next), tostring(st.keys.again), tostring(st.keys.restart))
+  for _, line in ipairs(barLines(API.barState())) do add("bars: %s", line) end
+  add("bars seen to leave the screen this session: %d", C.barsLost or 0)
   local clicks = ns.Click.describe()
   add("click to cast: buttons made %s%s; clickable now: %s", tostring(ns.Click.holder ~= nil), ns.Click.error and (" (" .. ns.Click.error .. ")") or "",
     #clicks > 0 and table.concat(clicks, ", ") or "nothing")
@@ -1061,6 +1196,9 @@ local HELP = {
   "/coach pages — stop Shift+number from switching your main bar to an empty page",
   "/coach macros — create or refresh this class's helper macros (out of combat)",
   "/coach bar — lay out three bars by purpose: fight (main bar), react (Action Bar 2), prepare (Action Bar 3). Empty buttons only; \"preview\" just lists, \"replace\" overwrites",
+  "/coach bar reset — make those three bars exactly the coach's layout: every button gets its entry or is emptied. /coach bar undo puts back what was there",
+  "/coach bars — what ClassCoach can see of the game's action bars, for when they vanish",
+  "/coach tips — ten preparation habits from Forever guides",
   "/coach build — the talent build you follow; paste an Icy Veins or Warcraft Tavern calculator link after it to follow that one",
   "/coach professions — which two professions suit your class and goal, and what to do next in each",
   "/coach fonts — a test card for ClassCoach's own typefaces: which sizes and uses this client draws",
@@ -1249,7 +1387,17 @@ local function command(msg)
     rescanSoon()
   elseif cmd == "bar" then
     local mode = arg:lower()
-    C.setupBar((mode == "replace" or mode == "preview") and mode or nil)
+    if mode == "reset" then C.resetBars()
+    elseif mode == "undo" then C.undoBars()
+    else C.setupBar((mode == "replace" or mode == "preview") and mode or nil) end
+  elseif cmd == "bars" then
+    say("The game's action bars, as ClassCoach sees them (it only looks, it never changes them):")
+    for _, line in ipairs(barLines(API.barState())) do print("  " .. line) end
+    print(("  seen to leave the screen this session: %d time%s"):format(C.barsLost or 0, (C.barsLost or 0) == 1 and "" or "s"))
+    if C.barsGone then for _, line in ipairs(barLines(C.barsGone)) do print("  when they went: " .. line) end end
+  elseif cmd == "tips" then
+    say("Habits that Forever guides agree on:")
+    for i, tip in ipairs(ns.JourneyData.tips or {}) do print(("  %d. %s"):format(i, tip)) end
   elseif cmd == "smart" then
     local what, key = arg:match("^(%S+)%s+(%S+)$")
     if API.inCombat() then say("The smart key can only be set up out of combat.") return end

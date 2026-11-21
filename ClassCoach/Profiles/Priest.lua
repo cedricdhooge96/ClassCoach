@@ -177,8 +177,8 @@ ns.RegisterProfile({
       { "book:Dispel Magic" },
       { "book:Abolish Disease", "book:Cure Disease" },
       { "book:Desperate Prayer" },
-      { "book:Prayer of Healing" },
-      { "book:Shackle Undead" },
+      { "item:manapotion", "book:Prayer of Healing" },      -- a potion you carry comes first
+      { "item:healingpotion", "book:Shackle Undead" },
       { "book:Prayer of Mending" },
     },
     prep = {

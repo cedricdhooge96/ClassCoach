@@ -148,7 +148,7 @@ function GetInventoryItemDurability(slot) if slot == 16 and P.durability then re
 -- P.bag = { { id, count, class, sub, use } }: bag 0 holds everything
 C_Container = {
   GetContainerNumFreeSlots = function(bag) if bag == 0 then return P.freeSlots or 10 end return 0 end,
-  GetContainerNumSlots = function(bag) if bag == 0 then return #(P.bag or {}) end return 0 end,
+  GetContainerNumSlots = function(bag) if bag == 0 then return #(P.bag or {}) end return P.bagSizes and P.bagSizes[bag] or 6 end,
   GetContainerItemInfo = function(bag, slot)
     local it = bag == 0 and P.bag and P.bag[slot]
     if it then return { itemID = it.id, stackCount = it.count } end
@@ -256,6 +256,12 @@ function ClearCursor() M.cursor = nil end
 function GetBindingAction(key) return P.keyActions and P.keyActions[key] or "" end
 function SetBinding(key, action) P.keyActions = P.keyActions or {}; P.keyActions[key] = action end
 function PickupMacro(name) M.cursor = { macro = name } end
+function PickupAction(slot)
+  assert(not P.combat, "the action bar cannot change in combat")
+  local a = P.actions[slot]
+  M.cursor = a and (type(a) == "table" and a or { spell = a }) or nil
+  P.actions[slot] = nil
+end
 function PlaceAction(slot)
   assert(not P.combat, "the action bar cannot change in combat")
   local held = M.cursor
@@ -287,7 +293,16 @@ function M.talentWindow(open)
 end
 -- Secure environment
 M.drivers = {}
-function RegisterStateDriver(frame, state, conditions) M.drivers[state] = { frame = frame, conditions = conditions } end
+-- A state driver lets the game show, hide or steer a frame by itself. On a frame of the game that would be the addon changing the game's interface.
+function RegisterStateDriver(frame, state, conditions)
+  local own = false
+  for _, f in ipairs(M.frames) do if f == frame then own = true end end
+  if not own then
+    M.violations[#M.violations + 1] = "a state driver (" .. tostring(state) .. ") on a frame the addon did not make"
+    error(M.violations[#M.violations], 2)
+  end
+  M.drivers[state] = { frame = frame, conditions = conditions }
+end
 function SetBindingClick(key, button, click) P.bindings["CLICK " .. button .. ":" .. (click or "LeftButton")] = key end
 function SaveBindings() end
 function GetCurrentBindingSet() return 1 end
@@ -408,8 +423,17 @@ local function widget()
   }
   return setmetatable(w, { __index = function(_, k) return methods[k] or function() end end })
 end
+M.violations = {}
 UIParent = widget()
 UIParent.height = 768
+UIParent.name = "UIParent"
+-- The whole interface hangs under UIParent: an addon may read it and parent to it, never change it.
+for _, method in ipairs({ "Hide", "Show", "SetShown", "SetScale", "SetAlpha", "SetPoint", "ClearAllPoints", "SetAllPoints", "SetParent", "SetSize" }) do
+  rawset(UIParent, method, function()
+    M.violations[#M.violations + 1] = "the addon used UIParent:" .. method
+    error(M.violations[#M.violations], 2)
+  end)
+end
 -- Secure frames (a template starting with "Secure") follow the game's rule: they
 -- cannot be made, shown, hidden, moved or resized while a fight is on.
 local PROTECTED = { "Show", "Hide", "SetPoint", "ClearAllPoints", "SetSize", "SetScale", "SetShown" }
@@ -442,13 +466,54 @@ function PlaySound(id, channel) M.sounds[#M.sounds + 1] = id; return true end
 SOUNDKIT = { IG_MAINMENU_OPTION_CHECKBOX_ON = 856, READY_CHECK = 8960 }
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
 
--- The game's own action buttons, so the bar highlight has something to sit on.
-for _, bar in ipairs({ "ActionButton", "MultiBarBottomLeftButton", "MultiBarBottomRightButton", "MultiBarRightButton", "MultiBarLeftButton" }) do
-  for i = 1, 12 do
-    local b = widget()
-    b.width = 45
-    _G[bar .. i] = b
+-- The game's own bars and buttons. An addon may LOOK at them and anchor its own
+-- frames to them. It may never change them: hiding, moving, resizing,
+-- re-parenting, fading or writing a field on one of these is how an addon
+-- makes a player's action bars vanish. Every such attempt is recorded in
+-- M.violations and raises an error, in every scenario.
+M.gameFrames = {}
+local LOOKS = { IsShown = true, IsVisible = true, GetWidth = true, GetHeight = true, GetFrameStrata = true, GetFrameLevel = true,
+  GetName = true, GetParent = true, GetAlpha = true, GetNumPoints = true, GetScale = true, GetEffectiveScale = true, GetCenter = true }
+local function violation(text)
+  M.violations[#M.violations + 1] = text
+  error(text, 3)
+end
+function M.gameFrame(name, parent, more)
+  local state = { name = name, shown = true, alpha = 1, points = 1, width = 45, height = 45, parent = parent, strata = "MEDIUM", level = 2 }
+  for k, v in pairs(more or {}) do state[k] = v end
+  local proxy
+  local function visible(st)
+    while st do
+      if not st.shown then return false end
+      st = st.parent and M.gameFrames[st.parent]
+    end
+    return true
   end
+  local reads = {
+    IsShown = function() return state.shown end, IsVisible = function() return visible(state) end,
+    GetWidth = function() return state.width end, GetHeight = function() return state.height end,
+    GetFrameStrata = function() return state.strata end, GetFrameLevel = function() return state.level end,
+    GetName = function() return state.name end, GetParent = function() return state.parent and _G[state.parent] or nil end,
+    GetAlpha = function() return state.alpha end, GetNumPoints = function() return state.points end,
+    GetScale = function() return 1 end, GetEffectiveScale = function() return 1 end, GetCenter = function() return 683, 384 end,
+  }
+  proxy = setmetatable({}, {
+    __index = function(_, k)
+      if k == "action" then return state.action end
+      if LOOKS[k] then return reads[k] end
+      violation(("the addon used %s:%s - the game's bars may be looked at, never changed"):format(name, tostring(k)))
+    end,
+    __newindex = function(_, k) violation(("the addon wrote the field %s.%s on a frame of the game"):format(name, tostring(k))) end,
+  })
+  M.gameFrames[name] = state
+  _G[name] = proxy
+  return state
+end
+M.gameFrame("MainActionBar", "UIParent", { width = 600 })
+for bar, parent in pairs({ ActionButton = "MainActionBar", MultiBarBottomLeftButton = "MultiBarBottomLeft", MultiBarBottomRightButton = "MultiBarBottomRight",
+  MultiBarRightButton = "MultiBarRight", MultiBarLeftButton = "MultiBarLeft" }) do
+  if parent ~= "MainActionBar" then M.gameFrame(parent, "UIParent", { width = 600 }) end
+  for i = 1, 12 do M.gameFrame(bar .. i, parent) end
 end
 function M.fire(event, ...)
   for _, f in ipairs(M.frames) do

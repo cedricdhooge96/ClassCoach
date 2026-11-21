@@ -267,6 +267,7 @@ ns.RegisterProfile({
   smart = { open = "CC Open", gate = { when = "[pet:Voidwalker,nocombat]", macro = "CC Send" } },
 
   -- /coach bar: three bars by purpose, one entry per button, best candidate first.
+  manaPotion = false,   -- Life Tap is the Warlock's mana potion
   bars = {
     fight = {
       { "macro:CC Pull", "Shadow Bolt" },
@@ -288,7 +289,7 @@ ns.RegisterProfile({
       { "book:Howl of Terror" },
       { "book:Health Funnel" },
       { "book:Banish" },
-      { "book:Curse of Weakness" },
+      { "item:healingpotion", "book:Curse of Weakness" },   -- a potion you carry comes first: it is the emergency button
       { "book:Curse of Recklessness" },
       { "book:Shadow Ward" },
       { "book:Drain Mana" },

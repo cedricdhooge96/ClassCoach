@@ -537,6 +537,7 @@ local ICON = {
   trainer = "Interface\\Icons\\INV_Misc_Book_09", drink = "Interface\\Icons\\INV_Drink_07",
   skull = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull", elite = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
   grey = "Interface\\Icons\\INV_Misc_Bone_HumanSkull_01", map = "Interface\\Icons\\INV_Misc_Map_01",
+  potion = "Interface\\Icons\\INV_Potion_51", manaPotion = "Interface\\Icons\\INV_Potion_72", bandage = "Interface\\Icons\\INV_Misc_Bandage_15",
   page = "Interface\\Icons\\INV_Misc_Book_11", dungeon = "Interface\\Icons\\INV_Misc_Key_03", quest = "Interface\\Icons\\INV_Misc_Note_01",
 }
 
@@ -924,6 +925,30 @@ function Engine.journey(profile, s, options)
         local count = s.itemCount(want.item)
         if type(count) == "number" then stock(count, want.name, want.icon, want.low or 2) end
       end
+    end
+    -- For emergencies: a healing potion (instant, works in a fight), a mana potion, bandages.
+    -- In Forever healing potions are First Aid recipes: Minor at skill 55, Lesser at 85, Healing at 135.
+    if s.level >= 10 and sup.best then
+      local firstAid
+      for _, p in ipairs(j.professions or {}) do if p.name == "First Aid" then firstAid = p end end
+      if not sup.best.healingpotion then
+        local how = not firstAid and "First Aid makes them in Forever (from skill 55), or buy a few on the auction house."
+          or firstAid.skill >= 55 and "You can make them yourself with First Aid: Minor Healing Potion from skill 55, Lesser from 85, Healing from 135."
+          or ("First Aid makes them in Forever from skill 55 (yours is %d)."):format(firstAid.skill)
+        add("info", "No healing potion", "Instant, and it works in a fight: your emergency button. " .. how
+          .. " Use them: don't save potions for a perfect moment. /coach bar puts yours on the react bar.", ICON.potion)
+      end
+      if s.usesMana and s.level >= 15 and profile.manaPotion ~= false and not sup.best.manapotion then
+        add("info", "No mana potion", "For a long fight or a bad pull. Alchemists make them: buy a few on the auction house. /coach bar puts yours on the react bar.",
+          ICON.manaPotion)
+      end
+      if firstAid and not sup.best.bandage then
+        add("info", "No bandages", "Make some from cloth with First Aid. They heal you between fights at no mana cost.", ICON.bandage)
+      end
+    end
+    if j.emptyBagSlots and j.emptyBagSlots > 0 then
+      add(j.atVendor and "do" or "info", j.emptyBagSlots == 1 and "A bag slot is empty" or (j.emptyBagSlots .. " bag slots are empty"),
+        "Buy bags early: your backpack fills fast. Trade vendors and the auction house sell small bags for a few silver.", ICON.bags)
     end
     if j.atVendor and j.canRepair and j.durability and j.durability < 90 then
       add("do", ("Repair here (gear at %d%%)"):format(math.floor(j.durability)), "This vendor repairs: click the anvil button.", ICON.repair)

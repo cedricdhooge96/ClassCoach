@@ -197,8 +197,8 @@ ns.RegisterProfile({
       { "book:Stoneclaw Totem" },
       { "book:Earthbind Totem" },
       { "book:Purge" },
-      { "book:Grounding Totem" },
-      { "book:Tremor Totem" },
+      { "item:healingpotion", "book:Grounding Totem" },     -- a potion you carry comes first
+      { "item:manapotion", "book:Tremor Totem" },
       { "book:Cure Poison" },
       { "book:Cure Disease" },
       { "Healing Stream Totem" },

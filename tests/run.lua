@@ -375,7 +375,7 @@ if SCENARIO == "shaman" then
   local count = 0
   for _ in pairs(S.list) do count = count + 1 end
   check("every option made it onto the page", count == 37 and #ns.Options.registered == 37 and #ns.Options.keys() == 37, count)
-  check("sections and action buttons", #S.headers == 6 and #S.buttons == 3, #S.headers .. "/" .. #S.buttons)
+  check("sections and action buttons", #S.headers == 6 and #S.buttons == 4, #S.headers .. "/" .. #S.buttons)
   check("options write to the saved settings", S.list.compact.tbl == ClassCoachDB and S.list.specChoice.tbl == ClassCoachCharDB)
   check("slider shows its unit", S.list.opacity.opts.format(60) == "60%" and S.list.scale.opts.format(1.1) == "1.10x")
   local specs = S.list.specChoice.getOptions()
@@ -1602,6 +1602,220 @@ elseif SCENARIO == "warrior" then
   check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
   check("no tick error", ns.C.lastError == nil, ns.C.lastError)
 ---------------------------------------------------------------------------
+-- The game's action bars: reset to the coach's layout and undo, potions, and
+-- the promise that the addon never changes a frame of the game
+---------------------------------------------------------------------------
+elseif SCENARIO == "bars" then
+  local function warlock()
+    M.player({ class = "WARLOCK", className = "Warlock", level = 13, mana = 300, maxMana = 300,
+      spells = {
+        [686] = { name = "Shadow Bolt", cost = 25 }, [348] = { name = "Immolate", cost = 25 },
+        [172] = { name = "Corruption", cost = 35, text = "Corrupts the target, causing 40 Shadow damage over 12 sec." },
+        [980] = { name = "Bane of Agony", cost = 25 }, [1454] = { name = "Life Tap", cost = 0 }, [5782] = { name = "Fear", cost = 30 },
+        [687] = { name = "Demon Skin", cost = 50 }, [688] = { name = "Summon Imp", cost = 60 }, [5019] = { name = "Shoot", cost = 0 },
+      },
+      book = { 686, 348, 172, 980, 1454, 5782, 687, 688, 5019 }, equipped = { [18] = 11287 }, talents = { 3, 0, 0 },
+      pet = { family = "Imp" },
+      -- a player's own mix: a spell on the wrong button, a duplicate, a macro of their own, a mount, leftovers on bar 2 and 3
+      actions = { [1] = 980, [3] = 172, [5] = 172, [9] = { macro = "MyOwn" }, [12] = { mount = 4 }, [61] = 687, [66] = 348, [50] = 5782, [25] = 686 },
+      bindings = { ACTIONBUTTON1 = "1", ACTIONBUTTON7 = "7", ACTIONBUTTON8 = "8" },
+    })
+    M.P.buffs = { ["Demon Skin"] = true, ["Well Fed"] = true }
+    M.P.professions = { { name = "Tailoring", skill = 50, max = 75 }, { name = "Enchanting", skill = 4, max = 75 }, { name = "First Aid", skill = 20, max = 75 } }
+  end
+  warlock()
+  CreateMacro("MyOwn", "INV_MISC_QUESTIONMARK", "/dance")
+  -- the fake client only knows spells, macros and items on a button: teach it "something else", like a mount
+  local realInfo = GetActionInfo
+  GetActionInfo = function(slot)
+    local a = M.P.actions[slot]
+    if type(a) == "table" and a.mount then return "summonmount", a.mount end
+    return realInfo(slot)
+  end
+  local ns = load()
+  local f = tick(ns)
+  M.advance(3); tick(ns)
+  local A = M.P.actions
+  local function on(slot) local a = A[slot]; return type(a) == "table" and (a.macro or (a.item and ("item:" .. a.item)) or "other") or a end
+
+  -- 1. The promise itself: the fake client's bars cannot be changed without the tests knowing
+  local ok = pcall(function() ActionButton1:Hide() end)
+  check("the test client refuses any change to a bar of the game and writes it down", not ok and #M.violations == 1 and M.violations[1]:find("ActionButton1:Hide") ~= nil,
+    tostring(M.violations[1]))
+  pcall(function() MainActionBar.alpha = 0 end); pcall(function() UIParent:SetScale(2) end); pcall(function() MultiBarBottomLeft:SetPoint("CENTER") end)
+  pcall(function() RegisterStateDriver(MainActionBar, "visibility", "hide") end)
+  check("also a written field, UIParent, and a state driver on a frame of the game", #M.violations == 5, #M.violations)
+  M.violations = {}
+
+  -- The same promise, read from the source: none of the calls that are known to upset the game's bars
+  -- (hooking the game's functions, opening its settings or panels, reaching for its bar frames or its layout manager)
+  local HAZARDS = { "hooksecurefunc", "OpenToCategory", "ShowUIPanel", "HideUIPanel", "EditModeManagerFrame", "ActionBarController", "SetOverrideBinding",
+    "UIParent:Hide", "UIParent:SetScale", "UIParent:SetAlpha", "MainMenuBar[:%.]", "MainActionBar[:%.]", "MultiBar%w*[:%.]", "StatusTrackingBarManager", "PetActionBar",
+    "SetFrameStrata%(\"TOOLTIP\"%)", "SetFrameStrata%(\"FULLSCREEN" }
+  local toc, hazards = io.open(ROOT .. "/ClassCoach/ClassCoach.toc"):read("*a"), {}
+  for line in toc:gmatch("[^\r\n]+") do
+    if line:match("%.lua%s*$") then
+      local file = line:gsub("\\", "/"):gsub("%s+$", "")
+      local src = io.open(ROOT .. "/ClassCoach/" .. file):read("*a"):gsub("%-%-[^\n]*", "")   -- comments may name them
+      for _, pattern in ipairs(HAZARDS) do
+        if src:find(pattern) then hazards[#hazards + 1] = file .. ": " .. pattern end
+      end
+    end
+  end
+  check("the source holds none of the calls known to upset the game's bars", #hazards == 0, table.concat(hazards, "; "))
+
+  -- 2. Reset: the three bars become exactly the coach's layout
+  SlashCmdList.CLASSCOACH("bar preview")
+  check("preview changes nothing", A[1] == 980 and A[5] == 172 and on(9) == "MyOwn")
+  SlashCmdList.CLASSCOACH("bar reset")
+  check("fight bar: every entry on its own button", on(1) == "CC Pull" and on(2) == "CC Wand" and A[3] == 686 and A[4] == 1454 and A[7] == 980 and A[8] == 172 and A[9] == 348,
+    tostring(on(1)) .. "/" .. tostring(on(2)) .. "/" .. tostring(A[3]) .. "/" .. tostring(A[9]))
+  check("fight bar: what the layout does not use is gone (the duplicate, the macro of your own, the mount)", A[5] == nil and A[6] == nil and A[12] == nil and A[10] == nil,
+    tostring(A[5]) .. "/" .. tostring(A[12]))
+  check("react bar: Fear on its button, the leftovers gone", A[61] == 5782 and A[66] == nil, tostring(A[61]) .. "/" .. tostring(A[66]))
+  check("prepare bar: armor and demon on their buttons, the misplaced Fear gone", A[49] == 687 and A[50] ~= 5782, tostring(A[49]) .. "/" .. tostring(A[50]))
+  check("a bar the layout does not use is not touched", A[25] == 686)
+  local plan = ns.C.barPlan(ns.C.lastState)
+  local exact = true
+  for group, first in pairs({ fight = 1, react = 61, prep = 49 }) do
+    local want = {}
+    for _, e in ipairs(plan[group]) do want[e.index] = e end
+    for i = 1, 12 do
+      local e, a = want[i], A[first + i - 1]
+      local same = (e == nil and a == nil) or (e ~= nil and (a == e.spell or (type(a) == "table" and (a.macro == e.macro and a.macro ~= nil or a.item == e.item and a.item ~= nil))))
+      if not same then exact = false end
+    end
+  end
+  check("button for button, the three bars are the plan and nothing else", exact)
+  local backup = ClassCoachCharDB.barBackup
+  check("what was there is remembered for undo", backup and backup.slots[1].spell == 980 and backup.slots[9].macro == "MyOwn" and backup.slots[12].other == "summonmount"
+    and backup.slots[2] == false and backup.slots[25] == nil)
+  SlashCmdList.CLASSCOACH("bar reset")
+  check("a second reset changes nothing and keeps the layout", on(1) == "CC Pull" and A[5] == nil and A[61] == 5782)
+
+  -- 3. Undo
+  ClassCoachCharDB.barBackup = backup   -- the first reset's memory, as if you undo right away
+  SlashCmdList.CLASSCOACH("bar undo")
+  check("undo puts spells and macros back where they were and empties what was empty", A[1] == 980 and A[3] == 172 and A[5] == 172 and on(9) == "MyOwn"
+    and A[2] == nil and A[4] == nil and A[61] == 687 and A[66] == 348 and A[50] == 5782, tostring(A[1]) .. "/" .. tostring(on(9)) .. "/" .. tostring(A[2]))
+  check("the mount could not be put back, and the addon says so honestly", A[12] == nil and ClassCoachCharDB.barBackup == nil)
+  SlashCmdList.CLASSCOACH("bar undo")
+  check("nothing to undo twice", A[1] == 980)
+
+  -- 4. Not in a fight, and never by accident
+  M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED")
+  local before = on(1)
+  SlashCmdList.CLASSCOACH("bar reset"); SlashCmdList.CLASSCOACH("bar undo")
+  check("in a fight the bars are left alone", on(1) == before and ClassCoachCharDB.barBackup == nil and errors() == 0)
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(1); tick(ns)
+  ClassCoachCharDB.barBackup = "junk"; SlashCmdList.CLASSCOACH("bar undo")
+  ClassCoachCharDB.barBackup = { slots = { [999] = { spell = 1 }, junk = true, [3] = "x" } }; SlashCmdList.CLASSCOACH("bar undo")
+  check("a damaged memory of the old bars does no harm", errors() == 0 and A[3] == 172)
+  M.P.bars = { false, true }
+  A[61] = 348
+  SlashCmdList.CLASSCOACH("bar reset")
+  check("a bar that is switched off is left alone, not emptied blindly", A[61] == 348 and on(1) == "CC Pull")
+  M.P.bars = nil
+
+  -- 5. Potions: found in your bags, on the react bar, and asked for when you have none
+  M.P.bag = { { id = 2589, count = 12, class = 7, sub = 5, name = "Linen Cloth", min = 1 } }
+  M.fire("BAG_UPDATE_DELAYED"); M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(3); tick(ns); M.advance(3); tick(ns)
+  local potionHint = ""
+  for _, r in ipairs(ns.Journey.frame.rows) do if rawget(r, "title") == "No healing potion" then potionHint = rawget(r, "hint") end end
+  check("level 13 with no potion: the journey list says so, and how to get one", journey(ns):find("No healing potion", 1, true) ~= nil
+    and potionHint:find("First Aid makes them in Forever from skill 55 (yours is 20)", 1, true) ~= nil and potionHint:find("works in a fight", 1, true) ~= nil, potionHint)
+  check("no bandages with First Aid learned: said too", journey(ns):find("No bandages", 1, true) ~= nil)
+  check("a Warlock has Life Tap: no mana potion line", not journey(ns):find("No mana potion", 1, true))
+  M.P.bag = {
+    { id = 118, count = 3, class = 0, sub = 1, name = "Minor Healing Potion", min = 1 },
+    { id = 858, count = 2, class = 0, sub = 1, name = "Lesser Healing Potion", min = 3 },
+    { id = 929, count = 1, class = 0, sub = 1, name = "Healing Potion", min = 12 },
+    { id = 1710, count = 1, class = 0, sub = 1, name = "Greater Healing Potion", min = 21 },
+    { id = 990001, count = 4, class = 0, sub = 1, name = "Minor Discolored Healing Potion", min = 1 },
+    { id = 2455, count = 5, class = 0, sub = 1, name = "Minor Mana Potion", min = 5 },
+    { id = 1251, count = 6, class = 0, sub = 7, name = "Linen Bandage", min = 1 },
+  }
+  M.fire("BAG_UPDATE_DELAYED"); M.advance(3); tick(ns); M.advance(3); tick(ns)
+  local sup = ns.API.supplies(13)
+  check("the strongest healing potion you can use at your level", sup.best.healingpotion.id == 929 and sup.best.manapotion.id == 2455 and sup.kindOf[118] == "healingpotion",
+    tostring(sup.best.healingpotion and sup.best.healingpotion.name))
+  check("Alchemy's Discolored potions heal at a price: not counted", sup.kindOf[990001] == nil)
+  check("with a potion and bandages the lines are gone", not journey(ns):find("No healing potion", 1, true) and not journey(ns):find("No bandages", 1, true), journey(ns))
+  SlashCmdList.CLASSCOACH("bar reset")
+  check("the healing potion gets its own button on the react bar", on(66) == "item:929", tostring(on(66)))
+  M.P.bag[3] = { id = 4306, count = 9, class = 7, sub = 5, name = "Silk Cloth", min = 1 }   -- drank it
+  M.P.items = M.P.items or {}; M.P.items[929] = 0
+  M.fire("BAG_UPDATE_DELAYED"); M.advance(3); tick(ns); M.advance(3); tick(ns)
+  SlashCmdList.CLASSCOACH("bar")
+  check("used up: the button moves to the next best one you carry", on(66) == "item:858", tostring(on(66)))
+  M.P.bagSizes = { 6, 0, 0, 6 }
+  ns.C.journey = nil; M.advance(3); tick(ns)
+  check("an empty bag slot is pointed out", journey(ns):find("2 bag slots are empty", 1, true) ~= nil, journey(ns))
+  M.P.bagSizes = nil
+  SlashCmdList.CLASSCOACH("tips")
+  check("/coach tips: ten habits, each one line", #ns.JourneyData.tips == 10)
+
+  -- 6. The watcher: when the game's bars leave the screen, the addon notices and says what it saw
+  M.advance(2); tick(ns)
+  check("bars on screen: nothing to report", (ns.C.barsLost or 0) == 0 and ns.C.barsSeen == true)
+  target({ name = "Gnoll", level = 9, hostile = true, guid = "Creature-80" }); M.advance(1); tick(ns)
+  cast(980); M.advance(0.4); M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
+  M.fire("ADDON_ACTION_BLOCKED", "SomeOtherAddon", "MainActionBar:ClearAllPoints()")
+  M.gameFrames.MainActionBar.points = 0; M.gameFrames.MainActionBar.shown = false
+  local said = {}
+  local realPrint = print
+  print = function(text) said[#said + 1] = tostring(text) end
+  M.advance(1.5); tick(ns); M.advance(1.5); tick(ns); M.advance(1.5); tick(ns)
+  print = realPrint
+  local all = table.concat(said, "\n")
+  check("the main bar vanishing in a fight is noticed once", ns.C.barsLost == 1 and ns.C.barsGone ~= nil, tostring(ns.C.barsLost))
+  check("it names the frame, what the game blamed, and how to get the bars back", all:find("MainActionBar is hidden", 1, true) ~= nil
+    and all:find("SomeOtherAddon -> MainActionBar:ClearAllPoints()", 1, true) ~= nil and all:find("/reload", 1, true) ~= nil
+    and select(2, all:gsub("left the screen", "")) == 1, all)
+  check("noticing it changed nothing on the game's frames", #M.violations == 0, table.concat(M.violations, " | "))
+  said = {}
+  print = function(text) said[#said + 1] = tostring(text) end
+  SlashCmdList.CLASSCOACH("bars")
+  print = realPrint
+  all = table.concat(said, "\n")
+  check("/coach bars: each bar, the fight, and what the game blocked", all:find("main bar: NOT on screen: MainActionBar is hidden", 1, true) ~= nil
+    and all:find("Action Bar 2: on screen", 1, true) ~= nil and all:find("in combat true", 1, true) ~= nil and all:find("SomeOtherAddon", 1, true) ~= nil, all)
+  M.gameFrames.MainActionBar.shown = true; M.gameFrames.MainActionBar.points = 1
+  M.advance(1.5); tick(ns)
+  check("back on screen: the watcher is ready for a next time", ns.C.barsGone == nil and ns.C.barsLost == 1)
+  M.gameFrames.MainActionBar.shown = true; M.gameFrames.MainActionBar.points = 0   -- shown, but its anchor was lost
+  M.gameFrames.ActionButton1.shown = false
+  M.advance(1.5); tick(ns)
+  check("a button hidden on its own is told apart from a bar that lost its place", ns.C.barsLost == 2 and ns.C.barsGone.bars[1].why == "ActionButton1 is hidden", ns.C.barsGone and ns.C.barsGone.bars[1].why)
+  M.gameFrames.ActionButton1.shown = true; M.gameFrames.MainActionBar.points = 1; M.advance(1.5); tick(ns)
+  HasVehicleActionBar = function() return true end
+  M.gameFrames.MainActionBar.shown = false; M.advance(1.5); tick(ns)
+  check("a vehicle bar in their place is the game's doing: no alarm", ns.C.barsLost == 2)
+  HasVehicleActionBar = nil
+  M.gameFrames.MainActionBar.shown = true; M.advance(1.5); tick(ns)
+  UIParent.shown = false; M.gameFrames.MainActionBar.shown = false; M.advance(1.5); tick(ns)
+  check("hiding the whole interface yourself (Alt+Z): no alarm", ns.C.barsLost == 2)
+  UIParent.shown = true; M.gameFrames.MainActionBar.shown = true
+  ClassCoachDB.log = nil   -- the incidents above were written to the log on purpose
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(1); target(nil); M.advance(1); tick(ns)
+
+  -- 7. A whole fight, a level up, the talent window, the demo and every command: still hands off
+  for _, command in ipairs({ "check", "macros", "bar", "smart", "pages", "demo", "demo", "fonts", "fonts", "reset", "professions", "bars" }) do SlashCmdList.CLASSCOACH(command) end
+  ClassCoachDB.barGlow = "sparkles"
+  target({ name = "Gnoll", level = 9, hostile = true, guid = "Creature-81" }); M.advance(1); tick(ns)
+  cast(980); M.advance(0.4); M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
+  for i = 1, 60 do
+    M.advance(0.5); tick(ns)
+    if i == 5 then cast(172) elseif i == 9 then cast(348) elseif i == 20 then M.P.page = 2 elseif i == 30 then M.P.page = 1 end
+    if ns.BarGlow.holder and ns.BarGlow.holder.scripts.OnUpdate then ns.BarGlow.holder.scripts.OnUpdate(ns.BarGlow.holder, 0.1) end
+  end
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(1); target(nil)
+  M.P.level = 14; M.fire("PLAYER_LEVEL_UP", 14); M.advance(2); tick(ns)
+  M.talentWindow(true); M.advance(1); tick(ns); M.talentWindow(false); M.advance(1); tick(ns)
+  check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
+  check("no tick error", ns.C.lastError == nil, ns.C.lastError)
+
+---------------------------------------------------------------------------
 -- The ring: fonts, the cue, the lit bar button, click to cast, the demo
 ---------------------------------------------------------------------------
 elseif SCENARIO == "focus" then
@@ -1703,16 +1917,16 @@ elseif SCENARIO == "focus" then
   ClassCoachDB.barGlow = "off"; tick(ns)
   check("off: nothing lit", glow.slot == nil and not glow.holder.shown)
   ClassCoachDB.barGlow = "glow"; tick(ns)
-  ActionButton7.shown = false; tick(ns)
+  M.gameFrames.ActionButton7.shown = false; tick(ns)
   check("a button that is not on screen is not lit", glow.slot == nil and not glow.holder.shown)
-  ActionButton7.shown = true; tick(ns)
+  M.gameFrames.ActionButton7.shown = true; tick(ns)
   M.P.page = 2; M.advance(1); tick(ns)
   check("main bar on another page: its buttons show other spells, so none is lit", glow.slot == nil)
   M.P.page = 1; M.advance(1); tick(ns)
   check("back on page one it is lit again", glow.slot == 7)
-  ActionButton7.action = 79; tick(ns)
+  M.gameFrames.ActionButton7.action = 79; tick(ns)
   check("in a stance or form the main bar's buttons hold other spells: the wrong button is never lit", glow.slot == nil)
-  ActionButton7.action = 7; tick(ns)
+  M.gameFrames.ActionButton7.action = 7; tick(ns)
   check("a button that says it shows this slot is lit", glow.slot == 7)
   ClassCoachDB.showCoach = false; tick(ns)
   check("coach hidden: nothing lit, nothing clickable", glow.slot == nil and ns.Click.holder == nil or #ns.Click.describe() == 0)
@@ -1824,6 +2038,9 @@ elseif SCENARIO == "focus" then
   check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
   check("no tick error", ns.C.lastError == nil, ns.C.lastError)
 end
+
+-- In every scenario: the addon never changed a frame of the game (see M.gameFrame in mock.lua).
+check("the game's own bars and buttons were looked at, never changed", #M.violations == 0, table.concat(M.violations, " | "))
 
 print_real(("%s: %d passed, %d failed"):format(SCENARIO, passed, failed))
 return failed

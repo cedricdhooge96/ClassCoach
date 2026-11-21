@@ -76,3 +76,23 @@ ns.JourneyData = {
     },
   },
 }
+
+-- /coach tips: preparation habits that Forever guides agree on. Each is one
+-- line a beginner can act on. Sources, read in November 2026: Gfinity Esports
+-- "Beginner's Tips For World of Warcraft: Forever"; Icy Veins "Veteran Players
+-- Share What They Wish They Knew Before WoW Forever" and "Healing Potions Now
+-- Crafted by First Aid in WoW Forever"; Warcraft Tavern "First Aid Overview";
+-- Dving "WoW Forever Beginner Guide". Numbers come from those pages and are
+-- not checked in the game by this addon.
+ns.JourneyData.tips = {
+  "Use your potions. Veterans' advice to new players: don't save consumables for a perfect moment.",
+  "Carry a healing potion. It is instant and works in a fight. In Forever First Aid makes them: Minor from skill 55, Lesser from 85, Healing from 135.",
+  "Learn First Aid on every character. Bandages heal you between fights at no mana cost, so you drink and eat less often.",
+  "Buy bags with your first silver. The backpack fills fast; trade vendors and the auction house sell small bags.",
+  "Set your Hearthstone at the inn of the quest hub you are working from, from level 10 on. It saves a lot of walking.",
+  "Don't buy every spell rank. Take your main damage spells and core utility first, and save gold for riding at level 40.",
+  "Sell ore, herbs, leather and spare cloth on the auction house from level 1. It is steady money for your mount.",
+  "Eat cooked food before you go out: the Well Fed buff adds XP from kills. The journey list reminds you.",
+  "Run each dungeon once for its quests. Grinding enemies inside gives less XP than questing outside.",
+  "Finish a zone's quest chapters. Guides say that earns Legacy Points; the non-combat branches give perks such as more rested XP.",
+}

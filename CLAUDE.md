@@ -33,6 +33,15 @@ tools/gen_textures.py  draws the textures (python3, Pillow)
 tests/                 offline tests against a fake Forever client
 ```
 
+## The game's frames are looked at, never changed
+
+Cedric's action bars have vanished in fights more than once and no cause was found in this addon. Whatever the cause, ClassCoach must never be it:
+
+- Never call a method that changes a frame the addon did not create (`Hide`, `Show`, `SetShown`, `SetAlpha`, `SetPoint`, `ClearAllPoints`, `SetParent`, `SetScale`, `SetSize`, `SetAttribute`), never write a field on one, never register a state driver on one. That covers the action bars and their buttons, `UIParent`, the talent window. Reading (`IsShown`, `GetWidth`, `button.action`) and anchoring the addon's own frame to one are fine.
+- No `hooksecurefunc`, no opening the game's settings or panels, nothing from `EditModeManagerFrame` or `ActionBarController`.
+- `tests/mock.lua` builds the game's bars with `M.gameFrame`: any change raises an error and lands in `M.violations`, which every scenario checks at its end. The `bars` scenario also scans the source. A new game frame the addon reads goes into the mock as a `M.gameFrame`, not as a plain widget.
+- `C.watchBars` notices when the bars leave the screen and reports the frame and what the game blocked (`/coach bars`). It only reads.
+
 ## Tests
 
 ```
@@ -41,7 +50,7 @@ python3 tests/run.py            # everything
 python3 tests/run.py forever    # one scenario
 ```
 
-Scenarios: `shaman`, `priest`, `warlock`, `template`, `warrior`, `robust` (event storms, combat lockdown, chaos fuzzing), `forever` (no call to a function Forever lacks, off on other versions), `talents` (build following, talent window marks, link import, professions), `focus` (the ring: fonts, cue, bar highlight, click to cast, demo), `sweep` (every level 1 to 60 per class, including the smart key's steps).
+Scenarios: `shaman`, `priest`, `warlock`, `template`, `warrior`, `robust` (event storms, combat lockdown, chaos fuzzing), `forever` (no call to a function Forever lacks, off on other versions), `talents` (build following, talent window marks, link import, professions), `focus` (the ring: fonts, cue, bar highlight, click to cast, demo), `bars` (bar reset and undo, potions, the bar watcher, hands off the game's frames), `sweep` (every level 1 to 60 per class, including the smart key's steps).
 
 `tests/mock.lua` offers only functions the Forever client has. Keep it that way: a test that needs a function from another version is testing the wrong thing. Run each scenario with a timeout; a hang is a finding, not a slow machine.
 

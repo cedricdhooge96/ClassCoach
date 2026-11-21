@@ -41,6 +41,8 @@ ClassCoach is made for **World of Warcraft: Forever** (patch 1.60.x) and no othe
 | `/coach demo` | Plays the coach's states with your own spells, out of combat, so you can see and place it without fighting |
 | `/coach fonts` | A test card for ClassCoach's own typefaces: which sizes and uses this client draws |
 | `/coach professions` | Which two professions suit your class and goal, and what to do next in each |
+| `/coach tips` | Ten preparation habits from Forever guides (potions, First Aid, bags, hearthstone, gold) |
+| `/coach bars` | What ClassCoach sees of the game's action bars, for when they vanish |
 | `/coach pages` | Stops Shift+number from switching your main bar to an empty page |
 | `/coach macros` | Creates or refreshes this class's helper macros (out of combat) |
 | `/coach build` | The talent build you follow. `/coach build 2` picks one from the list, `/coach build auto` lets the addon choose, and `/coach build` followed by an Icy Veins or Warcraft Tavern talent calculator link follows that build |
@@ -88,6 +90,8 @@ What the journey list adds on top of that:
 - **Where to be**: zones and dungeons that fit your level (Alliance for now).
 - **Supplies**: at a vendor it tells you what you are low on (water, food, class reagents) and whether to repair. On the road it only speaks up when you have run out.
 
+It also names what you are missing for the road, from level 10: a healing potion, bandages if you know First Aid, a mana potion for classes that need one, and an empty bag slot.
+
 Before a pull the coach also shows a red or amber icon when the enemy is one you shouldn't fight alone: far above your level, elite, or grey (no XP).
 
 The two move independently: drag the coach by its ring and the journey list anywhere on it. `/coach reset` puts both back. `/coach demo` plays every state of the coach so you can place it without fighting.
@@ -133,15 +137,27 @@ The steps follow the Forever guides on wow-professions.com, which are based on t
 - Every spell has a fixed button, so nothing moves as you level; gaps fill in when you learn the spell.
 - `/coach bar` only fills empty buttons. If a spell's own button is taken, it goes to the next free one on the same bar. Nothing already on your bars is doubled.
 - `/coach bar preview` only lists the plan. `/coach bar replace` puts everything on its own button, overwriting what is there.
+- `/coach bar reset` makes the three bars **exactly** the coach's layout: every button gets its entry or is emptied, so leftovers and doubles are gone. Other bars are not touched. `/coach bar undo` puts back what was there (a mount or equipment set cannot be put back; the addon tells you if one was on a button). Nothing is lost either way: a spell stays in your spellbook, a macro in `/macro`, an item in your bags.
 - A bar that is switched off is skipped, and the addon tells you to turn it on (Esc > Options > Action Bars).
 - Optional setting: put newly learned spells on their button automatically. It never overwrites.
 - The prepare bar also gets **CC Rest** (one press drinks and eats the best you carry; it rewrites itself when your bags change), your best **bandage** and your **Hearthstone**. Warlocks get their **Healthstone** on the react bar. A used-up or weaker item on one of these buttons is swapped for the better one.
+- A **healing potion** you carry gets its own button on the react bar (the strongest one you can use), and so does a **mana potion** for classes that have no other way to get mana back. A potion is instant and works in a fight: it is your emergency button. With none in your bags, the journey list says so from level 10 and how to get one: in Forever, First Aid makes healing potions (Minor from skill 55, Lesser from 85, Healing from 135).
 
-### If your bars seem to vanish
+### If your bars vanish
 
-- The coach and the journey list are drawn below the action bars, so they cannot cover your buttons, and the coach takes no clicks outside its ring.
+ClassCoach never hides, moves, resizes or re-parents the game's action bars, and it sets nothing on their buttons. The tests enforce that: the test client raises an error the moment the addon tries to change one of the game's frames, in every scenario, and the source is scanned for the calls known to cause this.
+
+Bars can still vanish, usually in a fight, when another addon has interfered with the game's interface and the game then refuses to lay out its own bars. ClassCoach watches for it (it only looks):
+
+- When the bars leave the screen it says so once in chat: which frame went, and what the game last blocked and blamed.
+- `/coach bars` prints what it sees of each bar at any time, also in a fight. Send those lines.
+- `/reload` brings the bars back.
+- To find the culprit, switch off one addon at a time on the character screen, ClassCoach included, and play a fight.
+
+Other reasons a bar can look empty:
+
 - Shift+number switches the main bar to another, usually empty, page. The coach flags it ("Main bar is on page 2") and `/coach pages` stops Shift+number from doing that.
-- If the game blocks an action and blames this addon, it is recorded: `/coach check` lists it.
+- The coach and the journey list are drawn below the action bars and the coach takes no clicks outside its ring, so they cannot cover your buttons.
 
 ## Macros
 

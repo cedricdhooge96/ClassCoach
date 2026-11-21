@@ -210,6 +210,8 @@ function Options.build(db, charDB, actions)
       "Makes this class's CC macros from the spells you know. Out of combat only.", true))
     page:AddInitializer(CreateSettingsButtonInitializer("Action bar", "Fill empty buttons", actions.bar,
       "Lays out three bars by purpose: the fight on your main bar, reactions on Action Bar 2, preparation on Action Bar 3. Buttons that already hold something are left alone.", true))
+    page:AddInitializer(CreateSettingsButtonInitializer("Action bar", "Reset to the coach's layout", actions.barReset,
+      "Makes those three bars exactly the coach's layout: every button gets its entry or is emptied. /coach bar undo puts back what was there.", true))
     page:AddInitializer(CreateSettingsButtonInitializer("Panel positions", "Reset", actions.reset,
       "Puts both panels back where they started.", true))
   end)
