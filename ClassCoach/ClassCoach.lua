@@ -1436,6 +1436,12 @@ local function command(msg)
       say(("%s = %s"):format(option.name, tostring(store[option.key])))
       safely("settings window", ns.Window.refresh)
     end
+  elseif cmd == "talents" then
+    -- what the marks on the talent window found, and anything that went wrong drawing them
+    say(ns.Talents.describe())
+    for _, line in ipairs(ClassCoachDB.log or {}) do
+      if line:lower():find("talent", 1, true) then print("  " .. line) end
+    end
   elseif cmd == "errors" then
     -- "/coach errors on": let the game show Lua errors, with the addon's name on each
     if arg:lower() == "on" or arg:lower() == "off" then

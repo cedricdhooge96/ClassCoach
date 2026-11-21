@@ -190,11 +190,20 @@ end
 -- For /coach check: what the marks found the last time the talent window was open.
 function Talents.describe()
   if not Talents.seen then return "talent window: not opened yet this session" end
-  local glow = Talents.holder and Talents.holder.glow
-  return ("talent window: %d buttons, drawn up to level %d; next talent %s; glow %s at level %s; marks at level %s"):format(
-    Talents.seen, Talents.top or 0, Talents.nextFound and "found" or "NOT found",
-    glow and glow:IsShown() and tostring(glow.style) or "hidden", glow and tostring(glow:GetFrameLevel()) or "-",
-    Talents.holder and tostring(Talents.holder:GetFrameLevel()) or "-")
+  local holder = Talents.holder
+  local glow = holder and holder.glow
+  local function about(f)
+    if not f then return "-" end
+    local function v(m) local ok, x = pcall(f[m], f); return ok and tostring(x) or "?" end
+    return ("%s/%s lvl %s %sx%s vis %s"):format(v("IsShown"), v("GetFrameStrata"), v("GetFrameLevel"), v("GetWidth"), v("GetHeight"), v("IsVisible"))
+  end
+  local step = Talents.nextStep
+  local button = step and step.node and Talents.buttons and Talents.buttons[step.node]
+  local count = 0
+  for _ in pairs(Talents.buttons or {}) do count = count + 1 end
+  return ("talent window: %d buttons (%d talents), top level %d; next %s node %s known %s; its button %s; holder %s; mark %s; glow %s (%s); veils %s"):format(
+    Talents.seen, count, Talents.top or 0, step and tostring(step.name) or "-", step and tostring(step.node) or "-", step and tostring(step.known) or "-",
+    about(button), about(holder), about(holder and holder.marks[1]), about(glow), glow and tostring(glow.style) or "-", tostring(Talents.veiled))
 end
 
 -- Is the game's talent window open right now?
@@ -265,6 +274,7 @@ local function fillCard(card, state, db, level)
   end
   local line
   local nextStep = plan.next and plan.steps[plan.next]
+  Talents.nextStep = nextStep
   if not plan.readable then
     line = "The game did not give your talents, so nothing is marked."
   elseif not plan.next then
@@ -339,7 +349,7 @@ function Talents.update(state, db, level)
       end
     end
   end
-  Talents.seen, Talents.top = seen, top
+  Talents.seen, Talents.top, Talents.buttons = seen, top, buttons
   strata = strata or t:GetFrameStrata()
   if type(strata) == "string" and holder:GetFrameStrata() ~= strata then holder:SetFrameStrata(strata) end
   local want = math.min(top + 20, 9000)
@@ -348,6 +358,7 @@ function Talents.update(state, db, level)
   -- the next talent: the glow and its tag; then numbered discs on the ones after it
   local wanted = {}
   local nextStep = plan.next and plan.steps[plan.next]
+  Talents.nextStep = nextStep
   if nextStep and nextStep.known and nextStep.node then
     wanted[1] = { node = nextStep.node, role = "next", text = "Next" }
   end

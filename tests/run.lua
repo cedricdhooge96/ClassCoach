@@ -1759,6 +1759,9 @@ elseif SCENARIO == "talents" then
   C_Traits.GetTreeNodes = realNodes
   M.talentWindow(nil)
   M.fire("PLAYER_TALENT_UPDATE"); M.advance(3); tick(ns)
+  M.printed = {}
+  SlashCmdList.CLASSCOACH("talents")
+  check("/coach talents says what the marks found", table.concat(M.printed, " "):find("talent window: ", 1, true) ~= nil, table.concat(M.printed, " "))
   check("no talent window at all: nothing drawn, no error", #marks() == 0 and errors() == 0 and ns.C.lastError == nil, tostring(ns.C.lastError))
 
   -- 9. Every build link shipped with a profile reads cleanly for its class
