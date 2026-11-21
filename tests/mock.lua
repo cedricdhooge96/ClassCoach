@@ -233,6 +233,11 @@ C_Spell = {
   PickupSpell = function(id) M.cursor = { spell = id } end,
   GetSpellDescription = function(id) return P.spells[id] and P.spells[id].text end,
   GetSpellName = function(id) return P.spells[id] and P.spells[id].name or M.names[id] end,
+  GetSpellIDForSpellIdentifier = function(text)
+    local bang = text:match("^!(.*)$")
+    if bang and not M.bangSpells then return nil end
+    for id, sp in pairs(P.spells) do if sp.name == (bang or text) then return id end end
+  end,
   GetSpellTexture = function(id) return "Interface\\Icons\\spell_" .. id end,
   GetSpellPowerCost = function(id) local s = P.spells[id]; return s and { { type = 0, cost = s.cost or 0 } } or {} end,
   IsSpellUsable = function(id)
@@ -243,7 +248,14 @@ C_Spell = {
   end,
   GetSpellCooldown = function(id)
     local untilTime = P.cooldowns[id]
-    return { isActive = untilTime ~= nil and M.now < untilTime, isOnGCD = false }
+    local own = untilTime ~= nil and M.now < untilTime
+    -- The global cooldown as Forever reports it in a fight: active, times hidden, and
+    -- isOnGCD not to be trusted (nil) outside a SPELL_UPDATE_COOLDOWN event.
+    if not own and M.gcdUntil and M.now < M.gcdUntil then
+      return { isActive = true, isOnGCD = M.gcdFlag, startTime = hidden(M.gcdUntil - 1.5), duration = hidden(1.5) }
+    end
+    if id == 61304 then return { isActive = false, isOnGCD = false, startTime = 0, duration = 0 } end
+    return { isActive = own, isOnGCD = false }
   end,
 }
 M.names = {}
@@ -373,7 +385,18 @@ function M.press(b, click)
   M.inSecure = false
   local kind = b:GetAttribute("type")
   if kind == "spell" then return "spell", b:GetAttribute("spell") end
-  if kind == "macro" then return "macro", b:GetAttribute("macro") end
+  if kind == "macro" and b:GetAttribute("macro") then return "macro", b:GetAttribute("macro") end
+  local text = kind == "macro" and b:GetAttribute("macrotext")
+  if text then
+    -- runs the macro text: a /castsequence casts its current entry (it moves on only when that succeeds)
+    M.ranText = text
+    local sequence = text:match("/castsequence ([^\n]+)")
+    if sequence then
+      local e = M.sequenceEntry(sequence)
+      return "spell", e.names[e.index]
+    end
+    return "macrotext", text
+  end
   return nil
 end
 -- The state driver noticing there is no living enemy targeted.
@@ -590,7 +613,54 @@ function M.spellbook(open, names)
   PlayerSpellsFrame.SpellBookFrame = _G.MockSpellBook
 end
 
+-- /castsequence as the game runs it (Blizzard_ChatFrameBase/Shared/CastSequenceManager.lua):
+-- it moves on only when the current entry's spell succeeds (from any key), starts over
+-- after its last entry, and resets on a new target (reset=target) or after a fight (reset=combat).
+M.sequences = {}
+local function sequenceEntry(sequence)
+  local e = M.sequences[sequence]
+  if not e then
+    local reset, spells = sequence:match("^reset=([^%s]+)%s*(.*)")
+    if not reset then spells = sequence end
+    e = { index = 1, spells = {}, names = {}, reset = (reset or ""):lower() }
+    for part in (spells .. ","):gmatch("([^,]*),") do
+      local a = part:match("^%s*(.-)%s*$")
+      if a ~= "" then e.spells[#e.spells + 1] = a:lower(); e.names[#e.names + 1] = a:gsub("^!", "") end
+    end
+    M.sequences[sequence] = e
+  end
+  return e
+end
+M.sequenceEntry = sequenceEntry
+function QueryCastSequence(sequence)
+  local e = M.sequences[sequence]
+  if not e then
+    local first = sequenceEntry(sequence).spells[1]
+    M.sequences[sequence] = nil
+    return 1, nil, first
+  end
+  return e.index, nil, e.spells[e.index]
+end
+local function sequenceEvent(event, ...)
+  if event == "UNIT_SPELLCAST_SUCCEEDED" then
+    local unit, _, id = ...
+    local sp = P.spells[id]
+    if unit ~= "player" or not sp then return end
+    for _, e in pairs(M.sequences) do
+      if e.spells[e.index] and e.spells[e.index]:gsub("^!", "") == sp.name:lower() then
+        e.index = e.index == #e.spells and 1 or e.index + 1
+      end
+    end
+  elseif event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_REGEN_ENABLED" then
+    local what = event == "PLAYER_TARGET_CHANGED" and "target" or "combat"
+    for sequence, e in pairs(M.sequences) do
+      if e.reset:find(what, 1, true) then M.sequences[sequence] = nil end
+    end
+  end
+end
+
 function M.fire(event, ...)
+  sequenceEvent(event, ...)
   for _, f in ipairs(M.frames) do
     if (f.events[event] or event == "ADDON_LOADED") and f.scripts.OnEvent then f.scripts.OnEvent(f, event, ...) end
   end

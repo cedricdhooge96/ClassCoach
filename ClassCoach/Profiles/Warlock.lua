@@ -9,7 +9,8 @@ local function n(f, key) return f.castCount[key] or 0 end
 
 local WARLOCK_SPELLS = {
   ["Shadow Bolt"]    = { ids = { 686, 695, 705, 1088, 1106, 7641, 11659, 11660, 11661, 25307 }, harm = true, travel = true },
-  ["Immolate"]       = { ids = { 348, 707, 1094, 2941, 11665, 11667, 11668, 25309 }, debuff = 15, learn = 1 },
+  -- worth = 0.25: much of Immolate is its first hit, so it is still worth it closer to the end
+  ["Immolate"]       = { ids = { 348, 707, 1094, 2941, 11665, 11667, 11668, 25309 }, debuff = 15, worth = 0.25, learn = 1 },
   ["Corruption"]     = { ids = { 172, 6222, 6223, 7648, 11671, 11672, 25311 }, debuff = 15, core = true, learn = 4 },
   ["Bane of Agony"]  = { ids = { 980, 1014, 6217, 11711, 11712, 11713 }, debuff = 24, core = true, learn = 8 },
   ["Siphon Life"]    = { ids = { 18265, 18879, 18880, 18881 }, debuff = 30 },          -- talent, from 30
@@ -103,9 +104,10 @@ ns.RegisterProfile({
       why = "Bane of Agony: slow, cheap damage that keeps ticking." },
     { spell = "Corruption", mana = "medium", when = function(s) return not s:debuffUp("Corruption") end,
       why = "Corruption: damage over time does the work while you wait." },
+    -- On every enemy that lives long enough (Method, Warcraft Tavern): only low mana holds it back.
     { spell = "Immolate", mana = "medium",
-      when = function(s) return not s:debuffUp("Immolate") and (s.level < 10 or s.target.elite or s.manaLevel == "high") end,
-      why = function(s) return s.level < 10 and "Immolate: your main damage at this level." or "Immolate while you have spare mana." end },
+      when = function(s) return not s:debuffUp("Immolate") end,
+      why = function(s) return s.level < 10 and "Immolate: your main damage at this level." or "Immolate: a big first hit, then it burns." end },
     { spell = "Siphon Life", mana = "medium", when = function(s) return not s:debuffUp("Siphon Life") end,
       why = "Siphon Life heals you while it ticks." },
     { spell = "Curse of the Elements", mana = "medium", minLevel = 40,
@@ -233,7 +235,7 @@ ns.RegisterProfile({
         lines[#lines + 1] = (#order == 1 and "/cast " or "/castsequence reset=target/combat ") .. table.concat(order, ", ")
         return table.concat(lines, "\n")
       end },
-    { name = "CC Open", smart = true, about = "Used by the smart key: demon in, then your first spell.",
+    { name = "CC Open", about = "Demon in, then your first spell.",
       body = function(s, plan)
         local first = ns.Engine.sequence(plan)[1]
         if not first or not s:have(DEMONS) then return nil end
@@ -254,8 +256,8 @@ ns.RegisterProfile({
 
   trainer = TRAINER,
 
-  -- The smart key: the first press sends the demon in and casts the first spell.
-  smart = { open = "CC Open" },
+  -- The smart key: every press also sends your demon at your target.
+  smart = { pet = true },
 
   -- /coach bar: three bars by purpose, the entries in the order they belong on the bar, best candidate first.
   -- An entry you cannot use yet takes no button (or leaves a gap, with the "fixed buttons" setting).

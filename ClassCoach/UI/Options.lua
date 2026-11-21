@@ -58,7 +58,7 @@ local function layout()
     { key = "chat", kind = "check", name = "Fight tips in chat", default = true,
       tip = "After a fight, also print the tips in the chat window." },
     { key = "smartKey", kind = "check", name = "Smart key: one key walks the coach's plan", default = true,
-      tip = "Bind its three keys under Options > Keybindings > AddOns > ClassCoach: Next, Again (after a resist) and Restart. One press still casts one spell. Type /coach smart to see its steps." },
+      tip = "Bind it under Options > Keybindings > AddOns > ClassCoach, or type /coach smart 1. It is the game's own cast sequence: it only moves on when a spell went off, and starts over on a new target. One press still casts one spell. Type /coach smart to see its steps." },
 
     { header = "Action bars" },
     { key = "barGlow", kind = "choice", fixed = true, name = "Light up the button to press on my action bars", default = "glow",

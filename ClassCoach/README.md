@@ -51,7 +51,7 @@ ClassCoach is made for **World of Warcraft: Forever** (patch 1.60.x) and no othe
 | `/coach pages` | Stops Shift+number from switching your main bar to an empty page |
 | `/coach macros` | Creates or refreshes this class's helper macros (out of combat) |
 | `/coach build` | The talent build you follow. `/coach build 2` picks one from the list, `/coach build auto` lets the addon choose, and `/coach build` followed by an Icy Veins or Warcraft Tavern talent calculator link follows that build |
-| `/coach smart` | Shows the smart key's steps and keys; `/coach smart next 1` binds a key |
+| `/coach smart` | Shows the smart key's steps and key; `/coach smart 1` binds it to 1 |
 | `/coach bar` | Lays out the fight, react and prepare bars on empty buttons; `preview` only lists, `replace` overwrites |
 | `/coach last` | Repeats the last fight report in chat |
 | `/coach hide` / `show` | Hides or shows the coach |
@@ -183,28 +183,25 @@ Other reasons a bar can look empty:
 
 The game tells addons only that "something was resisted on your target", not what. ClassCoach matches that to the harmful spell you cast a moment before and undoes it: the timer is removed, the icon left of the ring is marked "miss", and the coach asks for the same spell again. If the enemy is immune, the spell is skipped on that enemy for the rest of the fight. The fight report counts resists and tells you when the enemy's level was the reason.
 
-A macro cannot do this. A `/castsequence` moves on after a resisted cast, because the cast itself went off. That is what the smart key's Again key is for.
+A macro cannot do this. A `/castsequence` (the smart key too) moves on after a resisted cast, because the cast itself went off: the coach then shows the resisted spell with its own key.
 
 ## The smart key
 
-One key that walks the coach's plan. With a wand it holds a whole fight: the opening spells, the wand, then each damage-over-time spell again in the order they run out with the wand between (about a minute's worth), and at the end it stays on the wand. Without a wand it holds the pull and then stays on your filler spell or attack. No looping back, no cutting off a channel, and it returns to the first step by itself when your enemy dies.
+One key that walks the coach's plan, as the game's own `/castsequence`. With a wand it holds a whole fight: the opening spells, the wand, then each damage-over-time spell again in the order they run out with the wand between. Without a wand it holds the pull and then your filler spell a few times (a Shaman: Stormstrike, once known, and every press also starts your auto attack). A Warlock's every press also sends the demon at the target.
 
-**The coach shows the key's own steps.** While the key is bound, the ring always shows what the key's next press casts, the steps beside it are the key's next steps, and a spell still ticking says when it is due ("Corruption in 6s"). Press the key when the ring shows the key's badge. The coach only shows another key when the key's step cannot be right: a resist (Again), a new enemy (Restart), a spell you cannot cast now (mana, cooldown, immune), Life Tap on low mana (it is never on the key), or a spell that ran out while the key waits for another one.
+- **Nothing is skipped.** The game moves a cast sequence on only when the spell really went off. Out of range, not ready, still casting: the next press is the same spell again.
+- **It starts over by itself** on a new target and after a fight, and after its last step.
+- **The coach shows the key's own steps.** The ring always shows what the key's next press casts (the coach reads the game's own record of the sequence), the steps beside it are the key's next steps, and a spell still ticking says when it is due ("Corruption in 6s"). Press the key when the ring shows the key's badge.
+- **When the coach shows another key** the key's step cannot be right: a resist (the sequence moved on, the spell did not land), a spell you cannot cast now (mana, cooldown, immune), Life Tap on low mana (never on the key), or a spell that ran out while the key waits for another one.
+- Bind it under Esc > Options > Keybindings > AddOns > ClassCoach, or type `/coach smart 1`. `/coach smart` lists its steps.
 
-- Bind three keys under Esc > Options > Keybindings > AddOns > ClassCoach (or type `/coach smart next 1`, `/coach smart again 2`, `/coach smart restart 3`):
-  **Next** casts the next step. **Again** casts the previous step once more, for a resist. **Restart** goes back to the start, for a new enemy.
-- The coach shows which of those keys to press: it switches to the Again key when a spell was resisted.
-- `/coach smart` lists its steps and keys.
+Its limits, from how the game works:
 
-Its limits, which come from how the game's secure buttons work:
+- **It is planned at the mana you have before the pull.** When your mana changes between fights (you drank, you cast a buff) the key is loaded again by itself. In a fight the game does not let an addon change it: when the coach has to change its advice there, it shows the other spell's own key and lights its button.
+- **One macro.** The sequence has to fit 255 characters, so a long fight plan is cut short; after its last step it starts over and the coach shows when that first spell is due.
+- **The wand.** In a sequence the wand is written `!Shoot` (never switches a firing wand off) when the game follows that, otherwise `Shoot`. `/coach check` says which. With plain `Shoot`, pressing the key on its wand step while your wand already fires stops it; press once more.
 
-- **One press per spell.** The key moves on with every press, also when the spell could not be cast (still casting the last one, not ready, out of range). Pressing it faster than your spells go off skips steps. When that happens the coach shows the skipped spell's own key and lights its button; Restart puts the key back at the start.
-- **It starts over by itself** when your target dies, when you drop your target, when a fight ends, and when you pick a new target between fights.
-- **In a fight, a new enemy needs Restart** when you switch straight from one living enemy to another (the game gives the key no way to notice that). The ring then shows your Restart key, with why.
-- **It is planned at the mana you have before the pull.** Each planned spell spends its cost, so on low mana the steps reach your wand (or Life Tap) sooner, and when your mana changes between fights (you drank, you cast a buff) the key is loaded again by itself. In a fight the game does not let an addon change it: when the coach has to change its advice there (mana lower than planned), it shows the other spell's own key and lights its button.
-- The `CC Pull` macro is the other way to put the opening on one key: it only moves on when a spell really went off, but it cannot repeat a resisted spell and it starts over after its last step.
-
-What it is not: the addon does not decide during a fight what the key casts. The game forbids that, and nothing here works around it. The plan is loaded into the game's own secure button between fights; in a fight one press is still one cast, the same rule macros follow.
+What it is not: the addon does not decide during a fight what the key casts. The game forbids that, and nothing here works around it. The sequence is loaded into the game's own secure button between fights; in a fight one press is still one cast, the same rule macros follow.
 
 A wand reports every shot to addons as a new cast. Shots in a row count as one, and while the wand is still firing it stays in the ring: it only moves to the left ("already cast") once you cast something else. Wand shots also do not start the clock on an enemy: the "nearly dead, skip damage over time" guess counts from your first real spell on it.
 

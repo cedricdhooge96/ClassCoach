@@ -180,7 +180,7 @@ local NEEDS = {
   "C_Container.GetContainerItemInfo", "C_Container.GetContainerNumFreeSlots", "C_Container.GetContainerNumSlots",
   "C_Item.GetItemCount", "C_Item.GetItemInfo", "C_Item.GetItemInfoInstant", "C_Item.GetItemSpell", "C_Item.GetWeaponEnchantInfo",
   "C_Item.PickupItem", "C_NamePlate.GetNamePlates", "C_Secrets.ShouldAurasBeSecret",
-  "C_Spell.GetSpellCooldown", "C_Spell.GetSpellDescription", "C_Spell.GetSpellName", "C_Spell.GetSpellPowerCost",
+  "C_Spell.GetSpellCooldown", "C_Spell.GetSpellDescription", "C_Spell.GetSpellName", "C_Spell.GetSpellIDForSpellIdentifier", "QueryCastSequence", "C_Spell.GetSpellPowerCost",
   "C_Spell.GetSpellTexture", "C_Spell.IsAutoRepeatSpell", "C_Spell.IsSpellUsable", "C_Spell.PickupSpell",
   "C_SpellBook.GetNumSpellBookSkillLines", "C_SpellBook.GetSpellBookItemInfo", "C_SpellBook.GetSpellBookItemTexture",
   "C_SpellBook.GetSpellBookSkillLineInfo", "C_SpellBook.IsSpellKnown", "C_Timer.After",
@@ -435,16 +435,43 @@ function API.usable(id)
   return plain(usable), plain(short)
 end
 
--- true when off cooldown (the global cooldown doesn't count), nil when unknown
+-- The game's "global cooldown" spell: its cooldown is the one every spell shares.
+local GCD_SPELL = 61304
+
+-- Whether the game reports the global cooldown at all (for /coach check).
+function API.gcdReadable()
+  return type(try(C_Spell.GetSpellCooldown, GCD_SPELL)) == "table"
+end
+
+-- How the wand is written in a /castsequence. "!Shoot" never switches a firing
+-- wand off, but a sequence only follows it when the game reads "!Shoot" as the
+-- wand spell; otherwise plain "Shoot".
+function API.shootText()
+  local name = plain(try(C_Spell.GetSpellName, 5019)) or "Shoot"
+  local id = plain(try(C_Spell.GetSpellIDForSpellIdentifier, "!" .. name))
+  local plainId = plain(try(C_Spell.GetSpellIDForSpellIdentifier, name))
+  if id and plainId and id == plainId then return "!" .. name end
+  return name
+end
+
+-- true when off cooldown (the global cooldown doesn't count), nil when unknown.
+-- In a fight Forever hides a cooldown's times, and its isOnGCD flag is only to be
+-- trusted inside a SPELL_UPDATE_COOLDOWN event (the game's own documentation). So a
+-- spell that reads "active" while the global cooldown runs (every wand shot starts
+-- one) cannot be told apart from a real cooldown: that is "unknown", never "not ready".
 function API.ready(id)
   local info = try(C_Spell.GetSpellCooldown, id)
   if type(info) == "table" then
     local active = field(info, "isActive")
+    local duration = tonumber(field(info, "duration"))
     if active ~= nil then
-      if not active then return true end
-      return field(info, "isOnGCD") == true
+      if not active or field(info, "isOnGCD") == true then return true end
+      if duration then return duration <= 1.5 end
+      local gcd = try(C_Spell.GetSpellCooldown, GCD_SPELL)
+      if type(gcd) == "table" and field(gcd, "isActive") == true then return nil end
+      return false
     end
-    local start, duration = field(info, "startTime"), field(info, "duration")
+    local start = field(info, "startTime")
     if start and duration then return start == 0 or duration <= 1.5 end
   end
   return nil

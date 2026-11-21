@@ -161,7 +161,7 @@ ns.RegisterProfile({
         if not s:known(key) then return nil end
         return "#showtooltip\n/startattack\n/cast " .. s.spells[key].name
       end },
-    { name = "CC Attack", smart = true, about = "Used by the smart key: keeps you swinging.",
+    { name = "CC Attack", about = "Keeps you swinging.",
       body = function() return "/startattack" end },
     { name = "CC Strike", about = "Stormstrike, and it makes sure you are swinging.",
       body = function(s)
@@ -172,8 +172,8 @@ ns.RegisterProfile({
 
   trainer = TRAINER,
 
-  -- The smart key ends on Stormstrike plus auto attack once you have it.
-  smart = { tail = "CC Strike" },
+  -- The smart key: every press also starts your auto attack, and it ends on Stormstrike once you have it.
+  smart = { attack = true, finish = "Stormstrike" },
 
   -- /coach bar: three bars by purpose, the entries in the order they belong on the bar, best candidate first.
   -- An entry you cannot use yet takes no button (or leaves a gap, with the "fixed buttons" setting).

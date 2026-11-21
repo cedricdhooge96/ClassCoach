@@ -692,7 +692,7 @@ elseif SCENARIO == "warlock" then
   cast(172); M.advance(6)
   M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
   pull = M.macros[GetMacroIndexByName("CC Pull")]
-  check("macro rewritten from the new plan", pull.body:find("reset=target/combat Bane of Agony, Corruption$") ~= nil, pull.body)
+  check("macro rewritten from the new plan", pull.body:find("reset=target/combat Bane of Agony, Corruption, Immolate$") ~= nil, pull.body)
   ClassCoachCharDB.kill = nil; target(nil)
   -- No wand: the filler spell rides along so one key carries the fight.
   M.P.equipped = {}; M.fire("PLAYER_EQUIPMENT_CHANGED"); M.advance(1); tick(ns); M.advance(1)
@@ -734,21 +734,23 @@ elseif SCENARIO == "warlock" then
   check("and puts them in perspective", table.concat(ns.C.lastReport.tips, " | "):find("3 of your 5 casts were resisted") ~= nil, table.concat(ns.C.lastReport.tips, " | "))
   target(nil); M.advance(1); tick(ns)
 
-  -- The smart key: one key walks the plan, inside the game's secure code.
+  -- The smart key: one key walks the plan as the game's own /castsequence.
   check("no secure button until you ask for the smart key", ns.Smart.button == nil)
   SlashCmdList.CLASSCOACH("errors")
   SlashCmdList.CLASSCOACH("smart")
   local b = ns.Smart.button
-  check("smart key: secure button made and loaded", b ~= nil and b:GetAttribute("cc-count") == #ns.Smart.steps and #ns.Smart.steps > 4, b and b:GetAttribute("cc-count"))
-  check("smart key: resets when no living enemy is targeted", M.drivers.ccreset.conditions == "[@target,harm,nodead] keep; reset")
+  local text = b and b:GetAttribute("cc-text") or ""
+  check("smart key: made and loaded with one cast sequence", b ~= nil and text:find("\n/castsequence reset=target/combat Bane of Agony, Corruption, Immolate, Shoot, ", 1, true) ~= nil, text)
+  check("smart key: it fits one macro, and every press also sends the demon in", #text <= 255 and text:find("^/petattack %[pet,@target,harm,nodead%]\n") ~= nil, text)
   local steps = table.concat(ns.Smart.describe(), ", ")
-  check("smart key at half mana: the plan leaves out Immolate (spare mana only)", steps:find("^1 Bane of Agony, 2 Corruption, 3 Shoot, 4 Corruption, 5 Shoot")
-    and not steps:find("Immolate") and steps:find("Shoot %(stays here%)$"), steps)
-  check("the key holds a whole fight: each damage over time again when it runs out, the wand between", steps:find("Bane of Agony", 20, true) ~= nil, steps)
-  check("Life Tap is never on the key: the coach asks for it, with its own key, when the fight needs it", not steps:find("Life Tap"), steps)
-  M.P.mana = 300; M.advance(2.5); tick(ns); M.advance(2.5); tick(ns)   -- a new plan is loaded once it holds for two checks
-  steps = table.concat(ns.Smart.describe(), ", ")
-  check("smart key: after drinking to full it is loaded again by itself, with Immolate", steps:find("^1 Bane of Agony, 2 Corruption, 3 Immolate, 4 Shoot, 5 Corruption, 6 Shoot, 7 Immolate, 8 Shoot, 9 Bane of Agony") ~= nil, steps)
+  check("the key holds a whole fight: each damage over time again as it runs out, the wand between", steps:find("^1 Bane of Agony, 2 Corruption, 3 Immolate, 4 Shoot, 5 Corruption, 6 Shoot") ~= nil
+    and steps:find("(then it starts over)", 1, true) ~= nil, steps)
+  check("Life Tap is never on the key", not steps:find("Life Tap"), steps)
+  check("the wand is written Shoot when the game would not follow !Shoot in a sequence", text:find(", Shoot,", 1, true) ~= nil and not text:find("!Shoot", 1, true), text)
+  M.bangSpells = true; ns.C.syncSmart()
+  check("... and !Shoot (never switches a firing wand off) when it would", b:GetAttribute("cc-text"):find(", !Shoot,", 1, true) ~= nil, b:GetAttribute("cc-text"))
+  M.bangSpells = nil; ns.C.syncSmart()
+  M.P.mana = 300; M.advance(2.5); tick(ns); M.advance(2.5); tick(ns)
   check("a plan that only flickers is never loaded", (function()
     local before = ns.C.planSeen
     ns.C.planNext = "flicker"; M.advance(2.1); tick(ns)
@@ -757,63 +759,41 @@ elseif SCENARIO == "warlock" then
   target({ name = "Crab", level = 12, hostile = true, guid = "Creature-41" })
   M.advance(1); tick(ns)
   local kind, what = M.press(b)
-  check("Voidwalker out, no fight yet: the first press sends it in AND casts the opening spell", kind == "macro" and what == "CC Open" and b:GetAttribute("cc-step") == 2, tostring(what))
-  M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
-  check("the opening macro", M.macros[GetMacroIndexByName("CC Open")].body == "#showtooltip\n/petattack [harm,nodead]\n/cast Bane of Agony")
+  check("first press: the sequence's first spell, and the demon goes in with it", what == "Bane of Agony" and M.ranText:find("/petattack", 1, true) ~= nil, tostring(what))
   kind, what = M.press(b)
-  check("next press: Corruption", kind == "spell" and what == "Corruption", tostring(what))
-  kind, what = M.press(b, "RightButton")
-  check("Again key: Corruption once more", kind == "spell" and what == "Corruption" and b:GetAttribute("cc-step") == 3, tostring(what))
+  check("a cast that did not go off (out of range): the next press is the same spell, nothing skipped", what == "Bane of Agony", tostring(what))
+  cast(980); M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
   kind, what = M.press(b)
-  check("next press: Immolate", what == "Immolate", tostring(what))
-  kind, what = M.press(b)
-  check("then the wand", kind == "macro" and what == "CC Wand", tostring(what))
-  kind, what = M.press(b)
-  check("after the wand: the spell that runs out first, Corruption", what == "Corruption" and b:GetAttribute("cc-step") == 6, tostring(what))
-  for _ = 1, 30 do M.press(b) end
-  kind, what = M.press(b)
-  check("at the end of the fight's plan it stays on the wand: no looping back", what == "CC Wand" and b:GetAttribute("cc-step") == b:GetAttribute("cc-count"), tostring(what))
+  check("once it went off: Corruption", what == "Corruption", tostring(what))
+  cast(172); kind, what = M.press(b)
+  check("then Immolate", what == "Immolate", tostring(what))
+  cast(348); kind, what = M.press(b)
+  check("then the wand", what == "Shoot", tostring(what))
+  cast(5019); kind, what = M.press(b)
+  check("after the wand: the spell that runs out first, Corruption", what == "Corruption", tostring(what))
   M.channeling = true; kind = M.press(b); M.channeling = false
   check("never cuts off a channel", kind == nil)
-  kind, what = M.press(b, "MiddleButton")
-  check("Restart key: back to the opening", what == "CC Open", tostring(what))
-  M.press(b); M.secureReset(b)
-  check("enemy dead: back to step one by itself", b:GetAttribute("cc-step") == 1)
-  local ok = pcall(b.SetAttribute, b, "cc-step", 3)
+  kind = M.press(b, "RightButton")
+  check("other mouse buttons on the key do nothing", kind == nil)
+  local ok = pcall(b.SetAttribute, b, "cc-text", "/cast Fear")
   check("the addon cannot touch the key during a fight", ok == false and ns.C.syncSmart() == false)
-
-  -- The panel shows which key to press: Next, or Again after a resist.
-  M.P.bindings["CLICK ClassCoachSmartButton:LeftButton"] = "1"
-  M.P.bindings["CLICK ClassCoachSmartButton:RightButton"] = "2"
-  M.advance(2.1); f = tick(ns)   -- keys are read again every two seconds
-  check("panel: Bane of Agony is on the smart key", f.name.text == "Bane of Agony" and f.key.text == "1", f.name.text .. "/" .. tostring(f.key.text))
-  M.press(b); cast(980); M.fire("UNIT_COMBAT", "target", "RESIST", "", 0, 32)
-  M.advance(0.1); f = tick(ns)
-  check("panel: after a resist it points at the Again key", f.name.text == "Bane of Agony" and f.key.text == "2", f.name.text .. "/" .. tostring(f.key.text))
-  M.press(b, "RightButton"); cast(980); M.advance(1.5); f = tick(ns)
-  check("panel: then on with the Next key", f.name.text == "Corruption" and f.key.text == "1", f.name.text .. "/" .. tostring(f.key.text))
-  -- Straight on to a second enemy in the same fight: the key is past its opening.
-  M.P.bindings["CLICK ClassCoachSmartButton:MiddleButton"] = "3"
-  M.press(b); cast(172); M.advance(1.5)
   target({ name = "Crab", level = 12, hostile = true, guid = "Creature-42" })
-  M.advance(2.1); f = tick(ns)
-  check("a new enemy mid-fight: the ring points at the Restart key, with why", f.name.text == "Bane of Agony" and f.key.text == "3"
-    and f.why.text:find("press Restart (3)", 1, true) ~= nil, f.name.text .. "/" .. tostring(f.key.text) .. " " .. f.why.text)
-  -- the fight ends with the key on its wand step: the next pull starts from the beginning
-  M.press(b); M.press(b); M.press(b)
+  kind, what = M.press(b)
+  check("a new target: the game starts the sequence over by itself", what == "Bane of Agony", tostring(what))
   M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
-  check("fight over: the smart key is back at step one by itself", b:GetAttribute("cc-step") == 1, b:GetAttribute("cc-step"))
-  M.press(b); M.press(b)
-  target({ name = "Crab", level = 12, hostile = true, guid = "Creature-43" })
-  check("a new target between fights: back at step one too", b:GetAttribute("cc-step") == 1, b:GetAttribute("cc-step"))
+  check("fight over: back at the start too", ns.Smart.status().step == 1, tostring(ns.Smart.status().step))
 
-  -- The coach follows the smart key: the ring shows the key's own next step, always.
+  -- The coach follows the smart key: the ring shows what the key's next press casts, always.
   local killKept = ClassCoachCharDB.kill
   ClassCoachCharDB.kill = nil
+  M.P.bindings["CLICK ClassCoachSmartButton:LeftButton"] = "1"
   local function keyNext() return ns.Smart.status().nextLabel end
-  M.P.mana = 300; M.advance(2.5); tick(ns); M.advance(2.5); f = tick(ns)   -- full mana: the key is loaded with Immolate
+  target({ name = "Crab", level = 12, hostile = true, guid = "Creature-43" })
+  M.advance(2.1); f = tick(ns)
   check("follow: before the pull the ring is the key's first step, on the key", f.name.text == keyNext() and f.name.text == "Bane of Agony" and f.key.text == "1", f.name.text .. "/" .. tostring(f.key.text))
   check("follow: what comes next is the key's own order", nextText(f) == "Corruption > Immolate", nextText(f))
+  M.press(b); M.advance(1.5); f = tick(ns)   -- out of range: nothing went off
+  check("follow: out of range, the ring and the key both stay on Bane of Agony", f.name.text == "Bane of Agony" and keyNext() == "Bane of Agony" and f.key.text == "1", f.name.text)
   M.press(b); cast(980); M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED"); M.advance(1.5); f = tick(ns)
   check("follow: Corruption, as on the key", f.name.text == "Corruption" and keyNext() == "Corruption" and f.key.text == "1", f.name.text)
   M.press(b); cast(172); M.advance(1.5); f = tick(ns)
@@ -833,6 +813,11 @@ elseif SCENARIO == "warlock" then
     and f.why.text:find("then Immolate") ~= nil and nextText(f):find("^Immolate") ~= nil, f.name.text .. " / " .. f.why.text .. " / " .. nextText(f))
   M.press(b); cast(5019); M.advance(0.2); f = tick(ns)
   check("follow: then Immolate on the key", f.name.text == "Immolate" and keyNext() == "Immolate" and f.key.text == "1", f.name.text)
+  -- a resist: the cast went off, so the sequence moved on; the coach asks for it again with its own key
+  M.P.mana = 300
+  M.press(b); cast(348); M.fire("UNIT_COMBAT", "target", "RESIST", "", 0, 32); M.advance(0.1); f = tick(ns)
+  check("follow: resisted: the coach asks for it again, and not with the smart key", f.name.text == "Immolate" and f.key.text ~= "1"
+    and f.why.text:find("resisted") ~= nil, f.name.text .. "/" .. tostring(f.key.text) .. " " .. f.why.text)
   -- low mana: Life Tap is not on the key, so the coach asks for it with its own key
   M.P.mana = 40; M.advance(0.5); f = tick(ns)
   check("follow: low mana, the coach takes over with Life Tap and not the smart key", f.name.text == "Life Tap" and f.key.text ~= "1", f.name.text .. "/" .. tostring(f.key.text))
@@ -863,6 +848,50 @@ elseif SCENARIO == "warlock" then
   local shown
   for _, slot in ipairs(f20.missing) do if rawget(slot, "spell") == "Summon Succubus" then shown = true end end
   check("level 20: no demon is fixed by the Succubus", missing(ns):find("No demon") ~= nil and shown == true, missing(ns))
+
+elseif SCENARIO == "wand" then
+  -- Regression (seen in game, 0.14.5): while the wand fires, the global cooldown runs.
+  -- Forever then reports every spell's cooldown as active with its times hidden, and the
+  -- coach read that as "not ready": the step after the wand disappeared.
+  for _, kill in ipairs({ "none", 8, 12, 16, 25 }) do
+    for _, keyed in ipairs({ false, true }) do
+      M.player({
+        class = "WARLOCK", className = "Warlock", level = 13, mana = 300, maxMana = 300,
+        spells = {
+          [686] = { name = "Shadow Bolt", cost = 25 }, [348] = { name = "Immolate", cost = 25 },
+          [172] = { name = "Corruption", cost = 35, text = "Corrupts the target, causing 40 Shadow damage over 12 sec." },
+          [980] = { name = "Bane of Agony", cost = 25 }, [1454] = { name = "Life Tap", cost = 0 },
+          [687] = { name = "Demon Skin", cost = 50 }, [697] = { name = "Summon Voidwalker", cost = 100 }, [5019] = { name = "Shoot", cost = 0 },
+        },
+        book = { 686, 348, 172, 980, 1454, 687, 697, 5019 }, equipped = { [18] = 11287 }, talents = { 3, 0, 0 },
+      })
+      local ns = load()
+      M.P.pet = { family = "Voidwalker" }; M.P.buffs = { ["Demon Skin"] = true }
+      M.P.actions[2] = 5019; M.P.bindings.ACTIONBUTTON2 = "2"; M.fire("ACTIONBAR_SLOT_CHANGED", 2)
+      ClassCoachCharDB.kill = kill ~= "none" and { avg = kill, n = 5 } or nil
+      M.advance(3); tick(ns); M.advance(3); tick(ns)
+      if keyed then
+        SlashCmdList.CLASSCOACH("smart")
+        M.P.bindings["CLICK ClassCoachSmartButton:LeftButton"] = "1"
+        M.advance(2.5); tick(ns)
+      end
+      target({ name = "Defias", level = 12, hostile = true, guid = "Creature-9" .. tostring(kill) .. tostring(keyed) })
+      M.advance(2.1); local f = tick(ns)
+      local b = ns.Smart.button
+      local function go(id) if keyed then M.press(b) end cast(id) end
+      go(980); M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED"); M.advance(3)
+      go(172); M.advance(1.5)
+      go(348); M.advance(4.5)
+      go(5019); M.advance(1)
+      M.gcdUntil = M.now + 1   -- a wand shot just went off: the global cooldown runs
+      f = tick(ns)
+      local tag = ("kill time %s, smart key %s"):format(tostring(kill), keyed and "bound" or "unused")
+      check(tag .. ": wand firing during the global cooldown, the next step still shows", f.name.text == "Shoot" and nextText(f):find("^Corruption in %d+s") ~= nil,
+        f.name.text .. " / " .. nextText(f))
+      M.gcdUntil = nil
+      M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(1)
+    end
+  end
 
 ---------------------------------------------------------------------------
 -- Every level 1-60: only suggest what the character has at that level.
@@ -939,8 +968,8 @@ elseif SCENARIO == "sweep" then
     return f
   end
 
-  -- The smart key at every level: its steps must be castable, in the coach's order, and
-  -- end on something that is safe to keep pressing (wand, a filler spell or attacking).
+  -- The smart key at every level: one /castsequence of spells you know, in the coach's
+  -- order, that fits one macro; it never ends on a spell you should not keep casting.
   local smartSeen = {}
   local function smartKey(level, opts, spells)
     local s = ns.C.lastState
@@ -948,37 +977,35 @@ elseif SCENARIO == "sweep" then
     for _, m in ipairs(ns.Engine.macros(profile, s)) do made[m.name] = true end
     check(("%s L%d: the pull macro fits the game's 255 characters"):format(WANT, level), made["CC Pull"] == true)
     for _, variant in ipairs({ "with its macros", "without any macro" }) do
-      local has = { macro = function(name) return variant == "with its macros" and made[name] == true end }
-      local steps, gate = ns.Engine.smartSteps(profile, s, has)
+      local has = { macro = function(name) return variant == "with its macros" and made[name] == true end,
+        shoot = variant == "with its macros" and "!Shoot" or nil }
+      local built, gate = ns.Engine.smartSteps(profile, s, has)
+      local steps = built.entries
       local tag = ("%s L%d smart key %s wand=%s pet=%s"):format(WANT, level, variant, tostring(opts.wand), tostring(opts.pet))
       local names = {}
       for i, st in ipairs(steps) do
-        names[i] = st.kind .. ":" .. st.value
-        if st.kind == "spell" then
-          local known = false
-          for _, sp in pairs(spells) do if sp.name == st.value then known = true end end
-          check(tag .. ": step " .. i .. " is a spell you know", known, st.value)
-        else
-          check(tag .. ": step " .. i .. " is a macro that exists", made[st.value] == true, st.value)
-        end
+        names[i] = st.text
+        local known = false
+        for _, sp in pairs(spells) do if sp.name == st.label then known = true end end
+        check(tag .. ": step " .. i .. " is a spell you know", known, st.label)
       end
       local line = table.concat(names, " > ")
-      -- with a wand the key holds a whole fight (the wand between); without one, the pull
-      check(tag .. ": never more steps than a pull, or with a wand a fight, needs", #steps <= (opts.wand and ns.Engine.FIGHT_STEPS + 1 or 8), line)
+      if built.macrotext then
+        check(tag .. ": it fits one macro", #built.macrotext <= 255, #built.macrotext .. " " .. built.macrotext)
+        check(tag .. ": the coach reads the same sequence the key runs", built.macrotext:find("/castsequence " .. built.sequence, 1, true) ~= nil, built.macrotext)
+      end
       local last = steps[#steps]
-      if last then
-        local meta = last.kind == "spell" and profile.spells[last.value]
-        check(tag .. ": the step it stays on is safe to keep pressing", not (meta and meta.debuff), line)
+      if last and #steps > 1 then
+        local meta = profile.spells[last.key]
+        check(tag .. ": it does not end on a damage-over-time spell", not (meta and meta.debuff), line)
         if opts.wand then
-          -- a class that keeps casting at full mana (the Priest's Smite) ends on that spell: the coach moves you to the wand's own key when mana drops
-          local nuke = last.kind == "spell" and last.value ~= "Shoot"
+          -- a class that keeps casting at full mana (the Priest's Smite) ends on that spell
           check(tag .. ": with a wand it ends on the wand, or on the spell the coach casts at full mana",
-            nuke or last.value == (variant == "with its macros" and "CC Wand" or "Shoot"), line)
+            last.key == "Shoot" or not (meta and meta.debuff), line)
         end
       end
-      if next(spells) and (variant == "with its macros" or opts.wand) then check(tag .. ": it has steps", #steps >= 1, line) end
+      if next(spells) and opts.wand then check(tag .. ": it has steps", #steps >= 1, line) end
       if gate then check(tag .. ": the gate's macro exists", made[gate.macro] == true, tostring(gate.macro)) end
-      check(tag .. ": the whole pull plan fits the key", #ns.Engine.plan(profile, s) == #ns.Engine.plan(profile, s, 20), #ns.Engine.plan(profile, s, 20))
       smartSeen[line] = smartSeen[line] or level
     end
   end

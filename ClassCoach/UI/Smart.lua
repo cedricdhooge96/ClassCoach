@@ -4,17 +4,17 @@
 --   * One key press may do one thing. That never changes.
 --   * An addon may not choose, during a fight, what your key will cast. So
 --     the plan is loaded into a secure button BETWEEN fights (your level,
---     spells, demon and usual kill time), and in a fight only the game's own
---     secure code steps through it.
---   * Three keys, bound in the game's Keybindings screen (AddOns > ClassCoach):
---       Next     cast the next step; after the last one it stays on the filler
---       Again    cast the previous step once more (the coach tells you when a
---                spell was resisted)
---       Restart  go back to the first step (a new enemy joined)
---   * It goes back to the first step by itself when your enemy dies or you
---     drop your target, and it will not cut off a spell you are channeling.
+--     spells, demon, mana and usual kill time), as one /castsequence.
+--   * The game's own cast sequence moves on only when the spell really went
+--     off. A cast that fails (out of range, not ready, still casting) stays the
+--     next step: press again. It starts over by itself on a new target and
+--     after a fight, and after its last step.
+--   * The coach reads where the sequence is (QueryCastSequence, the same
+--     thing the game's own buttons read) and shows exactly that step.
+--   * One key, bound in the game's Keybindings screen (AddOns > ClassCoach).
+--     It will not cut off a spell you are channeling.
 --
--- This is the same mechanism addons like GSE use: one press, one action.
+-- This is the same mechanism a /castsequence macro uses: one press, one action.
 local _, ns = ...
 
 local Smart = {}
@@ -22,63 +22,38 @@ ns.Smart = Smart
 
 local NAME = "ClassCoachSmartButton"
 Smart.NAME = NAME
-local BIND = { next = "CLICK " .. NAME .. ":LeftButton", again = "CLICK " .. NAME .. ":RightButton",
-  restart = "CLICK " .. NAME .. ":MiddleButton" }
-local CLICKS = { next = "LeftButton", again = "RightButton", restart = "MiddleButton" }
+local BIND = { next = "CLICK " .. NAME .. ":LeftButton" }
+local CLICKS = { next = "LeftButton" }
 
 -- Names shown in the game's Keybindings screen
 BINDING_HEADER_CLASSCOACH = "ClassCoach"
-_G["BINDING_NAME_" .. BIND.next] = "Smart key: next step"
-_G["BINDING_NAME_" .. BIND.again] = "Smart key: cast the last step again"
-_G["BINDING_NAME_" .. BIND.restart] = "Smart key: start over"
+_G["BINDING_NAME_" .. BIND.next] = "Smart key"
 
 -- Runs inside the game's secure environment on every key press, before the
--- press acts. It may only read what the game lets secure code read. It picks
--- the step and puts it on the button; the press then performs it.
+-- press acts. It may only read what the game lets secure code read. It puts the
+-- cast sequence on the button; the press then runs it.
 -- (Secure code may not contain comments or define functions, so it has neither.)
 local ON_CLICK = [[
   if not down then return end
-  local count = self:GetAttribute("cc-count") or 0
-  if count < 1 then return end
-  local step = self:GetAttribute("cc-step") or 1
-  if button == "RightButton" then
-    step = self:GetAttribute("cc-last") or 1
-  elseif button == "MiddleButton" then
-    step = 1
+  local text = self:GetAttribute("cc-text")
+  if not text or button ~= "LeftButton" then
+    self:SetAttribute("type", nil)
+    return
   end
-  if step < 1 then step = 1 end
-  if step > count then step = count end
-  if button == "LeftButton" and SecureCmdOptionParse("[channeling] hold; go") == "hold" then
+  if SecureCmdOptionParse("[channeling] hold; go") == "hold" then
     self:SetAttribute("type", nil)
     return
   end
   local gate = self:GetAttribute("cc-gate")
-  if gate and step == 1 and SecureCmdOptionParse(gate) == "hold" then
+  if gate and SecureCmdOptionParse(gate) == "hold" then
     self:SetAttribute("type", "macro")
+    self:SetAttribute("macrotext", nil)
     self:SetAttribute("macro", self:GetAttribute("cc-gate-macro"))
     return
   end
-  local kind = self:GetAttribute("cc-t" .. step)
-  self:SetAttribute("type", kind)
-  if kind == "spell" then
-    self:SetAttribute("spell", self:GetAttribute("cc-v" .. step))
-  else
-    self:SetAttribute("macro", self:GetAttribute("cc-v" .. step))
-  end
-  self:SetAttribute("cc-last", step)
-  if step < count then
-    self:SetAttribute("cc-step", step + 1)
-  else
-    self:SetAttribute("cc-step", count)
-  end
-]]
-
--- Back to step one when there is no living enemy targeted.
-local ON_RESET = [[
-  if newstate == "reset" then
-    self:SetAttribute("cc-step", 1)
-    self:SetAttribute("cc-last", 1)
-  end
+  self:SetAttribute("type", "macro")
+  self:SetAttribute("macro", nil)
+  self:SetAttribute("macrotext", text)
 ]]
 
 local function inCombat() return InCombatLockdown and InCombatLockdown() end
@@ -92,55 +67,35 @@ function Smart.create()
   local built, why = pcall(function()
     b:RegisterForClicks("AnyDown", "AnyUp")
     b:SetAttribute("useOnKeyDown", true)
-    b:SetAttribute("cc-count", 0)
-    b:SetAttribute("cc-step", 1)
     b:WrapScript(b, "OnClick", ON_CLICK)
-    b:SetAttribute("_onstate-ccreset", ON_RESET)
-    RegisterStateDriver(b, "ccreset", "[@target,harm,nodead] keep; reset")
   end)
   if not built then Smart.error = tostring(why) return false end
   Smart.button = b
   return true
 end
 
--- steps = { { kind = "spell" | "macro", value = name, label = shown name } }
+-- built = { entries = { { key, label, text } }, sequence, macrotext } (Engine.smartSteps)
 -- gate  = { when = "[pet:Voidwalker,nocombat]", macro = "CC Send" }: while `when`
---         holds, the first press runs that macro and stays on step one.
--- Out of combat only; returns true when the button now holds these steps.
-function Smart.load(steps, gate)
+--         holds, a press runs that macro instead.
+-- Out of combat only; returns true when the button now holds this sequence.
+function Smart.load(built, gate)
   local b = Smart.button
   if not b or inCombat() then return false end
-  local sig = {}
-  for i, st in ipairs(steps) do sig[i] = st.kind .. ":" .. st.value end
-  sig = table.concat(sig, "|") .. "#" .. (gate and (gate.when .. gate.macro) or "")
+  local text = built and built.macrotext
+  local sig = (text or "") .. "#" .. (gate and (gate.when .. gate.macro) or "")
   if sig == Smart.signature then return true end
   local done = pcall(function()
-    for i, st in ipairs(steps) do
-      b:SetAttribute("cc-t" .. i, st.kind)
-      b:SetAttribute("cc-v" .. i, st.value)
-    end
-    b:SetAttribute("cc-count", #steps)
-    b:SetAttribute("cc-step", 1)
-    b:SetAttribute("cc-last", 1)
+    b:SetAttribute("cc-text", text)
     b:SetAttribute("cc-gate", gate and (gate.when .. " hold; go") or nil)
     b:SetAttribute("cc-gate-macro", gate and gate.macro or nil)
   end)
   if not done then return false end
-  Smart.signature, Smart.steps = sig, steps
+  Smart.signature, Smart.steps, Smart.sequence = sig, built.entries or {}, built.sequence
   return true
 end
 
--- Back to the first step. Out of combat only (between fights an addon may set
--- the button's attributes): when a fight ends and when you change target
--- outside a fight, so every pull starts from the beginning.
-function Smart.restart()
-  local b = Smart.button
-  if not b or inCombat() then return false end
-  return pcall(function()
-    b:SetAttribute("cc-step", 1)
-    b:SetAttribute("cc-last", 1)
-  end)
-end
+-- The game starts the sequence over by itself (a new target, the end of a fight).
+function Smart.restart() return true end
 
 local function shortKey(key)
   if type(key) ~= "string" or key == "" then return nil end
@@ -148,7 +103,7 @@ local function shortKey(key)
 end
 
 -- Where the key is right now: readable at any time, also in combat.
--- { ready, count, nextLabel, lastLabel, keys = { next, again, restart } }
+-- { ready, count, step, nextLabel, firstLabel, keys = { next } }
 local keyCache, keysAt = {}, -100
 function Smart.status()
   local b, steps = Smart.button, Smart.steps
@@ -161,20 +116,20 @@ function Smart.status()
     end
   end
   local keys = keyCache
-  local out = { ready = b ~= nil and steps ~= nil and #steps > 0, count = steps and #steps or 0, keys = keys }
+  local out = { ready = b ~= nil and steps ~= nil and #steps > 0 and Smart.sequence ~= nil, count = steps and #steps or 0, keys = keys }
   if out.ready then
-    local fine, step, last = pcall(function() return b:GetAttribute("cc-step"), b:GetAttribute("cc-last") end)
-    if fine and type(step) == "number" then
-      out.step = step
-      out.nextLabel = steps[step] and steps[step].label
-      out.lastLabel = type(last) == "number" and steps[last] and steps[last].label or nil
-      out.firstLabel = steps[1] and steps[1].label
+    -- the game's own record of the sequence: the step its next press casts
+    local fine, index = pcall(QueryCastSequence, Smart.sequence)
+    if fine and type(index) == "number" and steps[index] then
+      out.step = index
+      out.nextLabel, out.nextText = steps[index].label, steps[index].text
+      out.firstLabel = steps[1].label
     end
   end
   return out
 end
 
--- Binds a key without the Keybindings screen: /coach smart next 1
+-- Binds a key without the Keybindings screen: /coach smart 1
 function Smart.bind(what, key)
   if not CLICKS[what] or not Smart.button or inCombat() then return false end
   local ok = pcall(function()
@@ -188,7 +143,7 @@ end
 function Smart.describe()
   local lines = {}
   for i, st in ipairs(Smart.steps or {}) do
-    lines[#lines + 1] = ("%d %s%s"):format(i, st.label, i == #Smart.steps and " (stays here)" or "")
+    lines[#lines + 1] = ("%d %s%s"):format(i, st.label, i == #Smart.steps and " (then it starts over)" or "")
   end
   return lines
 end

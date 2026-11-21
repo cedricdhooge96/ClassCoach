@@ -291,9 +291,8 @@ function C.syncSmart()
   -- The secure button is only made once you use it: a key bound to it, or /coach smart.
   if not ns.Smart.button and not C.smartWanted and not ns.Smart.status().keys.next then return false end
   if not ns.Smart.create() then return false end
-  local steps, gate, warn = Engine.smartSteps(C.profile, s, { macro = API.macroExists })
-  C.smartWarn = warn
-  return ns.Smart.load(steps, gate)
+  local built, gate = Engine.smartSteps(C.profile, s, { macro = API.macroExists, shoot = API.shootText() })
+  return ns.Smart.load(built, gate)
 end
 
 -- What the coach would put on your three bars right now.
@@ -709,18 +708,12 @@ local function tick()
   if smart and smart.ready and smart.keys.next and smart.step then
     view.chain, view.followsKey = Engine.followKey(profile, s, view.chain, ns.Smart.steps, smart.step, fresh, 1 + after)
   end
-  -- After a resist the coach wants the same spell again: that is the Again key.
+  -- When the ring shows the key's next step, it shows the key's binding.
   local now1 = view.chain[1]
-  if smart and smart.ready then
-    if now1.retry and smart.keys.again and smart.lastLabel == now1.label then
-      now1.keybind, now1.viaSmart = smart.keys.again, "again"
-    elseif smart.keys.next and smart.nextLabel == now1.label then
-      now1.keybind, now1.viaSmart = smart.keys.next, "next"
-    elseif smart.keys.restart and smart.step and smart.step > 1 and smart.firstLabel == now1.label and fresh then
-      -- a new enemy in the same fight: the key is past its opening, Restart casts it
-      now1.keybind, now1.viaSmart = smart.keys.restart, "restart"
-      now1.why = "New enemy: press Restart (" .. smart.keys.restart .. ") to start your smart key over with " .. now1.label .. "."
-    end
+  -- A wand that already fires is left alone: written plain "Shoot", a press would switch it off.
+  local stopsWand = now1 and now1.running and smart and smart.nextText and smart.nextText:sub(1, 1) ~= "!"
+  if smart and smart.ready and smart.keys.next and smart.nextLabel == now1.label and not stopsWand then
+    now1.keybind, now1.viaSmart = smart.keys.next, "next"
   end
   view.drawMana = API.drawMana
   -- What you already did to this enemy, and what is still ticking on it.
@@ -1289,8 +1282,9 @@ local function check()
   add("damage over time: %s", table.concat(durations, ", "))
   add("built-in rotation assistant on this client: %s", tostring(C_AssistedCombat ~= nil))
   local st = ns.Smart.status()
-  add("smart key: button %s, %s steps, at step %s, keys next=%s again=%s restart=%s", tostring(ns.Smart.button ~= nil), st.count,
-    tostring(st.step), tostring(st.keys.next), tostring(st.keys.again), tostring(st.keys.restart))
+  add("smart key: button %s, %s steps, at step %s (%s), key %s, wand written as %s", tostring(ns.Smart.button ~= nil), st.count,
+    tostring(st.step), tostring(st.nextLabel), tostring(st.keys.next), tostring(API.shootText()))
+  add("global cooldown readable: %s", tostring(API.gcdReadable()))
   for _, line in ipairs(barLines(API.barState())) do add("bars: %s", line) end
   add("bars seen to leave the screen this session: %d", C.barsLost or 0)
   local clicks = ns.Click.describe()
@@ -1536,6 +1530,7 @@ local function command(msg)
     for i, tip in ipairs(ns.JourneyData.tips or {}) do print(("  %d. %s"):format(i, tip)) end
   elseif cmd == "smart" then
     local what, key = arg:match("^(%S+)%s+(%S+)$")
+    if not what and arg:match("^%S+$") then what, key = "next", arg end   -- /coach smart 1
     if API.inCombat() then say("The smart key can only be set up out of combat.") return end
     C.smartWanted = true
     C.syncMacros(false)   -- it uses a few CC macros (wand, demon, attack)
@@ -1548,7 +1543,7 @@ local function command(msg)
         if type(before) == "string" and before ~= "" and not before:find("ClassCoachSmartButton", 1, true) then
           say(("%s used to be \"%s\". That no longer has this key; give it another under Esc > Options > Keybindings."):format(key:upper(), before))
         end
-      else say("Use: /coach smart next 1   (or again / restart, then the key)") end
+      else say("Use: /coach smart 1   (the key you want)") end
     end
     local st = ns.Smart.status()
     local steps = ns.Smart.describe()
@@ -1557,11 +1552,10 @@ local function command(msg)
       return
     end
     say("Smart key steps: " .. table.concat(steps, ", ") .. ".")
-    if C.smartWarn then say(C.smartWarn) end
-    say("One press per spell: the key moves on with every press, also when a spell is still being cast or was not ready. If it gets ahead, press the lit button on your bar, or Restart.")
-    say(("Keys: next %s, again %s, restart %s."):format(st.keys.next or "not bound", st.keys.again or "not bound", st.keys.restart or "not bound"))
+    say("It only moves on when a spell really went off: out of range or not ready, press it again. It starts over on a new target and after a fight.")
+    say(("Key: %s."):format(st.keys.next or "not bound"))
     if not st.keys.next then
-      say("Bind them in Esc > Options > Keybindings > AddOns > ClassCoach, or type /coach smart next 1 (then again, restart).")
+      say("Bind it in Esc > Options > Keybindings > AddOns > ClassCoach, or type /coach smart 1.")
     end
   elseif cmd == "professions" or cmd == "profession" or cmd == "prof" then
     local who = C.profile.class == "ANY" and (C.class or "character") or (C.profile.spec .. " " .. C.profile.class:sub(1, 1) .. C.profile.class:sub(2):lower())

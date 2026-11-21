@@ -80,7 +80,8 @@ function State:worthDot(key)
   if not lasts or not self.killTime or not self.inCombat then return true end
   if self.inGroup or (self.target and self.target.elite) then return true end
   local left = self.killTime - self:timeOnTarget()
-  return left < 0 or left >= lasts * 0.4
+  local meta = self.meta and self.meta[key]
+  return left < 0 or left >= lasts * (meta and meta.worth or 0.4)
 end
 
 function State:totemUp(element)
@@ -436,67 +437,70 @@ end
 -- The smart key's steps (see UI/Smart.lua)
 ---------------------------------------------------------------------------
 
--- Turns the pull plan into steps for the secure button: the plan's spells in
--- order, then one last step it stays on (wand, a filler spell, or attacking).
+-- The smart key is one /castsequence (see UI/Smart.lua). The game moves a cast
+-- sequence on only when its spell really went off, so a cast that fails (out of
+-- range, not ready, still casting) is simply pressed again: no step is skipped.
+-- It is built from the fight plan: with a wand a whole fight (the pull, the wand,
+-- each damage over time again as it runs out, the wand between); without one,
+-- the pull and then your filler spell a few times. After the last entry the game
+-- starts it over; the coach then shows when that first spell is due again.
 -- profile.smart may adjust it:
---   open  = "CC Open"   a macro to use for the first step (it sends the pet too)
---   tail  = "CC Strike" a macro to stay on at the end, for melee classes
---   gate  = { when = "[pet:Voidwalker,nocombat]", macro = "CC Send" }
---   skip  = { ["Power Word: Shield"] = true }   steps that have their own key
--- has.macro(name) says whether a macro exists.
+--   pet    = true      every press also sends your demon at your target
+--   attack = true      every press also starts your auto attack (melee classes)
+--   finish = "Stormstrike"  a spell to end on, a few times, once you know it
+--   gate   = { when = "[pet:Voidwalker,nocombat]", macro = "CC Send" }
+--   skip   = { ["Power Word: Shield"] = true }   spells that keep their own key
+-- has.macro(name) says whether a macro exists; has.shoot is how the wand is
+-- written in a sequence ("!Shoot" keeps it firing when the game accepts that).
+-- Returns { entries = { { key, label, text } }, sequence, macrotext }, gate.
+Engine.SMART_LIMIT = 255     -- what one macro may hold
+Engine.SMART_RESET = "reset=target/combat"
 function Engine.smartSteps(profile, s, has)
   local smart = profile.smart or {}
-  local steps, tail, lastFiller = {}, nil, nil
-  local plan = Engine.timeline(profile, s)
-  for i, st in ipairs(plan) do
+  local entries, filler = {}, nil
+  local function entry(key, label)
+    local text = label
+    if key == "Shoot" and has.shoot then text = has.shoot end
+    return { key = key, label = label, text = text }
+  end
+  for i, st in ipairs(Engine.timeline(profile, s)) do
     local meta = profile.spells[st.key]
     -- Life Tap and the like are for when the fight needs them: the coach says so, with their own key
     local restores = i > 1 and meta and meta.restores
-    if not (smart.skip and smart.skip[st.key]) and not restores then
-      local step
-      if not st.filler then
-        step = { kind = "spell", value = st.label, label = st.label, key = st.key }
-      elseif st.key == "Shoot" then
-        step = has.macro("CC Wand") and { kind = "macro", value = "CC Wand", label = st.label, key = st.key }
-          or { kind = "spell", value = st.label, label = st.label, key = st.key }
-      elseif not st.melee then
-        step = { kind = "spell", value = st.label, label = st.label, key = st.key }
-      end
-      -- the filler in the middle of the fight is a step of its own (a spell
-      -- stops your wand); the last one is the step the key stays on
-      local prev = steps[#steps]
-      if step and st.filler then lastFiller = step end
-      if step and not (prev and prev.key == step.key and st.filler) then
-        step.filler = st.filler
-        steps[#steps + 1] = step
-      end
+    if not st.melee and s.spells[st.key] and not (smart.skip and smart.skip[st.key]) and not restores then
+      local prev = entries[#entries]
+      if not (prev and prev.key == st.key and st.filler) then entries[#entries + 1] = entry(st.key, st.label) end
+      if st.filler then filler = st.key end
     end
   end
-  -- the step the key stays on: the filler, also when the plan's last step was a spell
-  if steps[#steps] and steps[#steps].filler then tail = table.remove(steps)
-  elseif lastFiller then tail = { kind = lastFiller.kind, value = lastFiller.value, label = lastFiller.label, key = lastFiller.key } end
-  for _, st in ipairs(steps) do st.filler = nil end
-  if not tail then
-    local name = smart.tail and has.macro(smart.tail) and smart.tail or (has.macro("CC Attack") and "CC Attack" or nil)
-    if name then tail = { kind = "macro", value = name, label = name == "CC Attack" and "Attack" or name } end
+  -- a spell you cast again and again at the end (no wand): a few times, so the key keeps casting it
+  local finish = smart.finish and s.spells[smart.finish] and smart.finish
+    or (filler and not (profile.spells[filler] and profile.spells[filler].auto) and filler)
+  if finish then
+    if entries[#entries] and entries[#entries].key == finish then entries[#entries] = nil end
+    for _ = 1, 4 do entries[#entries + 1] = entry(finish, s.spells[finish].name) end
   end
-  if tail then steps[#steps + 1] = tail end
-  if #steps > 0 and smart.open and steps[1].kind == "spell" and has.macro(smart.open) then
-    steps[1] = { kind = "macro", value = smart.open, label = steps[1].label }
+  local lines = {}
+  if smart.pet then lines[#lines + 1] = "/petattack [pet,@target,harm,nodead]" end
+  if smart.attack then lines[#lines + 1] = "/startattack [@target,harm,nodead]" end
+  local function build()
+    local texts = {}
+    for i, e in ipairs(entries) do texts[i] = e.text end
+    local sequence = Engine.SMART_RESET .. " " .. table.concat(texts, ", ")
+    local all = {}
+    for _, l in ipairs(lines) do all[#all + 1] = l end
+    all[#all + 1] = "/castsequence " .. sequence
+    return sequence, table.concat(all, "\n")
+  end
+  local sequence, macrotext = build()
+  while #macrotext > Engine.SMART_LIMIT and #entries > 1 do
+    entries[#entries] = nil
+    sequence, macrotext = build()
   end
   local gate = smart.gate
   if gate and not has.macro(gate.macro) then gate = nil end
-  -- What to know about the step the key stays on. A wand cast as a plain spell
-  -- switches off again on the next press, and a key that ends on a spell casts
-  -- that spell on every further press.
-  local warn
-  local last = steps[#steps]
-  if last and last.kind == "spell" and last.value == (s.spells["Shoot"] and s.spells["Shoot"].name) then
-    warn = "Without the CC Wand macro, a second press on the wand step stops your wand. Type /coach macros."
-  elseif last and not tail then
-    warn = "The key stays on " .. last.label .. " and casts it again on every press. Follow the coach when it moves you to another key."
-  end
-  return steps, gate, warn
+  if #entries == 0 then return { entries = {} }, gate end
+  return { entries = entries, sequence = sequence, macrotext = macrotext }, gate
 end
 
 ---------------------------------------------------------------------------
@@ -565,6 +569,13 @@ function Engine.followKey(profile, s, chain, keySteps, at, fresh, max)
     else
       -- the key's spell is due. The coach only overrides with a spell the key does not hold.
       if not now.filler and not onKey[now.key] then return chain, false end
+      -- a spell that does not tick (a pull spell the sequence came back round to) that
+      -- the coach does not want now: don't press the key, keep on with the filler
+      if now.filler and not (kMeta and kMeta.debuff) then
+        local wanted = false
+        for _, st in ipairs(chain) do if st.key == K.key then wanted = true end end
+        if not wanted then return chain, false end
+      end
       first = asStep(K)
       if not first then return chain, false end
       if now.key == K.key then first.why = now.why else first.why = first.label .. ": next on your smart key." end
