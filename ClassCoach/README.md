@@ -187,7 +187,9 @@ A macro cannot do this. A `/castsequence` moves on after a resisted cast, becaus
 
 ## The smart key
 
-One key that walks the coach's plan: opening spells in order, then it stays on your wand, filler spell or attack. No looping back, no cutting off a channel, and it returns to the first step by itself when your enemy dies.
+One key that walks the coach's plan. With a wand it holds a whole fight: the opening spells, the wand, then each damage-over-time spell again in the order they run out with the wand between (about a minute's worth), and at the end it stays on the wand. Without a wand it holds the pull and then stays on your filler spell or attack. No looping back, no cutting off a channel, and it returns to the first step by itself when your enemy dies.
+
+**The coach shows the key's own steps.** While the key is bound, the ring always shows what the key's next press casts, the steps beside it are the key's next steps, and a spell still ticking says when it is due ("Corruption in 6s"). Press the key when the ring shows the key's badge. The coach only shows another key when the key's step cannot be right: a resist (Again), a new enemy (Restart), a spell you cannot cast now (mana, cooldown, immune), Life Tap on low mana (it is never on the key), or a spell that ran out while the key waits for another one.
 
 - Bind three keys under Esc > Options > Keybindings > AddOns > ClassCoach (or type `/coach smart next 1`, `/coach smart again 2`, `/coach smart restart 3`):
   **Next** casts the next step. **Again** casts the previous step once more, for a resist. **Restart** goes back to the start, for a new enemy.
@@ -199,7 +201,7 @@ Its limits, which come from how the game's secure buttons work:
 - **One press per spell.** The key moves on with every press, also when the spell could not be cast (still casting the last one, not ready, out of range). Pressing it faster than your spells go off skips steps. When that happens the coach shows the skipped spell's own key and lights its button; Restart puts the key back at the start.
 - **It starts over by itself** when your target dies, when you drop your target, when a fight ends, and when you pick a new target between fights.
 - **In a fight, a new enemy needs Restart** when you switch straight from one living enemy to another (the game gives the key no way to notice that). The ring then shows your Restart key, with why.
-- **It is planned at the mana you have before the pull.** Each planned spell spends its cost, so on low mana the steps reach your wand (or Life Tap) sooner, and when your mana changes between fights (you drank, you cast a buff) the key is loaded again by itself. In a fight the game does not let an addon change it: when the coach changes its advice there (mana lower than planned, an enemy about to die), follow the coach's key and the lit button.
+- **It is planned at the mana you have before the pull.** Each planned spell spends its cost, so on low mana the steps reach your wand (or Life Tap) sooner, and when your mana changes between fights (you drank, you cast a buff) the key is loaded again by itself. In a fight the game does not let an addon change it: when the coach has to change its advice there (mana lower than planned), it shows the other spell's own key and lights its button.
 - The `CC Pull` macro is the other way to put the opening on one key: it only moves on when a spell really went off, but it cannot repeat a resisted spell and it starts over after its last step.
 
 What it is not: the addon does not decide during a fight what the key casts. The game forbids that, and nothing here works around it. The plan is loaded into the game's own secure button between fights; in a fight one press is still one cast, the same rule macros follow.

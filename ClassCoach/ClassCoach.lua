@@ -240,10 +240,10 @@ function C.lendMacroKeys()
   end
 end
 
--- The pull plan as one line ("Bane of Agony>Corruption>Shoot"), to notice when it changes.
+-- The fight plan as one line ("Bane of Agony>Corruption>Shoot>..."), to notice when it changes.
 local function planLine(s)
   local names = {}
-  for _, st in ipairs(Engine.plan(C.profile, s)) do names[#names + 1] = st.key end
+  for _, st in ipairs(Engine.timeline(C.profile, s)) do names[#names + 1] = st.key end
   return table.concat(names, ">")
 end
 
@@ -700,16 +700,23 @@ local function tick()
   local before, after = ns.Panel.steps(ClassCoachDB)
   view.chain = Engine.chain(profile, s, 1 + after)
   view.planning = view.next == nil
-  -- The smart key: when its next step is what the coach wants, show that key.
+  -- The smart key: while you use it, the coach shows the key's own steps
+  -- (Engine.followKey), so the two never disagree; it only takes over, with
+  -- another key, when the key's step cannot be right.
+  local smart = ClassCoachDB.smartKey ~= false and view.chain[1] and ns.Smart.status() or nil
+  local tkey = s.target and s.target.exists and s.target.key
+  local fresh = not tkey or (#C.tracker:dotsOn(tkey, now) == 0 and #C.tracker:recent(tkey, 1, now, 60) == 0)
+  if smart and smart.ready and smart.keys.next and smart.step then
+    view.chain, view.followsKey = Engine.followKey(profile, s, view.chain, ns.Smart.steps, smart.step, fresh, 1 + after)
+  end
   -- After a resist the coach wants the same spell again: that is the Again key.
   local now1 = view.chain[1]
-  local smart = ClassCoachDB.smartKey ~= false and now1 and ns.Smart.status() or nil
   if smart and smart.ready then
     if now1.retry and smart.keys.again and smart.lastLabel == now1.label then
       now1.keybind, now1.viaSmart = smart.keys.again, "again"
     elseif smart.keys.next and smart.nextLabel == now1.label then
       now1.keybind, now1.viaSmart = smart.keys.next, "next"
-    elseif smart.keys.restart and smart.step and smart.step > 1 and smart.firstLabel == now1.label then
+    elseif smart.keys.restart and smart.step and smart.step > 1 and smart.firstLabel == now1.label and fresh then
       -- a new enemy in the same fight: the key is past its opening, Restart casts it
       now1.keybind, now1.viaSmart = smart.keys.restart, "restart"
       now1.why = "New enemy: press Restart (" .. smart.keys.restart .. ") to start your smart key over with " .. now1.label .. "."

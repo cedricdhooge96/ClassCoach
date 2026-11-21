@@ -739,13 +739,16 @@ elseif SCENARIO == "warlock" then
   SlashCmdList.CLASSCOACH("errors")
   SlashCmdList.CLASSCOACH("smart")
   local b = ns.Smart.button
-  check("smart key: secure button made and loaded", b ~= nil and b:GetAttribute("cc-count") == 3, b and b:GetAttribute("cc-count"))
+  check("smart key: secure button made and loaded", b ~= nil and b:GetAttribute("cc-count") == #ns.Smart.steps and #ns.Smart.steps > 4, b and b:GetAttribute("cc-count"))
   check("smart key: resets when no living enemy is targeted", M.drivers.ccreset.conditions == "[@target,harm,nodead] keep; reset")
   local steps = table.concat(ns.Smart.describe(), ", ")
-  check("smart key at half mana: the plan leaves out Immolate (spare mana only)", steps == "1 Bane of Agony, 2 Corruption, 3 Shoot (stays here)", steps)
+  check("smart key at half mana: the plan leaves out Immolate (spare mana only)", steps:find("^1 Bane of Agony, 2 Corruption, 3 Shoot, 4 Corruption, 5 Shoot")
+    and not steps:find("Immolate") and steps:find("Shoot %(stays here%)$"), steps)
+  check("the key holds a whole fight: each damage over time again when it runs out, the wand between", steps:find("Bane of Agony", 20, true) ~= nil, steps)
+  check("Life Tap is never on the key: the coach asks for it, with its own key, when the fight needs it", not steps:find("Life Tap"), steps)
   M.P.mana = 300; M.advance(2.5); tick(ns); M.advance(2.5); tick(ns)   -- a new plan is loaded once it holds for two checks
   steps = table.concat(ns.Smart.describe(), ", ")
-  check("smart key: after drinking to full it is loaded again by itself, with Immolate", steps == "1 Bane of Agony, 2 Corruption, 3 Immolate, 4 Shoot (stays here)", steps)
+  check("smart key: after drinking to full it is loaded again by itself, with Immolate", steps:find("^1 Bane of Agony, 2 Corruption, 3 Immolate, 4 Shoot, 5 Corruption, 6 Shoot, 7 Immolate, 8 Shoot, 9 Bane of Agony") ~= nil, steps)
   check("a plan that only flickers is never loaded", (function()
     local before = ns.C.planSeen
     ns.C.planNext = "flicker"; M.advance(2.1); tick(ns)
@@ -766,7 +769,10 @@ elseif SCENARIO == "warlock" then
   kind, what = M.press(b)
   check("then the wand", kind == "macro" and what == "CC Wand", tostring(what))
   kind, what = M.press(b)
-  check("and it stays on the wand: no looping back", what == "CC Wand" and b:GetAttribute("cc-step") == 4, tostring(what))
+  check("after the wand: the spell that runs out first, Corruption", what == "Corruption" and b:GetAttribute("cc-step") == 6, tostring(what))
+  for _ = 1, 30 do M.press(b) end
+  kind, what = M.press(b)
+  check("at the end of the fight's plan it stays on the wand: no looping back", what == "CC Wand" and b:GetAttribute("cc-step") == b:GetAttribute("cc-count"), tostring(what))
   M.channeling = true; kind = M.press(b); M.channeling = false
   check("never cuts off a channel", kind == nil)
   kind, what = M.press(b, "MiddleButton")
@@ -800,6 +806,39 @@ elseif SCENARIO == "warlock" then
   M.press(b); M.press(b)
   target({ name = "Crab", level = 12, hostile = true, guid = "Creature-43" })
   check("a new target between fights: back at step one too", b:GetAttribute("cc-step") == 1, b:GetAttribute("cc-step"))
+
+  -- The coach follows the smart key: the ring shows the key's own next step, always.
+  local killKept = ClassCoachCharDB.kill
+  ClassCoachCharDB.kill = nil
+  local function keyNext() return ns.Smart.status().nextLabel end
+  M.P.mana = 300; M.advance(2.5); tick(ns); M.advance(2.5); f = tick(ns)   -- full mana: the key is loaded with Immolate
+  check("follow: before the pull the ring is the key's first step, on the key", f.name.text == keyNext() and f.name.text == "Bane of Agony" and f.key.text == "1", f.name.text .. "/" .. tostring(f.key.text))
+  check("follow: what comes next is the key's own order", nextText(f) == "Corruption > Immolate", nextText(f))
+  M.press(b); cast(980); M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED"); M.advance(1.5); f = tick(ns)
+  check("follow: Corruption, as on the key", f.name.text == "Corruption" and keyNext() == "Corruption" and f.key.text == "1", f.name.text)
+  M.press(b); cast(172); M.advance(1.5); f = tick(ns)
+  check("follow: Immolate, as on the key", f.name.text == "Immolate" and keyNext() == "Immolate" and f.key.text == "1", f.name.text)
+  M.press(b); cast(348); M.advance(2); f = tick(ns)
+  check("follow: the wand, as on the key", f.name.text == "Shoot" and keyNext() == "Shoot" and f.key.text == "1", f.name.text)
+  M.press(b); cast(5019); M.advance(1); f = tick(ns)
+  check("follow: wand firing; next is the key's next, Corruption, with when", f.name.text == "Shoot" and keyNext() == "Corruption"
+    and nextText(f):find("^Corruption in %d+s > Shoot") ~= nil, f.name.text .. " / " .. nextText(f))
+  for _ = 1, 40 do M.advance(0.5); f = tick(ns); if f.name.text ~= "Shoot" then break end end
+  check("follow: Corruption ran out: the ring and the key both say Corruption", f.name.text == "Corruption" and keyNext() == "Corruption" and f.key.text == "1", f.name.text .. "/" .. tostring(keyNext()))
+  M.press(b); cast(172); M.advance(1.5); f = tick(ns)
+  check("follow: then the wand again", f.name.text == "Shoot" and keyNext() == "Shoot", f.name.text .. "/" .. tostring(keyNext()))
+  -- the wand step skipped: Immolate runs out while the key is still on the wand step before it
+  for _ = 1, 40 do M.advance(0.5); f = tick(ns); if f.name.text ~= "Shoot" or f.why.text:find("then Immolate") then break end end
+  check("follow: the key's wand step comes first, then the spell after it", f.name.text == "Shoot" and keyNext() == "Shoot" and f.key.text == "1"
+    and f.why.text:find("then Immolate") ~= nil and nextText(f):find("^Immolate") ~= nil, f.name.text .. " / " .. f.why.text .. " / " .. nextText(f))
+  M.press(b); cast(5019); M.advance(0.2); f = tick(ns)
+  check("follow: then Immolate on the key", f.name.text == "Immolate" and keyNext() == "Immolate" and f.key.text == "1", f.name.text)
+  -- low mana: Life Tap is not on the key, so the coach asks for it with its own key
+  M.P.mana = 40; M.advance(0.5); f = tick(ns)
+  check("follow: low mana, the coach takes over with Life Tap and not the smart key", f.name.text == "Life Tap" and f.key.text ~= "1", f.name.text .. "/" .. tostring(f.key.text))
+  M.P.mana = 300
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
+  ClassCoachCharDB.kill = killKept
   -- pulled with the wand anyway: the time on the enemy starts with your first real spell
   local killBefore = ClassCoachCharDB.kill
   ClassCoachCharDB.kill = { n = 5, avg = 12 }   -- your enemies usually die in 12 seconds
@@ -924,7 +963,8 @@ elseif SCENARIO == "sweep" then
         end
       end
       local line = table.concat(names, " > ")
-      check(tag .. ": never more steps than a pull needs", #steps <= 8, line)
+      -- with a wand the key holds a whole fight (the wand between); without one, the pull
+      check(tag .. ": never more steps than a pull, or with a wand a fight, needs", #steps <= (opts.wand and ns.Engine.FIGHT_STEPS + 1 or 8), line)
       local last = steps[#steps]
       if last then
         local meta = last.kind == "spell" and profile.spells[last.value]

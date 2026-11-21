@@ -257,6 +257,17 @@ function Sim:advance(seconds)
   self.now = self.now + seconds
   self.fightTime = self.fightTime + seconds
 end
+-- Time passes with nothing cast (the wand, a melee swing): mana comes back
+-- once five seconds have passed since the last spell, at the rate Core/Mana.lua
+-- uses when the game gives none.
+function Sim:wait(seconds)
+  if self.mana and seconds > 5 then
+    self.mana = math.min(self.manaMax, self.mana + (seconds - 5) * ns.Mana.FALLBACK_REGEN * self.manaMax)
+    self.manaPct = self.mana / self.manaMax * 100
+    self.manaLevel = ns.Mana.level(self.manaPct, self.profile.mana or {}, self.manaLevel)
+  end
+  self:advance(seconds)
+end
 function Sim:debuffLeft(key)
   local at, lasts = self.virtualAt[key], self:duration(key)
   if at and lasts then return math.max(0, at + lasts - self.now) end
@@ -320,7 +331,7 @@ local function later(profile, s, sim)
   end
   table.sort(times)
   for _, t in ipairs(times) do
-    sim:advance(t + 0.1 - sim.now)
+    sim:wait(t + 0.1 - sim.now)
     local found = pick(profile.priority, sim)
     if found then
       found.inSeconds = t - s.now
@@ -332,7 +343,11 @@ end
 -- Up to `max` steps. Step 1 is what Engine.next shows; with nothing targeted
 -- out of combat it is the plan for your next pull. A step with `inSeconds`
 -- is not due yet: it comes up again in that many seconds.
-function Engine.chain(profile, s, max)
+-- With `fight` (seconds) the chain plays a whole fight that long: after the
+-- filler, each spell that comes back as it runs out, then the filler again.
+-- Only when the filler repeats by itself (a wand: one press, it keeps firing).
+-- A filler spell you cast again and again cannot be one step of a fixed key.
+function Engine.chain(profile, s, max, fight)
   max = max or 3
   local steps = {}
   local first = Engine.next(profile, s) or opening(profile, s)
@@ -341,11 +356,17 @@ function Engine.chain(profile, s, max)
   while current and #steps < max do
     steps[#steps + 1] = current
     if current.filler then
-      if #steps < max and s.inCombat then
-        local again = later(profile, s, sim)
-        if again then steps[#steps + 1] = again end
+      if #steps >= max or not (s.inCombat or fight) then break end
+      local again = later(profile, s, sim)
+      if not again then break end
+      local meta = profile.spells[current.key]
+      if not fight or not (meta and meta.auto) then
+        if s.inCombat then steps[#steps + 1] = again end
+        break
       end
-      break
+      if sim.fightTime > fight then break end
+      steps[#steps + 1] = again
+      current = again   -- pressed below like any other step
     end
     sim:pressed(current.key)
     local nextStep = pick(profile.priority, sim) or filler(profile, sim)
@@ -425,19 +446,36 @@ end
 -- has.macro(name) says whether a macro exists.
 function Engine.smartSteps(profile, s, has)
   local smart = profile.smart or {}
-  local steps, tail = {}, nil
-  for _, st in ipairs(Engine.plan(profile, s)) do
-    if not (smart.skip and smart.skip[st.key]) then
+  local steps, tail, lastFiller = {}, nil, nil
+  local plan = Engine.timeline(profile, s)
+  for i, st in ipairs(plan) do
+    local meta = profile.spells[st.key]
+    -- Life Tap and the like are for when the fight needs them: the coach says so, with their own key
+    local restores = i > 1 and meta and meta.restores
+    if not (smart.skip and smart.skip[st.key]) and not restores then
+      local step
       if not st.filler then
-        steps[#steps + 1] = { kind = "spell", value = st.label, label = st.label }
+        step = { kind = "spell", value = st.label, label = st.label, key = st.key }
       elseif st.key == "Shoot" then
-        tail = has.macro("CC Wand") and { kind = "macro", value = "CC Wand", label = st.label }
-          or { kind = "spell", value = st.label, label = st.label }
+        step = has.macro("CC Wand") and { kind = "macro", value = "CC Wand", label = st.label, key = st.key }
+          or { kind = "spell", value = st.label, label = st.label, key = st.key }
       elseif not st.melee then
-        tail = { kind = "spell", value = st.label, label = st.label }
+        step = { kind = "spell", value = st.label, label = st.label, key = st.key }
+      end
+      -- the filler in the middle of the fight is a step of its own (a spell
+      -- stops your wand); the last one is the step the key stays on
+      local prev = steps[#steps]
+      if step and st.filler then lastFiller = step end
+      if step and not (prev and prev.key == step.key and st.filler) then
+        step.filler = st.filler
+        steps[#steps + 1] = step
       end
     end
   end
+  -- the step the key stays on: the filler, also when the plan's last step was a spell
+  if steps[#steps] and steps[#steps].filler then tail = table.remove(steps)
+  elseif lastFiller then tail = { kind = lastFiller.kind, value = lastFiller.value, label = lastFiller.label, key = lastFiller.key } end
+  for _, st in ipairs(steps) do st.filler = nil end
   if not tail then
     local name = smart.tail and has.macro(smart.tail) and smart.tail or (has.macro("CC Attack") and "CC Attack" or nil)
     if name then tail = { kind = "macro", value = name, label = name == "CC Attack" and "Attack" or name } end
@@ -462,6 +500,92 @@ function Engine.smartSteps(profile, s, has)
 end
 
 ---------------------------------------------------------------------------
+-- The stepper follows the smart key
+---------------------------------------------------------------------------
+
+-- The coach and the smart key must say the same thing. The key walks a fixed
+-- list (the game lets nothing change it during a fight), so while you use it
+-- the coach shows the key's own steps, in the key's order, with the real
+-- timers of this enemy. The coach only takes over, with another key, when the
+-- key's step cannot be right: it was resisted (Again), a new enemy (Restart),
+-- the spell is not usable now (mana, cooldown, immune), or a spell that is not
+-- on the key is needed (Life Tap on low mana).
+--   chain  the coach's own steps (1 = now)
+--   keySteps, at  the key's steps (Smart.steps) and the step its next press casts
+--   fresh  true when nothing of yours is on this enemy yet
+-- Returns the chain to show (the coach's own when it takes over) and whether it follows the key.
+function Engine.followKey(profile, s, chain, keySteps, at, fresh, max)
+  local now = chain[1]
+  local K = keySteps and at and keySteps[at]
+  if not now or not K or not K.key or now.retry then return chain, false end
+  if fresh and at > 1 then return chain, false end      -- a new enemy: the coach says Restart
+  local onKey = {}
+  for _, st in ipairs(keySteps) do if st.key then onKey[st.key] = true end end
+  local function asStep(st, inSeconds)
+    local sp = s.spells[st.key]
+    if not sp then return nil end
+    local meta = profile.spells[st.key]
+    return { key = st.key, label = sp.name, icon = sp.icon, keybind = s.keys and s.keys[sp.name],
+      filler = meta and meta.auto or nil, inSeconds = inSeconds, onKey = true }
+  end
+  local function leftOn(key)
+    local meta = profile.spells[key]
+    if not (meta and meta.debuff) or not s.target or not s.target.exists then return 0 end
+    return s:debuffLeft(key) or 0
+  end
+  local function canCast(key)
+    if not s.spells[key] or s:immune(key) then return false end
+    local meta = profile.spells[key]
+    if meta and meta.auto then return true end
+    return s:ready(key) ~= false and s:usable(key) ~= false
+  end
+  local kMeta = profile.spells[K.key]
+  local kFiller = kMeta and kMeta.auto
+  local first, from
+  if kFiller then
+    -- The key is on the wand. When the coach wants the spell right after it
+    -- on the key, the wand step comes first (one press), then that spell.
+    local after = keySteps[at + 1]
+    if not now.filler and not (after and after.key == now.key) then return chain, false end
+    if now.filler then
+      first = now
+    else
+      first = asStep(K)
+      if not first then return chain, false end
+      first.why = "Next on your smart key: the wand, then " .. now.label .. "."
+    end
+    from = at + 1
+  else
+    if not canCast(K.key) then return chain, false end
+    local left = leftOn(K.key)
+    if left > 0.5 then
+      -- the key's next spell is still ticking: wait (the coach's filler), it is next
+      if not now.filler then return chain, false end
+      first, from = now, at
+    else
+      -- the key's spell is due. The coach only overrides with a spell the key does not hold.
+      if not now.filler and not onKey[now.key] then return chain, false end
+      first = asStep(K)
+      if not first then return chain, false end
+      if now.key == K.key then first.why = now.why else first.why = first.label .. ": next on your smart key." end
+      from = at + 1
+    end
+  end
+  local out, seen = { first }, {}
+  for i = from, #keySteps do
+    if #out >= (max or 3) then break end
+    local st = keySteps[i]
+    if st.key and not (i == from and first.key == st.key and first.filler) then
+      local wait = not seen[st.key] and leftOn(st.key) or 0
+      seen[st.key] = true
+      local step = asStep(st, wait > 0.5 and wait or nil)
+      if step then out[#out + 1] = step end
+    end
+  end
+  return out, true
+end
+
+---------------------------------------------------------------------------
 -- Macros a profile offers (built from the spells you know)
 ---------------------------------------------------------------------------
 
@@ -474,6 +598,16 @@ function Engine.plan(profile, s, max)
   local fresh = setmetatable({ manaLevel = s.manaPct and s.manaLevel or "high", manaPct = s.manaPct or 100, inCombat = false, fightTime = 0,
     target = { exists = false, key = "plan" } }, { __index = s })
   return Engine.chain(profile, fresh, max or 8)
+end
+
+-- The plan for a whole fight, as the smart key walks it: the pull, the filler,
+-- each damage-over-time spell again when it runs out, the filler again, and so
+-- on for about a minute (or until your usual kill time says it is not worth it).
+Engine.FIGHT_SECONDS, Engine.FIGHT_STEPS = 60, 20
+function Engine.timeline(profile, s)
+  local fresh = setmetatable({ manaLevel = s.manaPct and s.manaLevel or "high", manaPct = s.manaPct or 100, inCombat = false, fightTime = 0,
+    target = { exists = false, key = "plan" } }, { __index = s })
+  return Engine.chain(profile, fresh, Engine.FIGHT_STEPS, Engine.FIGHT_SECONDS)
 end
 
 -- Spell names of a plan, in order, for a /castsequence. Steps in `skip` are

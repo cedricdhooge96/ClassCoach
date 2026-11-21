@@ -35,6 +35,7 @@ end
 -- L = { mana, max, at, lastSpend }. mana is nil until there is anything to go on.
 local FSR = 5
 local FALLBACK_REGEN = 0.006   -- share of your maximum per second, when the game won't say
+Mana.FALLBACK_REGEN = FALLBACK_REGEN
 local DRINK_SECONDS = 20       -- water for your level fills you up in about this long
 
 function Mana.ledger() return {} end
