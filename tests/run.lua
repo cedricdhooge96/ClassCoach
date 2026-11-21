@@ -762,6 +762,28 @@ elseif SCENARIO == "warlock" then
   check("panel: after a resist it points at the Again key", f.name.text == "Bane of Agony" and f.key.text == "2", f.name.text .. "/" .. tostring(f.key.text))
   M.press(b, "RightButton"); cast(980); M.advance(1.5); f = tick(ns)
   check("panel: then on with the Next key", f.name.text == "Corruption" and f.key.text == "1", f.name.text .. "/" .. tostring(f.key.text))
+  -- Straight on to a second enemy in the same fight: the key is past its opening.
+  M.P.bindings["CLICK ClassCoachSmartButton:MiddleButton"] = "3"
+  M.press(b); cast(172); M.advance(1.5)
+  target({ name = "Crab", level = 12, hostile = true, guid = "Creature-42" })
+  M.advance(2.1); f = tick(ns)
+  check("a new enemy mid-fight: the ring points at the Restart key, with why", f.name.text == "Bane of Agony" and f.key.text == "3"
+    and f.why.text:find("press Restart (3)", 1, true) ~= nil, f.name.text .. "/" .. tostring(f.key.text) .. " " .. f.why.text)
+  -- the fight ends with the key on its wand step: the next pull starts from the beginning
+  M.press(b); M.press(b); M.press(b)
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
+  check("fight over: the smart key is back at step one by itself", b:GetAttribute("cc-step") == 1, b:GetAttribute("cc-step"))
+  M.press(b); M.press(b)
+  target({ name = "Crab", level = 12, hostile = true, guid = "Creature-43" })
+  check("a new target between fights: back at step one too", b:GetAttribute("cc-step") == 1, b:GetAttribute("cc-step"))
+  -- pulled with the wand anyway: the time on the enemy starts with your first real spell
+  local killBefore = ClassCoachCharDB.kill
+  ClassCoachCharDB.kill = { n = 5, avg = 12 }   -- your enemies usually die in 12 seconds
+  M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED")
+  for _ = 1, 6 do cast(5019); M.advance(1.5) end
+  f = tick(ns)
+  check("nine seconds of wand on a 12-second enemy: the coach still wants your damage over time", f.name.text == "Bane of Agony", f.name.text)
+  ClassCoachCharDB.kill = killBefore
   M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
   target(nil)
   SlashCmdList.CLASSCOACH("check")

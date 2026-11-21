@@ -708,6 +708,10 @@ local function tick()
       now1.keybind, now1.viaSmart = smart.keys.again, "again"
     elseif smart.keys.next and smart.nextLabel == now1.label then
       now1.keybind, now1.viaSmart = smart.keys.next, "next"
+    elseif smart.keys.restart and smart.step and smart.step > 1 and smart.firstLabel == now1.label then
+      -- a new enemy in the same fight: the key is past its opening, Restart casts it
+      now1.keybind, now1.viaSmart = smart.keys.restart, "restart"
+      now1.why = "New enemy: press Restart (" .. smart.keys.restart .. ") to start your smart key over with " .. now1.label .. "."
     end
   end
   view.drawMana = API.drawMana
@@ -993,6 +997,8 @@ end
 function handlers.PLAYER_TARGET_CHANGED()
   API.targetChanged()
   C.targetKey = nil
+  -- a new target between fights: the smart key starts from the beginning
+  if not API.inCombat() then safely("smart key", ns.Smart.restart) end
 end
 function handlers.NAME_PLATE_UNIT_ADDED(token)
   API.plateAdded(token)
@@ -1044,6 +1050,7 @@ end
 
 function handlers.PLAYER_REGEN_ENABLED()
   safely("settings window", ns.Window.combat, false)
+  safely("smart key", ns.Smart.restart)   -- the next pull starts from the beginning
   C_Timer.After(0.3, function()
     safely("fight report", finishFight)
     if C.rescanDue then rescanSoon() end

@@ -18,6 +18,12 @@ function Tracker.new()
   return setmetatable({ lastCast = {}, dots = {}, totems = {}, pre = {}, recentCasts = {}, immune = {}, fight = nil, last = nil }, Tracker)
 end
 
+-- A wand (and a hunter's Auto Shot) reports every shot as a new cast. Shots
+-- that follow each other are ONE cast: the first shot goes into the history,
+-- the next ones only move its time on, until you cast something else.
+local REPEATS = { Shoot = true, ["Auto Shot"] = true }
+Tracker.REPEATS = REPEATS
+
 local function record(f, c)
   f.casts[c.name] = (f.casts[c.name] or 0) + 1
   -- Spells that give mana back (Life Tap): a rough share of your maximum.
@@ -30,9 +36,11 @@ local function record(f, c)
   if not on then
     on = {}
     f.onTarget[c.target] = on
-    f.engaged[c.target] = c.at
     f.targets = f.targets + 1
   end
+  -- How long you have been on an enemy counts from your first real spell on it:
+  -- a few wand shots first must not make the coach think it is nearly dead.
+  if not f.engaged[c.target] and not REPEATS[c.name] then f.engaged[c.target] = c.at end
   on[c.name] = (on[c.name] or 0) + 1
 end
 
@@ -58,11 +66,6 @@ end
 
 -- meta: the profile's data for this spell (debuff, totem, lasts, optional...)
 -- duration: how long its damage over time lasts, when known better than meta.debuff
--- A wand (and a hunter's Auto Shot) reports every shot as a new cast. Shots
--- that follow each other are ONE cast: the first shot goes into the history,
--- the next ones only move its time on, until you cast something else.
-local REPEATS = { Shoot = true, ["Auto Shot"] = true }
-Tracker.REPEATS = REPEATS
 
 function Tracker:cast(now, name, cost, meta, targetKey, duration)
   self.lastCast[name] = now

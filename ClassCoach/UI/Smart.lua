@@ -130,6 +130,18 @@ function Smart.load(steps, gate)
   return true
 end
 
+-- Back to the first step. Out of combat only (between fights an addon may set
+-- the button's attributes): when a fight ends and when you change target
+-- outside a fight, so every pull starts from the beginning.
+function Smart.restart()
+  local b = Smart.button
+  if not b or inCombat() then return false end
+  return pcall(function()
+    b:SetAttribute("cc-step", 1)
+    b:SetAttribute("cc-last", 1)
+  end)
+end
+
 local function shortKey(key)
   if type(key) ~= "string" or key == "" then return nil end
   return (key:gsub("SHIFT%-", "S"):gsub("CTRL%-", "C"):gsub("ALT%-", "A"):gsub("NUMPAD", "N"):gsub("BUTTON", "M"))
@@ -156,6 +168,7 @@ function Smart.status()
       out.step = step
       out.nextLabel = steps[step] and steps[step].label
       out.lastLabel = type(last) == "number" and steps[last] and steps[last].label or nil
+      out.firstLabel = steps[1] and steps[1].label
     end
   end
   return out

@@ -196,13 +196,14 @@ One key that walks the coach's plan: opening spells in order, then it stays on y
 Its limits, which come from how the game's secure buttons work:
 
 - **One press per spell.** The key moves on with every press, also when the spell could not be cast (still casting the last one, not ready, out of range). Pressing it faster than your spells go off skips steps. When that happens the coach shows the skipped spell's own key and lights its button; Restart puts the key back at the start.
-- **A new enemy needs Restart** when you switch straight from one living enemy to another. It goes back to the start by itself only when your target dies or you have no target.
+- **It starts over by itself** when your target dies, when you drop your target, when a fight ends, and when you pick a new target between fights.
+- **In a fight, a new enemy needs Restart** when you switch straight from one living enemy to another (the game gives the key no way to notice that). The ring then shows your Restart key, with why.
 - **It is planned at the mana you have before the pull.** Each planned spell spends its cost, so on low mana the steps reach your wand (or Life Tap) sooner, and when your mana changes between fights (you drank, you cast a buff) the key is loaded again by itself. In a fight the game does not let an addon change it: when the coach changes its advice there (mana lower than planned, an enemy about to die), follow the coach's key and the lit button.
 - The `CC Pull` macro is the other way to put the opening on one key: it only moves on when a spell really went off, but it cannot repeat a resisted spell and it starts over after its last step.
 
 What it is not: the addon does not decide during a fight what the key casts. The game forbids that, and nothing here works around it. The plan is loaded into the game's own secure button between fights; in a fight one press is still one cast, the same rule macros follow.
 
-A wand reports every shot to addons as a new cast. Shots in a row count as one, and while the wand is still firing it stays in the ring: it only moves to the left ("already cast") once you cast something else.
+A wand reports every shot to addons as a new cast. Shots in a row count as one, and while the wand is still firing it stays in the ring: it only moves to the left ("already cast") once you cast something else. Wand shots also do not start the clock on an enemy: the "nearly dead, skip damage over time" guess counts from your first real spell on it.
 
 ## How the timers work
 
