@@ -236,7 +236,7 @@ local function place(fs, y, value, gap)
     fs:Hide()
     return y
   end
-  fs:SetText(value)
+  ns.Style.set(fs, value)
   fs:SetPoint("TOP", fs:GetParent(), "TOP", 0, y)
   fs:Show()
   return y - (fs:GetStringHeight() or 12) - (gap or 4)

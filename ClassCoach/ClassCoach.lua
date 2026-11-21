@@ -923,7 +923,8 @@ local function start()
   if not ok then log("first scan error: %s", tostring(err)) end
   local mana, max = API.mana()
   C.lastMana, C.manaMax = mana, max
-  ns.Style.gameFont = ClassCoachDB.gameFont == true
+  ClassCoachDB.gameFont = nil   -- 0.13.0's setting; the game's font is now the default
+  ns.Style.ownFonts = ClassCoachDB.ownFonts == true
   ns.Panel.create(ClassCoachCharDB, ClassCoachDB)
   ns.Journey.create(ClassCoachCharDB, ClassCoachDB)
   C.optionsReady = ns.Options.build(ClassCoachDB, ClassCoachCharDB, {
@@ -1027,8 +1028,8 @@ local function check()
   add("click to cast: buttons made %s%s; clickable now: %s", tostring(ns.Click.holder ~= nil), ns.Click.error and (" (" .. ns.Click.error .. ")") or "",
     #clicks > 0 and table.concat(clicks, ", ") or "nothing")
   add("bar highlight: style %s, on slot %s; cues played %s", tostring(ClassCoachDB.barGlow), tostring(ns.BarGlow.slot), tostring(ns.Panel.cues or 0))
-  add("fonts: %s", ns.Style.gameFont and "the game's own (your setting)" or ns.Style.fontMissing and ("the game refused " .. ns.Style.fontMissing .. ": using its own font")
-    or "Inter and Marcellus loaded")
+  add("fonts: %s", not ns.Style.ownFonts and "the game's own (ClassCoach's typefaces are off; /coach fonts tests them)"
+    or ("ClassCoach's own; refused: %s; texts put back on the game font because they drew nothing: %d"):format(tostring(ns.Style.fontMissing or "none"), ns.Style.healed or 0))
   add("main bar page %s; Shift+1..6 switch pages: %s", tostring(API.barPage()),
     tostring(API.plain(API.try(GetBindingAction, "SHIFT-2")) == "ACTIONPAGE2"))
   add("actions the game blocked this session: %s", C.blocked and table.concat(C.blocked, " | ") or "none")
@@ -1049,6 +1050,7 @@ local HELP = {
   "/coach bar — lay out three bars by purpose: fight (main bar), react (Action Bar 2), prepare (Action Bar 3). Empty buttons only; \"preview\" just lists, \"replace\" overwrites",
   "/coach build — the talent build you follow; paste an Icy Veins or Warcraft Tavern calculator link after it to follow that one",
   "/coach professions — which two professions suit your class and goal, and what to do next in each",
+  "/coach fonts — a test card for ClassCoach's own typefaces: which sizes and uses this client draws",
   "/coach demo — play the coach's states with your own spells, out of combat, to see and place it",
   "/coach smart — the smart key: one key that walks the coach's plan (shows its steps and keys)",
   "/coach last — repeat the last fight report",
@@ -1269,6 +1271,10 @@ local function command(msg)
     local lines = Engine.professionReport(API.professions(), who, C.professionOptions())
     say(lines[1])
     for i = 2, #lines do print(lines[i]) end
+  elseif cmd == "fonts" then
+    local lines = ns.Style.probe()
+    if #lines > 0 then say("Font test card shown at the top of the screen. Its results:") end
+    for _, line in ipairs(lines) do print("  " .. line) end
   elseif cmd == "demo" then C.toggleDemo()
   elseif cmd == "check" then check()
   else

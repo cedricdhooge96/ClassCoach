@@ -22,29 +22,132 @@ Style.COLORS = {
   xp = { 0.545, 0.420, 0.820 },
 }
 
--- Sets a typeface of the design on a text. If the game will not load the file
--- (or you chose the game's own font in the settings), the text keeps the
--- game's standard font at the same size, so it is never left blank.
-function Style.font(fs, face, size, flags)
-  flags = flags or ""
-  local own = not (ns.Style.gameFont) and FACES[face]
-  local ok, set = false, nil
-  if own then ok, set = pcall(fs.SetFont, fs, FONTS .. own, size, flags) end
-  if not ok or set == false then
-    pcall(fs.SetFont, fs, STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", size, flags)
-    if own then Style.fontMissing = own end
+-- Text.
+--
+-- Every text starts as one of the game's own fonts, picked by size. That is the
+-- look that is known to work in Forever, also for text with a set width (the
+-- lines that wrap, the journey list).
+--
+-- ClassCoach's own typefaces (Inter, Marcellus) are an option, off by default:
+-- in the first test in the game they drew correctly on short labels, and not
+-- at all on text with a set width and on the smallest key badges. `/coach fonts`
+-- draws a test card to find out which sizes and uses the game accepts.
+local GAME_FONTS = {   -- { from this design size up, the font, the same with an outline }
+  { 17, "GameFontHighlightLarge", "GameFontHighlightLarge" },
+  { 13.5, "GameFontHighlightMedium", "GameFontHighlightMedium" },
+  { 11.5, "GameFontHighlight", "GameFontHighlightOutline" },
+  { 0, "GameFontHighlightSmall", "GameFontHighlightSmallOutline" },
+}
+local SMALLEST = "GameFontHighlightSmall"
+local function gameFont(size, flags)
+  for _, row in ipairs(GAME_FONTS) do
+    if size >= row[1] then
+      local name = flags == "OUTLINE" and row[3] or row[2]
+      if type(_G[name]) == "table" then return name end
+      if type(_G[row[2]]) == "table" then return row[2] end
+    end
   end
+  return SMALLEST
 end
 
--- A text in one of the design's typefaces. `flags` is "OUTLINE" for text that
--- sits straight on the game world, with no plate behind it.
+local known = setmetatable({}, { __mode = "k" })   -- text -> { safe = the game font it started as, healed }
+
+-- Puts one of ClassCoach's own typefaces on a text. If the game refuses it, the text goes back to its game font.
+function Style.font(fs, face, size, flags)
+  local own = FACES[face]
+  if not own then return false end
+  local ok, set = pcall(fs.SetFont, fs, FONTS .. own, size, flags or "")
+  if ok and set ~= false then return true end
+  Style.fontMissing = own
+  local safe = known[fs] and _G[known[fs].safe]
+  if safe then pcall(fs.SetFontObject, fs, safe) end
+  return false
+end
+
+-- A text. `flags` is "OUTLINE" for text that sits straight on the game world, with no plate behind it.
 function Style.text(parent, face, size, color, flags)
-  local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  Style.font(fs, face, size, flags)
+  local safe = gameFont(size, flags)
+  local fs = parent:CreateFontString(nil, "OVERLAY", safe)
+  known[fs] = { safe = safe }
+  if Style.ownFonts then Style.font(fs, face, size, flags) end
   local c = color or Style.COLORS.ink
   fs:SetTextColor(c[1], c[2], c[3])
   fs:SetJustifyH("LEFT")
   return fs
+end
+
+-- Sets a text. With ClassCoach's own typefaces on, a text that comes out with
+-- no width at all was not drawn: it goes back to its game font for good.
+function Style.set(fs, value)
+  fs:SetText(value)
+  local k = known[fs]
+  if not Style.ownFonts or not k or k.healed or value == nil or value == "" then return end
+  local w = fs.GetStringWidth and fs:GetStringWidth()
+  if type(w) == "number" and w <= 0 then
+    k.healed = true
+    Style.healed = (Style.healed or 0) + 1
+    if _G[k.safe] then pcall(fs.SetFontObject, fs, _G[k.safe]) end
+    fs:SetText(value)
+  end
+end
+
+-- /coach fonts: a test card. Each of ClassCoach's typefaces and the game's own
+-- font file, at every size the design uses and a few around them, once as a
+-- plain label and once with a set width. What shows on the card, and the
+-- letters in chat, say what this client accepts.
+local PROBE_SIZES = { 9, 10, 11, 12, 13, 14, 16, 18, 19, 20 }
+function Style.probe()
+  if Style.probeFrame then
+    Style.probeFrame:SetShown(not Style.probeFrame:IsShown())
+    return {}
+  end
+  local c = Style.COLORS
+  local f = CreateFrame("Frame", "ClassCoachFontProbe", UIParent)
+  Style.probeFrame = f
+  f:SetFrameStrata("DIALOG")
+  f:SetSize(700, 40 + #PROBE_SIZES * 24)
+  f:SetPoint("TOP", UIParent, "TOP", 0, -60)
+  local bg = f:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints()
+  bg:SetColorTexture(c.dark[1], c.dark[2], c.dark[3], 0.95)
+  local head = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  head:SetPoint("TOPLEFT", 10, -8)
+  head:SetText("ClassCoach font test. Left of each pair: a plain label. Right: the same with a set width. /coach fonts hides this.")
+  local gameFile = STANDARD_TEXT_FONT
+  if type(GameFontNormal) == "table" and GameFontNormal.GetFont then
+    local ok, path = pcall(GameFontNormal.GetFont, GameFontNormal)
+    if ok and type(path) == "string" then gameFile = path end
+  end
+  local columns = { { "Inter-Regular", FONTS .. FACES.body }, { "Inter-Bold", FONTS .. FACES.bold },
+    { "Marcellus", FONTS .. FACES.title }, { "game font", gameFile or "Fonts\\FRIZQT__.TTF" } }
+  local function cell(col, row, file, size, wide)
+    local fs = f:CreateFontString(nil, "OVERLAY", SMALLEST)
+    local ok, set = pcall(fs.SetFont, fs, file, size, "")
+    fs:SetTextColor(c.ink[1], c.ink[2], c.ink[3])
+    fs:SetJustifyH("LEFT")
+    fs:SetPoint("TOPLEFT", 10 + (col - 1) * 172 + (wide and 84 or 0), -30 - (row - 1) * 24)
+    if wide then
+      fs:SetWidth(80)
+      fs:SetWordWrap(false)
+    end
+    fs:SetText("Ag8 " .. size)
+    local w = fs.GetStringWidth and fs:GetStringWidth()
+    local took = fs.GetFont and select(2, pcall(fs.GetFont, fs))
+    -- T/F/n/E: what SetFont answered (true, false, nothing, an error); w/0: whether the text has a width; =/x: whether the text reports this file
+    return (not ok and "E" or set == true and "T" or set == false and "F" or "n")
+      .. ((type(w) == "number" and w > 0) and "w" or "0")
+      .. ((type(took) == "string" and took:lower():gsub("/", "\\") == file:lower():gsub("/", "\\")) and "=" or "x")
+  end
+  local lines = {}
+  for col, column in ipairs(columns) do
+    local parts = {}
+    for row, size in ipairs(PROBE_SIZES) do
+      parts[#parts + 1] = ("%d:%s/%s"):format(size, cell(col, row, column[2], size, false), cell(col, row, column[2], size, true))
+    end
+    lines[#lines + 1] = column[1] .. "  " .. table.concat(parts, " ")
+  end
+  lines[#lines + 1] = "Each entry is size:plain/with a width. T F n E = SetFont said true, false, nothing, or raised an error; w or 0 = the text has a width or not; = or x = the text reports this font file or another."
+  return lines
 end
 
 function Style.tint(tex, c, a)
@@ -135,7 +238,7 @@ function Style.setBadge(b, key)
     b:Hide()
     return
   end
-  b.text:SetText(key)
+  Style.set(b.text, key)
   local w = b.text.GetStringWidth and b.text:GetStringWidth()
   b:SetWidth(math.max(b.size, (type(w) == "number" and w or 0) + 8))
   b:Show()

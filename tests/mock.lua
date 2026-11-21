@@ -347,7 +347,13 @@ local function widget()
     RegisterUnitEvent = function(self, e) self.events[e] = true end,
     UnregisterEvent = function(self, e) self.events[e] = nil end,
     CreateTexture = function() return widget() end,
-    CreateFontString = function() return widget() end,
+    CreateFontString = function(self, name, layer, template)
+      local fs = widget()
+      rawset(fs, "template", template)
+      return fs
+    end,
+    SetFontObject = function(self, object) rawset(self, "fontObject", object); rawset(self, "font", nil) end,
+    GetFont = function(self) local f = rawget(self, "font"); if f then return f[1], f[2], f[3] end end,
     CreateMaskTexture = function() return widget() end,
     AddMaskTexture = function(self, mask) rawset(self, "mask", mask) end,
     SetShown = function(self, on) self.shown = on and true or false end,
@@ -424,6 +430,11 @@ function CreateFrame(kind, name, parent, template)
   if name then _G[name] = f end
   M.frames[#M.frames + 1] = f
   return f
+end
+
+-- The game's own font objects. Forever is not known to have every one, so two are left out on purpose.
+for _, name in ipairs({ "GameFontHighlightSmall", "GameFontHighlight", "GameFontHighlightLarge", "GameFontHighlightSmallOutline", "GameFontNormal" }) do
+  _G[name] = { name = name, GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
 end
 
 M.sounds = {}

@@ -54,7 +54,8 @@ The coach is drawn only with what Forever has: flat colour textures, texture fil
 - **Mana is a status bar.** In combat the value is hidden; `StatusBar:SetValue` is the call that accepts it. Do not build a mana ring.
 - **Secure frames** (the smart key, the click-to-cast buttons) are created, shown, hidden, moved and given attributes out of combat only, and are never anchored to an insecure frame that moves. `tests/mock.lua` raises an error when a test breaks that rule.
 - **Frames over the game's own buttons** (talent marks, bar highlight) are children of `UIParent`, anchored to the button, with the mouse off.
-- A font that fails to load falls back to the game's font (`Style.font`); `/coach check` says which.
+- **Text uses the game's own font objects** (`Style.text` picks one by size). ClassCoach's typefaces are opt-in (`ownFonts`): seen in game on 0.13.0, they drew on plain labels but not on any text with `SetWidth` nor on 9-unit badge text, and the cause is not known yet. `/coach fonts` draws a test card; do not make the typefaces the default before its result is in.
+- Marcellus draws the digit 1 like a capital I: never use it for text with numbers.
 
 ## Sigil
 

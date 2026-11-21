@@ -63,7 +63,7 @@ function Journey.create(charDB, db)
   end))
 
   -- "Level 11" on the left, "79% · rested 4%" on the right, a thin XP bar under both
-  f.title = S.text(f, "title", 18, C.ink)
+  f.title = S.text(f, "bold", 18, C.ink)   -- not Marcellus: its digit 1 reads as a capital I ("Level II")
   f.title:SetPoint("TOPLEFT", PAD, -8)
   local bar = CreateFrame("StatusBar", nil, f)
   bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
@@ -175,7 +175,7 @@ function Journey.render(view)
       r.icon:SetTexture(item.icon or QUESTION)
       r.icon:SetDesaturated(not now)
       r.label:SetTextColor(c[1], c[2], c[3])
-      r.label:SetText(item.text)
+      ns.Style.set(r.label, item.text)
       r.title, r.hint = item.text, item.hint
       r:SetPoint("TOPLEFT", PAD, y)
       r:Show()
@@ -200,7 +200,7 @@ function Journey.render(view)
   end
   f.hint:ClearAllPoints()
   if firstHint then
-    f.hint:SetText(firstHint)
+    ns.Style.set(f.hint, firstHint)
     f.hint:SetPoint("TOPLEFT", PAD, y - 2)
     f.hint:Show()
     y = y - 6 - (f.hint:GetStringHeight() or 12)

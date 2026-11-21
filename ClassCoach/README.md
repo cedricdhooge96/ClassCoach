@@ -39,6 +39,7 @@ ClassCoach is made for **World of Warcraft: Forever** (patch 1.60.x) and no othe
 |---|---|
 | `/coach set compact on` | Changes one setting from chat; `/coach set` lists them |
 | `/coach demo` | Plays the coach's states with your own spells, out of combat, so you can see and place it without fighting |
+| `/coach fonts` | A test card for ClassCoach's own typefaces: which sizes and uses this client draws |
 | `/coach professions` | Which two professions suit your class and goal, and what to do next in each |
 | `/coach pages` | Stops Shift+number from switching your main bar to an empty page |
 | `/coach macros` | Creates or refreshes this class's helper macros (out of combat) |
@@ -72,7 +73,7 @@ Press Esc, then Options > AddOns > ClassCoach. Everything is on one page and app
 - **Coach**: show or hide, size, compact (no explanation), how many steps show before and after the current one (0 to 4 each), the mana bar, the pulse and its sound, the look of the lit bar button (glow, gold frame, sparkles or off), and click to cast.
 - **Journey list**: show or hide, size, and which reminders you want (food, rested XP, trainer and talents, repairs and bags).
 - **Professions**: what you want from them (your own gear, gear and some gold, gold, or level 60), your own two if you prefer, and the three free ones.
-- **Look**: how dark the plate behind the text is, the game's own font instead of ClassCoach's, lock in place.
+- **Look**: how dark the plate behind the text is, ClassCoach's own typefaces instead of the game's font (being tested), lock in place.
 - **Coaching**: profile for this character, skipping damage over time on dying enemies, when to suggest drinking, tips in chat, keeping macros up to date.
 - **Actions**: create or refresh macros, reset panel positions.
 
@@ -205,12 +206,16 @@ If the game says "Your AddOns are experiencing a large number of errors", type `
 
 The offline tests play every level from 1 to 60 for the three class profiles against a fake Forever client, including the smart key's steps, event storms and combat lockdown. They cannot show how the coach looks.
 
-Not yet seen in the real game: the ring and its fonts, the lit bar button, click to cast, the pulse and its sound, the talent window marks, and the profession lines. `/coach check` reports what loaded: the fonts, whether the click buttons were made, and which bar slot is lit.
+Seen in the real game (0.13.0, a level 11 Warlock): the gold ring, the round icons, the key badge, the mana bar, the steps and their caption, and the journey list's headers and icons all draw as designed, and `/coach check` reads spells, keys, professions and the smart key.
+
+What that test also showed: with ClassCoach's own typefaces (Inter and Marcellus), short labels drew correctly, but every text with a set width (the spell's name, the explanation, the journey list's lines) and the smallest key badges drew nothing. Since 0.13.1 all text uses the game's own fonts, which have always worked here. The typefaces are a setting, off by default, until `/coach fonts` has shown which uses this client accepts.
+
+Not yet seen in the real game: the lit bar button, click to cast, the pulse and its sound, the talent window marks, and the profession lines.
 
 ## Credits
 
 - The ring, the true mana bar, the cue, the demo and the drink reminder take their ideas from **Sigil** by Narsil (github.com/thaoms/sigil), a Retribution Paladin helper for Forever. No code or artwork was taken: Sigil is all rights reserved.
-- Fonts: **Inter** by The Inter Project Authors and **Marcellus** by Astigmatic, both under the SIL Open Font License; the licences are in the `Fonts` folder.
+- Fonts (optional, see above): **Inter** by The Inter Project Authors and **Marcellus** by Astigmatic, both under the SIL Open Font License; the licences are in the `Fonts` folder.
 - Talent calculator link tables: **Zbuilds** by Zael98 (MIT).
 - Profession steps: the Forever guides on **wow-professions.com**.
 

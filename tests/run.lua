@@ -1624,15 +1624,36 @@ elseif SCENARIO == "focus" then
   local f = tick(ns)
   local C = ns.Style.COLORS
 
-  -- Typefaces: the design's own, and the game's when a file will not load
-  check("the name is set in Marcellus, the explanation in Inter", f.name.font[1]:find("Marcellus%-Regular%.ttf$") ~= nil and f.name.font[2] == 19
-    and f.why.font[1]:find("Inter%-Regular%.ttf$") ~= nil and f.key.font[1]:find("Inter%-Bold%.ttf$") ~= nil, tostring(f.name.font[1]))
-  check("text that sits on the game world has an outline; text on the plate does not", f.leftLabel.font[3] == "OUTLINE" and f.name.font[3] == "")
+  -- Text: the game's own fonts unless you ask for ClassCoach's typefaces
+  check("by default every text is one of the game's own fonts, picked by size, and no font file is set on it",
+    f.name.template == "GameFontHighlightLarge" and f.why.template == "GameFontHighlight" and f.barText.template == "GameFontHighlightSmallOutline"
+    and rawget(f.name, "font") == nil and rawget(f.why, "font") == nil and rawget(f.key, "font") == nil, tostring(f.name.template) .. " / " .. tostring(f.barText.template))
+  check("a size the game has no font for takes the next one down, and never a font that does not exist",
+    f.key.template == "GameFontHighlight" and f.dots.template == "GameFontHighlightSmall" and _G.GameFontHighlightMedium == nil, tostring(f.key.template))
+  local S = ns.Style
+  S.ownFonts = true
+  local own = S.text(f, "title", 19)
+  check("with ClassCoach's typefaces on, the name is set in Marcellus and labels in Inter", own.font[1]:find("Marcellus%-Regular%.ttf$") ~= nil and own.font[2] == 19
+    and S.text(f, "body", 11, nil, "OUTLINE").font[1]:find("Inter%-Regular%.ttf$") ~= nil and S.text(f, "bold", 9).font[1]:find("Inter%-Bold%.ttf$") ~= nil, tostring(own.font[1]))
   M.refuseFonts = true
-  local probe = ns.Style.text(f, "title", 19)
-  check("a typeface the game refuses falls back to the game's own font, same size", probe.font[1] == "Fonts\\FRIZQT__.TTF" and probe.font[2] == 19
-    and ns.Style.fontMissing == "Marcellus-Regular.ttf", tostring(probe.font[1]))
+  local refused = S.text(f, "title", 19)
+  check("a typeface the game refuses: the text goes back to its game font", rawget(refused, "font") == nil and rawget(refused, "fontObject") == GameFontHighlightLarge
+    and S.fontMissing == "Marcellus-Regular.ttf", tostring(rawget(refused, "fontObject")))
   M.refuseFonts = false
+  -- what the first test in the game showed: a typeface that loads and still draws nothing
+  local blank = S.text(f, "body", 12)
+  blank.GetStringWidth = function(self) return rawget(self, "font") and 0 or 40 end
+  S.set(blank, "Cast it right away.")
+  check("a text that comes out with no width is put back on the game's font, once", rawget(blank, "fontObject") == GameFontHighlight and rawget(blank, "font") == nil
+    and blank.text == "Cast it right away." and S.healed == 1, tostring(S.healed))
+  S.set(blank, "Again."); S.set(blank, "")
+  check("and is left alone after that", S.healed == 1 and blank.text == "")
+  S.ownFonts = false
+  local card = S.probe()
+  check("/coach fonts: a line of results per typeface and for the game's own font, every size plain and with a width", #card == 5 and card[1]:find("^Inter%-Regular  9:") ~= nil
+    and card[4]:find("^game font") ~= nil and select(2, card[3]:gsub("%d+:%u%w%p/%u%w%p", "")) == 10 and S.probeFrame.shown, card[3])
+  check("typing it again hides the card", #S.probe() == 0 and not S.probeFrame.shown)
+  SlashCmdList.CLASSCOACH("fonts"); SlashCmdList.CLASSCOACH("fonts")
   check("icons are cut round with the game's mask", rawget(f.icon, "mask") ~= nil and rawget(f.done[1].icon, "mask") ~= nil)
   check("the ring is gold and the mana bar is the game's status bar, 100 by 5", f.ring.color[1] == C.accent[1] and rawget(f.bar, "width") == 100 and rawget(f.bar, "height") == 5)
 
