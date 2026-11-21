@@ -10,7 +10,7 @@ A beginner's coach for WoW Forever that works for any class. One ring under your
 - **Quiet when you are ready**: with nothing targeted and nothing to prepare, the coach steps back to half strength. Anything to do before a pull brings it back at once.
 - **Click to cast, before a fight**: click an amber "before you pull" icon to cast what fixes it, or the ring to start the pull.
 - **No wasted spells**: the addon learns how long your kills usually take. When an enemy should be nearly dead it stops suggesting new damage over time and tells you to finish it.
-- **Your demon** (Warlock): the pull advice changes with who is out. Voidwalker goes in first; with the Imp you just start casting.
+- **Your demon** (Warlock): the pull advice changes with who is out. The Voidwalker goes in together with your first spell (the pull key does both); with the Imp you just start casting.
 - **Macros**: `/coach macros` makes a few helper macros from the spells you know (see below).
 - **Mana**: the bar under the ring is your real mana, drawn by the game itself. It turns amber, then red, as the advice changes, e.g. "melee only" or "wand until it dies". The pull plan and the smart key are planned against the mana you have (see "How mana works").
 - **Before you pull**: missing buffs, weapon buff, demon, wand and reagents as amber icons left of the ring, and in words under it: "Drink before the next pull" when mana is low.
@@ -111,7 +111,7 @@ The two move independently: drag the coach by its ring and the journey list anyw
 
 Open the game's talent window. The talent to take next **lights up** (in the look and colour you pick) with "Next" above it, and the four after it carry a small round 2, 3, 4, 5. Talents your build never takes are **dimmed**.
 
-Beside the window sits a **build card**: the build you follow, how far along you are, and the next five points, each with its rank and the level the build takes it ("take it now" when you can). It goes on the side with room, or inside the window's corner when neither side has any; drag it anywhere and it stays there ("Put the build card back" in the settings undoes that).
+Beside the window sits a **build card**: the build you follow, how far along you are, and the next talents, ranks of one talent on one line ("Ranks 1 to 4 of 5: take them now", or the levels they come at). "Now" only ever means a point you have to spend. It goes on the side with room, or inside the window's corner when neither side has any; drag it anywhere and it stays there ("Put the build card back" in the settings undoes that).
 
 When you level up and have a point to spend, a short note at the top of the screen names the talent your build takes.
 
@@ -201,6 +201,8 @@ Its limits, which come from how the game's secure buttons work:
 - The `CC Pull` macro is the other way to put the opening on one key: it only moves on when a spell really went off, but it cannot repeat a resisted spell and it starts over after its last step.
 
 What it is not: the addon does not decide during a fight what the key casts. The game forbids that, and nothing here works around it. The plan is loaded into the game's own secure button between fights; in a fight one press is still one cast, the same rule macros follow.
+
+A wand reports every shot to addons as a new cast. Shots in a row count as one: the wand shows once on the left of the ring until you cast something else.
 
 ## How the timers work
 

@@ -120,15 +120,19 @@ function Glow.dress(h, style, colorKey)
 end
 
 -- Lays the glow over a target frame, just above it. Reads the target, never changes it.
-function Glow.attach(h, target)
+-- The level is checked every time: a window that is clicked comes to the front
+-- and its buttons move up with it. `floor`: a level to stay above as well.
+function Glow.attach(h, target, floor)
+  local strata = target.GetFrameStrata and target:GetFrameStrata()
+  local level = target.GetFrameLevel and target:GetFrameLevel()
+  level = math.max(type(level) == "number" and level or 10, type(floor) == "number" and floor or 0)
+  if type(strata) == "string" and h:GetFrameStrata() ~= strata then h:SetFrameStrata(strata) end
+  local want = math.min(level + 10, 9000)
+  if h:GetFrameLevel() ~= want then h:SetFrameLevel(want) end
   if h.target == target then return end
   h.target = target
   h:ClearAllPoints()
   h:SetAllPoints(target)
-  local strata = target.GetFrameStrata and target:GetFrameStrata()
-  local level = target.GetFrameLevel and target:GetFrameLevel()
-  if type(strata) == "string" then h:SetFrameStrata(strata) end
-  h:SetFrameLevel(math.min((type(level) == "number" and level or 10) + 10, 9000))
   local w = target.GetWidth and target:GetWidth()
   w = type(w) == "number" and w > 0 and w or 45
   local size = w / (1 - 2 * HALO_INSET)
@@ -136,12 +140,12 @@ function Glow.attach(h, target)
 end
 
 -- Shows the glow on target with a style and colour; nil target or "off" hides it.
-function Glow.show(h, target, style, colorKey)
+function Glow.show(h, target, style, colorKey, floor)
   if not target or not Glow.dress(h, style, colorKey) then
     Glow.hide(h)
     return false
   end
-  Glow.attach(h, target)
+  Glow.attach(h, target, floor)
   if not h:IsShown() then h:Show() end
   return true
 end

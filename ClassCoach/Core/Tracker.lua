@@ -58,10 +58,21 @@ end
 
 -- meta: the profile's data for this spell (debuff, totem, lasts, optional...)
 -- duration: how long its damage over time lasts, when known better than meta.debuff
+-- A wand (and a hunter's Auto Shot) reports every shot as a new cast. Shots
+-- that follow each other are ONE cast: the first shot goes into the history,
+-- the next ones only move its time on, until you cast something else.
+local REPEATS = { Shoot = true, ["Auto Shot"] = true }
+
 function Tracker:cast(now, name, cost, meta, targetKey, duration)
   self.lastCast[name] = now
   meta = meta or {}
   targetKey = targetKey or "target"
+  local list = self.recentCasts
+  local last = list[#list]
+  if (REPEATS[name] or meta.repeats) and last and last.name == name and last.target == targetKey then
+    last.at, last.shots = now, (last.shots or 1) + 1
+    return
+  end
   local lasts = meta.debuff and (duration or meta.debuff)
   local dotKey = targetKey .. "|" .. name
   local before = self.dots[dotKey]            -- kept so a resisted recast can be undone
@@ -78,7 +89,6 @@ function Tracker:cast(now, name, cost, meta, targetKey, duration)
   end
   if meta.totem then self.totems[meta.totem] = { name = name, expires = now + (meta.lasts or 60) } end
   local c = { name = name, cost = cost, meta = meta, target = targetKey, at = now, dotKey = lasts and dotKey or nil, before = before }
-  local list = self.recentCasts
   list[#list + 1] = c
   if #list > 12 then table.remove(list, 1) end
   if self.fight then

@@ -61,13 +61,13 @@ local TRAINER = {
 local function wandOrMelee(s) return s.hasWand and "wand" or "melee" end
 
 -- How to pull depends on who is at your side:
---   Voidwalker  the tank: let it reach the enemy and hit first
+--   Voidwalker  the tank: it goes in with your first spell (Cedric's choice: no waiting for its first hit)
 --   Imp         ranged and fragile: the enemy comes to you, so just start casting
 --   others      melee damage: send them in, let them land a hit, then cast
 local function pullWith(key, alone)
   return function(s)
     local spell = s.spells[key] and s.spells[key].name or key
-    if s.demon == "Voidwalker" then return "Send your Voidwalker in, let it hit first, then " .. spell .. "." end
+    if s.demon == "Voidwalker" then return "Send your Voidwalker in and cast " .. spell .. " at once: your pull key does both." end
     if s.demon == "Imp" then return "Imp out: cast " .. spell .. " right away. The enemy will come to you." end
     if s.hasPet then return "Send your demon in, let it land a hit, then " .. spell .. "." end
     return alone
@@ -189,11 +189,6 @@ ns.RegisterProfile({
   },
 
   tips = {
-    function(f)
-      if f.demon == "Voidwalker" and f.precast and not f.elite then
-        return "You cast before your Voidwalker reached the enemy. Send it in, wait for its first hit, then start."
-      end
-    end,
     function(f, s)
       if f.hadPet == false and f.duration > 6 and s:have(DEMONS) then
         return "You fought without your demon. Summon it first: it adds free damage and takes hits."
@@ -224,7 +219,7 @@ ns.RegisterProfile({
         local dots = #ns.Engine.sequence(plan)
         local said = ("Follows the coach's pull plan, one spell per press (%d press%s)"):format(dots, dots == 1 and "" or "es")
         if s:known("Shoot") then said = said .. ", then use CC Wand" end
-        if s:known("Summon Voidwalker") then said = said .. ". With the Voidwalker out, the first press only sends it in" end
+        if s:have(DEMONS) then said = said .. ". The first press also sends your demon in" end
         return said .. "."
       end,
       body = function(s, plan)
@@ -234,13 +229,10 @@ ns.RegisterProfile({
         local lines = { "#showtooltip" }
         if s:have(DEMONS) then
           lines[#lines + 1] = "/petattack [harm,nodead]"
-          if s:known("Summon Voidwalker") then lines[#lines + 1] = "/stopmacro [pet:Voidwalker,nocombat]" end
         end
         lines[#lines + 1] = (#order == 1 and "/cast " or "/castsequence reset=target/combat ") .. table.concat(order, ", ")
         return table.concat(lines, "\n")
       end },
-    { name = "CC Send", smart = true, about = "Used by the smart key: sends your demon in.",
-      body = function(s) return s:have(DEMONS) and "/petattack [harm,nodead]" or nil end },
     { name = "CC Open", smart = true, about = "Used by the smart key: demon in, then your first spell.",
       body = function(s, plan)
         local first = ns.Engine.sequence(plan)[1]
@@ -262,9 +254,8 @@ ns.RegisterProfile({
 
   trainer = TRAINER,
 
-  -- The smart key: the first press sends the demon in as well; with the
-  -- Voidwalker out and no fight yet, it only sends it and waits for you.
-  smart = { open = "CC Open", gate = { when = "[pet:Voidwalker,nocombat]", macro = "CC Send" } },
+  -- The smart key: the first press sends the demon in and casts the first spell.
+  smart = { open = "CC Open" },
 
   -- /coach bar: three bars by purpose, the entries in the order they belong on the bar, best candidate first.
   -- An entry you cannot use yet takes no button (or leaves a gap, with the "fixed buttons" setting).

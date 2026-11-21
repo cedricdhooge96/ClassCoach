@@ -319,7 +319,9 @@ function M.talentWindow(open)
   local buttons = {}
   for k = 1, #(P.tree or {}) do
     local node = 7000 + k
-    buttons[k] = { GetNodeID = function() return node end, IsVisible = function() return P.tree[k].hidden ~= true end, node = node }
+    -- like the game: talent buttons sit in a frame drawn at level 1000, far above the window itself
+    buttons[k] = { GetNodeID = function() return node end, IsVisible = function() return P.tree[k].hidden ~= true end, node = node,
+      GetFrameLevel = function(self) return self.level or 1001 end, GetFrameStrata = function() return "HIGH" end }
   end
   local talents = {
     open = open,
@@ -419,6 +421,9 @@ local function widget()
     GetFont = function(self) local f = rawget(self, "font"); if f then return f[1], f[2], f[3] end end,
     CreateMaskTexture = function() return widget() end,
     CreateLine = function() return widget() end,
+    SetFrameLevel = function(self, l) rawset(self, "frameLevel", l) end,
+    GetFrameLevel = function(self) return rawget(self, "frameLevel") end,
+    GetFrameStrata = function(self) return rawget(self, "strata") end,
     GetThumbTexture = function(self) local t = rawget(self, "thumb") or widget(); rawset(self, "thumb", t); return t end,
     AddMaskTexture = function(self, mask) rawset(self, "mask", mask) end,
     SetShown = function(self, on) self.shown = on and true or false end,

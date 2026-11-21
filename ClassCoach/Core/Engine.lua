@@ -1254,24 +1254,52 @@ function Engine.upcomingTalents(plan, count)
   return out
 end
 
--- The next `count` points of a build, one line each, for the card beside the
--- talent window: { name, rank = "2/5", icon, node, level, due } where `level` is
--- when the build takes it (talent points come one a level from 10) and `due`
--- means you can take it now.
+-- The next talents of a build, for the card beside the talent window and the
+-- level-up note. Ranks of one talent that follow each other share a row:
+--   { name, icon, node, known, max, fromRank, toRank, level, toLevel, due, allDue }
+-- `level` is when you can take the first of those ranks, `due` that you can take
+-- it now. With `unspent` (your points waiting to be spent) that is exact: the
+-- first `unspent` points are due and the rest come one a level. Without it the
+-- build's own schedule is used (points come one a level from 10).
 Engine.FIRST_TALENT_LEVEL = 10
-function Engine.talentSchedule(plan, level, count)
-  local out = {}
-  if not plan or not plan.next then return out end
+function Engine.talentSchedule(plan, level, count, unspent)
+  local rows = {}
+  if not plan or not plan.next then return rows end
+  local point = 0
   for k = plan.next, #plan.steps do
     local s = plan.steps[k]
     if not s.taken then
-      local at = Engine.FIRST_TALENT_LEVEL - 1 + k
-      out[#out + 1] = { name = s.name, rank = ("%d/%d"):format(s.want, s.max or s.want), icon = s.icon, node = s.node,
-        known = s.known, level = at, due = level >= at }
-      if #out >= (count or 5) then break end
+      point = point + 1
+      local at, due
+      if type(unspent) == "number" then
+        due, at = point <= unspent, level + math.max(0, point - unspent)
+      else
+        at = Engine.FIRST_TALENT_LEVEL - 1 + k
+        due = level >= at
+      end
+      local last = rows[#rows]
+      if last and last.name == s.name and last.node == s.node and last.toRank == s.want - 1 then
+        last.toRank, last.toLevel, last.allDue = s.want, at, last.allDue and due
+      else
+        if #rows >= (count or 5) then break end
+        rows[#rows + 1] = { name = s.name, icon = s.icon, node = s.node, known = s.known, max = s.max or s.want,
+          fromRank = s.want, toRank = s.want, level = at, toLevel = at, due = due, allDue = due }
+      end
     end
   end
-  return out
+  return rows
+end
+
+-- One row of that schedule in words: "Ranks 1 to 4 of 5: take them now".
+function Engine.describeTalentRow(r)
+  if r.fromRank == r.toRank then
+    local rank = ("Rank %d of %d"):format(r.fromRank, r.max)
+    return r.due and (rank .. ": take it now") or ("%s, at level %d"):format(rank, r.level)
+  end
+  local ranks = ("Ranks %d to %d of %d"):format(r.fromRank, r.toRank, r.max)
+  if r.allDue then return ranks .. ": take them now" end
+  if r.due then return ("%s: the first now, the rest by level %d"):format(ranks, r.toLevel) end
+  return ("%s, levels %d to %d"):format(ranks, r.level, r.toLevel)
 end
 
 -- Talents of the tree that are not part of the build: { [node] = true }.

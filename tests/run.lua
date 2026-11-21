@@ -525,7 +525,7 @@ elseif SCENARIO == "warlock" then
   target({ name = "Gnoll", level = 11, hostile = true, guid = "Creature-5" })
   f = tick(ns)
   check("opener Bane of Agony", f.name.text == "Bane of Agony", f.name.text)
-  check("opener is told for the Voidwalker", f.why.text:find("Voidwalker in, let it hit first") ~= nil, f.why.text)
+  check("opener is told for the Voidwalker", f.why.text:find("Send your Voidwalker in and cast Bane of Agony at once") ~= nil, f.why.text)
   check("warlock chain", nextText(f) == "Corruption > Immolate", nextText(f))
   check("durations read from the spell text", ns.C.spells["Corruption"].duration == 12 and ns.C.spells["Bane of Agony"].duration == 24,
     tostring(ns.C.spells["Corruption"].duration))
@@ -590,7 +590,7 @@ elseif SCENARIO == "warlock" then
   M.advance(10)
   M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
   local tips = table.concat(ns.C.lastReport.tips, " | ")
-  check("tip: cast before the Voidwalker", tips:find("before your Voidwalker") ~= nil, tips)
+  check("no tip for casting together with the Voidwalker: that is how the pull key works now", not tips:find("Voidwalker", 1, true), tips)
   check("dots forgotten after the fight", #ns.C.tracker:dotsOn("g:Creature-5", M.now) == 0)
   check("kill time learned", ClassCoachCharDB.kill and ClassCoachCharDB.kill.n == 1 and ClassCoachCharDB.kill.avg > 10, ClassCoachCharDB.kill and ClassCoachCharDB.kill.avg)
 
@@ -647,8 +647,8 @@ elseif SCENARIO == "warlock" then
   SlashCmdList.CLASSCOACH("macros")
   local pull = M.macros[GetMacroIndexByName("CC Pull")]
   check("pull macro made", pull ~= nil and pull.perChar == true)
-  check("pull macro: demon in, Voidwalker goes first, spells in order", pull and pull.body ==
-    "#showtooltip\n/petattack [harm,nodead]\n/stopmacro [pet:Voidwalker,nocombat]\n/castsequence reset=target/combat Bane of Agony, Corruption, Immolate",
+  check("pull macro: demon in and the first spell on the same press, spells in order", pull and pull.body ==
+    "#showtooltip\n/petattack [harm,nodead]\n/castsequence reset=target/combat Bane of Agony, Corruption, Immolate",
     pull and pull.body)
   check("wand and demon macros", GetMacroIndexByName("CC Wand") > 0 and GetMacroIndexByName("CC Demon") > 0)
   check("macros fit the game's limit", #pull.body <= 255)
@@ -730,10 +730,8 @@ elseif SCENARIO == "warlock" then
   target({ name = "Crab", level = 12, hostile = true, guid = "Creature-41" })
   M.advance(1); tick(ns)
   local kind, what = M.press(b)
-  check("Voidwalker out, no fight yet: the first press only sends it in", kind == "macro" and what == "CC Send" and b:GetAttribute("cc-step") == 1, tostring(what))
+  check("Voidwalker out, no fight yet: the first press sends it in AND casts the opening spell", kind == "macro" and what == "CC Open" and b:GetAttribute("cc-step") == 2, tostring(what))
   M.fire("PLAYER_REGEN_DISABLED"); M.P.combat = true
-  kind, what = M.press(b)
-  check("then the opening spell, with the demon", kind == "macro" and what == "CC Open", tostring(what))
   check("the opening macro", M.macros[GetMacroIndexByName("CC Open")].body == "#showtooltip\n/petattack [harm,nodead]\n/cast Bane of Agony")
   kind, what = M.press(b)
   check("next press: Corruption", kind == "spell" and what == "Corruption", tostring(what))
@@ -1457,6 +1455,11 @@ elseif SCENARIO == "talents" then
   -- 4b. The look: a glow on the next talent, a veil over talents outside the build, and the card
   local holder = ns.Talents.holder
   local nextButton = win.buttons[at["Suppression"]]
+  check("the marks are drawn above the game's talent buttons (level 1000 and up), not just above its window",
+    holder:GetFrameLevel() == 1021 and holder:GetFrameStrata() == "HIGH" and holder.glow:GetFrameLevel() == 1011, tostring(holder:GetFrameLevel()) .. " " .. tostring(holder:GetFrameStrata()) .. " " .. tostring(holder.glow:GetFrameLevel()))
+  nextButton.level = 1500; M.advance(1); tick(ns)
+  check("a window brought to the front: the glow follows it up", holder.glow:GetFrameLevel() == 1510, tostring(holder.glow:GetFrameLevel()))
+  nextButton.level = nil; M.advance(1); tick(ns)
   check("the next talent wears the glow, in the default look", holder.glow.shown and holder.glow.target == nextButton and holder.glow.style == "glow",
     tostring(holder.glow.style))
   local outside, count = ns.Engine.outsideBuild(ns.C.talentState.plan, ns.C.talentState.have), 0
@@ -1473,7 +1476,10 @@ elseif SCENARIO == "talents" then
   check("the card sits beside the window, on the side with room", card.shown and card.where == "right", tostring(card.where))
   local row1 = card.rows[1]
   check("the card: the next point first, with its rank and the level the build takes it", row1.shown and row1.name.text == "Suppression"
-    and row1.detail.text == "Rank 1 of 5, at level 12" and row1.icon.texture ~= nil, row1.name.text .. " / " .. row1.detail.text)
+    and row1.detail.text == "Ranks 1 to 5 of 5: the first now, the rest by level 15" and row1.icon.texture ~= nil, row1.name.text .. " / " .. row1.detail.text)
+  M.P.talentPoints = 0; M.fire("PLAYER_TALENT_UPDATE"); M.advance(3); tick(ns)
+  check("no point to spend: nothing says now, and the levels count from your next point", row1.detail.text == "Ranks 1 to 5 of 5, levels 12 to 16", row1.detail.text)
+  M.P.talentPoints = 1; M.fire("PLAYER_TALENT_UPDATE"); M.advance(3); tick(ns)
   check("five points listed, then progress", card.rows[5].shown and card.progress.text == "2 of 51 points", card.progress.text)
   check("no Learn button unless you ask for it", not card.learn.shown)
   win.left, win.right = 400, 1300; M.advance(1); tick(ns)
@@ -1495,9 +1501,9 @@ elseif SCENARIO == "talents" then
   M.P.level = 12; M.P.talentPoints = 1
   M.fire("PLAYER_LEVEL_UP", 12); M.advance(1); tick(ns)
   local toast = ns.Talents.toastFrame
-  check("level up: a note names the talent your build takes", toast and toast.shown and toast.name.text == "Suppression" and toast.detail.text == "Rank 1/5 of your build"
+  check("level up: a note names the talent your build takes", toast and toast.shown and toast.name.text == "Suppression" and toast.detail.text == "Rank 1 of 5 in your build"
     and not toast.learn.shown, toast and toast.name.text)
-  check("the card now says it is due", card.rows[1].detail.text == "Rank 1 of 5: take it now", card.rows[1].detail.text)
+  check("the card counts from your level now", card.rows[1].detail.text == "Ranks 1 to 5 of 5: the first now, the rest by level 16", card.rows[1].detail.text)
   ClassCoachDB.learnNow = true; M.advance(1); tick(ns)
   check("Learn now turned on: the card offers the talent", card.learn.shown and card.learn.label.text == "Learn Suppression", card.learn.label.text)
   -- the talent window holds a change you have not applied: Learn now waits for you
@@ -1533,7 +1539,7 @@ elseif SCENARIO == "talents" then
   SlashCmdList.CLASSCOACH("build 1")
   M.advance(1); tick(ns)
   check("/coach build 1: that build, with your stray points named", ns.C.talentState.how == "chosen" and banner():find("Next: Improved Corruption (1 of 5)", 1, true) ~= nil
-    and banner():find("2 points taken earlier than this build does", 1, true) ~= nil, banner())
+    and banner():find("2 of your points are in talents this build takes later.", 1, true) ~= nil, banner())
   local stray = ns.Engine.talentPlan({ { name = "Suppression" } }, ns.API.talents())
   check("points the build never asks for are counted as outside it", stray.extra == 2 and stray.offPlan[1].name == "Improved Life Tap")
   M.printed = {}
@@ -2365,6 +2371,28 @@ elseif SCENARIO == "ui" then
   M.P.buffs["Drink"] = nil; M.fire("UNIT_AURA", "player"); M.advance(1); f = tick(ns)
   check("drinking: the count fills up and the full plan is back", ns.C.lastState.manaPct > 95 and planText() == full, tostring(ns.C.lastState.manaPct) .. " " .. planText())
   M.manaSecret = false
+
+  -- 7. A wand reports every shot as a cast: the shots in a row count once
+  M.P.mana = 300; ClassCoachDB.stepsBefore = 4
+  target({ name = "Wolf", level = 12, hostile = true, guid = "Creature-77" })
+  M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED")
+  cast(172); M.advance(1.5); f = tick(ns)
+  cast(5019); M.advance(0.5); f = tick(ns)
+  local function doneText()
+    local parts = {}
+    for i = #f.done, 1, -1 do if f.done[i].shown and rawget(f.done[i], "title") then parts[#parts + 1] = rawget(f.done[i], "title") end end
+    return table.concat(parts, ", ")
+  end
+  local afterOne, nowAfterOne, nextAfterOne = doneText(), f.name.text, nextText(f)
+  for _ = 1, 5 do cast(5019); M.advance(1.5); f = tick(ns) end
+  check("wand shots in a row: one wand step in what you already cast", doneText() == "Corruption, Shoot" and afterOne == "Corruption, Shoot", doneText())
+  check("...and the coach's steps stay put while the wand fires", f.name.text == nowAfterOne and nextText(f) == nextAfterOne, f.name.text .. " | " .. nextText(f))
+  cast(348); M.advance(1.5); f = tick(ns)
+  cast(5019); M.advance(0.5); f = tick(ns)
+  cast(5019); M.advance(1.5); f = tick(ns)
+  check("another spell in between: the wand starts a new step after it", doneText() == "Corruption, Shoot, Immolate, Shoot", doneText())
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(1); target(nil)
+  ClassCoachDB.stepsBefore = 2
   check("no errors logged", errors() == 0, table.concat(ClassCoachDB.log or {}, " | "))
 end
 

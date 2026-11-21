@@ -187,7 +187,9 @@ function C.refreshTalents()
   local have = API.talents()
   local build, how = Engine.pickBuild(buildsFor(profile), customBuild(), have, ClassCoachCharDB.build)
   if not build then C.talentState = nil return end
-  C.talentState = { build = build, how = how, have = have, plan = Engine.talentPlan(build.order, have) }
+  local unspent = API.unspentTalents()
+  C.talentState = { build = build, how = how, have = have, plan = Engine.talentPlan(build.order, have),
+    unspent = unspent == true and 1 or unspent }
   return C.talentState
 end
 
@@ -1081,7 +1083,10 @@ function handlers.PLAYER_LEVEL_UP(level)
   for _, l in ipairs(lines) do say(l) end
   -- the talent to take, as a card at the top of the screen
   if state and state.plan.readable then
-    safely("talent toast", ns.Talents.toast, Engine.talentSchedule(state.plan, level, 1)[1], ClassCoachDB, level)
+    -- the point may not be counted yet when the level-up arrives: a level-up from 10 on brings one
+    local unspent = API.unspentTalents()
+    unspent = math.max(type(unspent) == "number" and unspent or 1, 1)
+    safely("talent toast", ns.Talents.toast, Engine.talentSchedule(state.plan, level, 1, unspent)[1], ClassCoachDB, level)
   end
   rescanSoon()
 end
@@ -1224,6 +1229,7 @@ local function check()
   add("class %s, level %s, profile %s %s (%s)", tostring(C.class), tostring(C.level), C.profile.class, C.profile.spec, tostring(C.profileWhy))
   local pts = API.talentPoints()
   add("talent points %s", pts and table.concat({ pts[1] or 0, pts[2] or 0, pts[3] or 0 }, "/") or "unreadable")
+  add("%s", ns.Talents.describe())
   local have = API.talents()
   add("talents read by name: %s; talent window found: %s; build: %s", have and (#have.list .. " (" .. have.spent .. " points spent)") or "none",
     tostring(ns.Talents.window() ~= nil), C.talentState and C.talentState.build.name or "none")

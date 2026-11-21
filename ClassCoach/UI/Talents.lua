@@ -124,7 +124,8 @@ local function makeCard(holder)
   S.tint(card.rule, C.accent)
   card.kicker = S.text(card, "body", 10, C.muted)
   card.kicker:SetPoint("TOPLEFT", 14, -12)
-  S.set(card.kicker, "Your build")
+  card.kicker:SetWidth(CARD_W - 28)
+  card.kicker:SetWordWrap(true)
   card.title = S.text(card, "bold", 14, C.ink)
   card.title:SetPoint("TOPLEFT", card.kicker, "BOTTOMLEFT", 0, -4)
   card.title:SetWidth(CARD_W - 28)
@@ -184,6 +185,16 @@ function Talents.hide()
   Talents.shown = false
 end
 
+-- For /coach check: what the marks found the last time the talent window was open.
+function Talents.describe()
+  if not Talents.seen then return "talent window: not opened yet this session" end
+  local glow = Talents.holder and Talents.holder.glow
+  return ("talent window: %d buttons, drawn up to level %d; next talent %s; glow %s at level %s; marks at level %s"):format(
+    Talents.seen, Talents.top or 0, Talents.nextFound and "found" or "NOT found",
+    glow and glow:IsShown() and tostring(glow.style) or "hidden", glow and tostring(glow:GetFrameLevel()) or "-",
+    Talents.holder and tostring(Talents.holder:GetFrameLevel()) or "-")
+end
+
 -- Is the game's talent window open right now?
 function Talents.open()
   local t = window()
@@ -217,26 +228,32 @@ local function place(card, t, db)
   end
 end
 
--- Fills the card. Returns the "Next: ..." line (also stored as card.text).
+-- The height a text takes, measured (it may wrap).
+local function tall(fs, fallback)
+  local h = fs:GetStringHeight()
+  return type(h) == "number" and h > 0 and h or fallback
+end
+
+-- Fills the card and lays it out from what its texts measure. Returns the
+-- "Next: ..." line (also stored as card.text).
 local function fillCard(card, state, db, level)
   local plan = state.plan
-  S.set(card.title, tostring(state.build and state.build.name or "your build")
-    .. (state.how == "auto" and " (fits your talents best)" or ""))
+  S.set(card.kicker, state.how == "auto" and "Your build, the one that fits your talents best" or "Your build")
+  S.set(card.title, tostring(state.build and state.build.name or "your build"))
   local total = #plan.steps
   card.bar:SetMinMaxValues(0, math.max(1, total))
   card.bar:SetValue(plan.taken or 0)
   S.set(card.progress, ("%d of %d points"):format(plan.taken or 0, total))
-  local schedule = plan.readable and ns.Engine.talentSchedule(plan, level, ROWS) or {}
+  local schedule = plan.readable and ns.Engine.talentSchedule(plan, level, ROWS, state.unspent) or {}
   for i, r in ipairs(card.rows) do
     local e = schedule[i]
     if e then
       r.icon:SetTexture(e.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+      r.icon:SetDesaturated(not e.known)
       S.set(r.name, e.name)
-      local rank = ("Rank %s"):format((e.rank:gsub("/", " of ")))
-      S.set(r.detail, e.due and (rank .. ": take it now") or ("%s, at level %d"):format(rank, e.level))
+      S.set(r.detail, ns.Engine.describeTalentRow(e))
       local c = e.due and C.accent or C.muted
       r.detail:SetTextColor(c[1], c[2], c[3])
-      r.icon:SetDesaturated(not e.known)
       r.entry = e
       r:Show()
     else
@@ -257,30 +274,38 @@ local function fillCard(card, state, db, level)
   end
   local warn
   if plan.readable and plan.extra > 0 then
-    warn = ("%d point%s outside this build"):format(plan.extra, plan.extra == 1 and "" or "s")
+    warn = ("%d of your points are in talents this build never takes."):format(plan.extra)
+    if plan.extra == 1 then warn = "1 of your points is in a talent this build never takes." end
   elseif plan.readable and plan.ahead > 0 then
-    warn = ("%d point%s taken earlier than this build does"):format(plan.ahead, plan.ahead == 1 and "" or "s")
+    warn = ("%d of your points are in talents this build takes later."):format(plan.ahead)
+    if plan.ahead == 1 then warn = "1 of your points is in a talent this build takes later." end
   end
-  card.text = warn and (line .. "  ·  " .. warn) or line
-  -- under the list: a warning, or the plain line when nothing is listed
+  card.text = warn and (line .. "  " .. warn) or line
+  -- top to bottom, from measured heights
+  local y = 12
+  y = y + tall(card.kicker, 12) + 4 + tall(card.title, 16) + 10 + 4 + 5 + tall(card.progress, 12) + 8
+  y = y + #schedule * ROW_H
   local below = warn or (#schedule == 0 and line) or nil
   card.line:ClearAllPoints()
-  card.line:SetPoint("TOPLEFT", card.rowsTop, "BOTTOMLEFT", 0, -(#schedule * ROW_H) - 4)
+  card.line:SetPoint("TOPLEFT", card.rowsTop, "BOTTOMLEFT", 0, -(#schedule * ROW_H) - 2)
   S.set(card.line, below or "")
   local c = warn and C.warn or C.muted
   card.line:SetTextColor(c[1], c[2], c[3])
   card.line:SetShown(below ~= nil)
-  -- Learn now: only when you turned it on, out of combat, for a talent you can take now
+  local lineH = below and tall(card.line, 14) + 8 or 0
+  y = y + lineH
+  -- Learn now: only when you turned it on, out of combat, with a point to spend on the talent that is next
   local first = schedule[1]
-  local canLearn = db.learnNow == true and first and first.due and first.known and first.node and not ns.API.inCombat()
+  local points = type(state.unspent) == "number" and state.unspent or 0
+  local canLearn = db.learnNow == true and points > 0 and first and first.due and first.known and first.node and not ns.API.inCombat()
   card.learn:ClearAllPoints()
-  card.learn:SetPoint("TOPLEFT", card.rowsTop, "BOTTOMLEFT", 0, -(#schedule * ROW_H) - (below and 26 or 6))
+  card.learn:SetPoint("TOPLEFT", card.rowsTop, "BOTTOMLEFT", 0, -(#schedule * ROW_H) - 2 - lineH)
   card.learn:SetWidth(CARD_W - 28)
   if canLearn then S.set(card.learn.label, "Learn " .. first.name) end
   card.learn.node = canLearn and first.node or nil
   card.learn:SetShown(canLearn and true or false)
-  local height = 12 + 14 + 4 + 18 + 10 + 4 + 5 + 12 + 8 + #schedule * ROW_H + (below and 22 or 0) + (canLearn and 30 or 0) + 12
-  card:SetHeight(height)
+  if canLearn then y = y + 24 + 6 end
+  card:SetHeight(y + 12)
   return line
 end
 
@@ -295,18 +320,27 @@ function Talents.update(state, db, level)
   Talents.db = db
   local plan = state.plan
 
-  -- which talent each of the game's buttons shows
-  local buttons, seen = {}, 0
+  -- which talent each of the game's buttons shows, and how high they are drawn
+  -- (the game draws its talent buttons at level 1000 and up, far above its window)
+  local buttons, seen, top, strata = {}, 0, read(t, "GetFrameLevel") or 0, nil
   for button in t:EnumerateAllTalentButtons() do
     seen = seen + 1
     if seen > 400 then break end
     local ok, node = pcall(button.GetNodeID, button)
-    if ok and type(node) == "number" then buttons[node] = button end
+    if ok and type(node) == "number" then
+      buttons[node] = button
+      top = math.max(top, read(button, "GetFrameLevel") or 0)
+      if not strata then
+        local okS, st = pcall(button.GetFrameStrata, button)
+        strata = okS and type(st) == "string" and st or nil
+      end
+    end
   end
-
-  local strata, level0 = t:GetFrameStrata(), t:GetFrameLevel()
-  if type(strata) == "string" then holder:SetFrameStrata(strata) end
-  if type(level0) == "number" then holder:SetFrameLevel(math.min(level0 + 200, 9000)) end
+  Talents.seen, Talents.top = seen, top
+  strata = strata or t:GetFrameStrata()
+  if type(strata) == "string" and holder:GetFrameStrata() ~= strata then holder:SetFrameStrata(strata) end
+  local want = math.min(top + 20, 9000)
+  if holder:GetFrameLevel() ~= want then holder:SetFrameLevel(want) end
 
   -- the next talent: the glow and its tag; then numbered discs on the ones after it
   local wanted = {}
@@ -332,7 +366,8 @@ function Talents.update(state, db, level)
     end
   end
   for i = used + 1, MARKS do holder.marks[i].node = nil; holder.marks[i]:Hide() end
-  ns.Glow.show(holder.glow, glowOn, db.talentGlow or "glow", db.glowColor)
+  ns.Glow.show(holder.glow, glowOn, db.talentGlow or "glow", db.glowColor, top)
+  Talents.nextFound = glowOn ~= nil
 
   -- a veil over every talent that is not part of the build
   local outside = db.talentDim ~= false and plan.readable and ns.Engine.outsideBuild(plan, state.have) or {}
@@ -448,7 +483,7 @@ function Talents.toast(entry, db, level)
   f.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
   S.set(f.kicker, ("Level %d: a talent point to spend"):format(level))
   S.set(f.name, entry.name)
-  S.set(f.detail, ("Rank %s of your build"):format(entry.rank))
+  S.set(f.detail, ("Rank %d of %d in your build"):format(entry.fromRank, entry.max))
   Talents.toastNode = entry.known and entry.due and entry.node or nil
   f.learn:SetShown(db.learnNow == true and Talents.toastNode ~= nil and not ns.API.inCombat())
   f.untilT = GetTime() + TOAST_SECONDS
