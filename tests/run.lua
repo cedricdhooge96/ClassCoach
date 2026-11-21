@@ -346,7 +346,7 @@ if SCENARIO == "shaman" then
   check("settings page registered with the game", S.category ~= nil and S.category.name == "ClassCoach")
   local count = 0
   for _ in pairs(S.list) do count = count + 1 end
-  check("every option made it onto the page", count == 29 and #ns.Options.registered == 29 and #ns.Options.keys() == 29, count)
+  check("every option made it onto the page", count == 30 and #ns.Options.registered == 30 and #ns.Options.keys() == 30, count)
   check("sections and action buttons", #S.headers == 5 and #S.buttons == 3, #S.headers .. "/" .. #S.buttons)
   check("options write to the saved settings", S.list.compact.tbl == ClassCoachDB and S.list.specChoice.tbl == ClassCoachCharDB)
   check("slider shows its unit", S.list.opacity.opts.format(75) == "75%" and S.list.scale.opts.format(1.1) == "1.10x")
@@ -508,6 +508,25 @@ elseif SCENARIO == "warlock" then
   check("then wand", f.name.text == "Shoot", f.name.text)
   check("chain says when Corruption comes back", f.chainText.text == "Corruption in 8s", f.chainText.text)
   check("two done slots", f.done[1].timer.text == "8" and f.done[2].timer.text == "13", f.done[1].timer.text .. "/" .. f.done[2].timer.text)
+  -- How many steps show on each side is a setting (0 to 4)
+  check("by default two before, two after", f.done[2].shown and not f.done[3].shown and not f.upcoming[3].shown and rawget(f, "side") == 28)
+  ClassCoachDB.stepsBefore, ClassCoachDB.stepsAfter = 4, 4
+  f = tick(ns)
+  check("four before: all three casts on this enemy show, the latest nearest", not f.done[1].shown and f.done[2].shown and f.done[3].shown and f.done[4].shown
+    and f.done[4].timer.text == "13" and f.done[3].timer.text == "8" and f.done[2].timer.text == "20", tostring(f.done[2].timer.text) .. "/" .. tostring(f.done[3].timer.text))
+  check("eight side icons shrink to fit the panel", rawget(f, "side") < 28 and rawget(f, "side") >= 16 and rawget(f, "side") * 8 + 46 + 8 * 8 <= 300, rawget(f, "side"))
+  ClassCoachDB.stepsBefore, ClassCoachDB.stepsAfter = 0, 1
+  f = tick(ns)
+  check("none before", not f.done[1].shown and not f.done[2].shown and not f.done[3].shown and not f.done[4].shown)
+  check("one after: the list under the icon names one step at most", not f.upcoming[2].shown and not f.chainText.text:find(">", 1, true), f.chainText.text)
+  ClassCoachDB.stepsAfter = 0
+  f = tick(ns)
+  check("none after: only the current step", not f.upcoming[1].shown and f.name.text == "Shoot" and f.chainText.text == "", f.chainText.text)
+  ClassCoachDB.stepsBefore, ClassCoachDB.stepsAfter = "lots", -3
+  f = tick(ns)
+  check("a damaged setting falls back to a sane count", rawget(f, "before") == 2 and rawget(f, "after") == 0, tostring(rawget(f, "before")) .. "/" .. tostring(rawget(f, "after")))
+  ClassCoachDB.stepsBefore, ClassCoachDB.stepsAfter = 2, 2
+  f = tick(ns)
   M.advance(8.5); f = tick(ns)
   check("Corruption ran out: cast it again", f.name.text == "Corruption", f.name.text)
   cast(172); M.advance(1.5)
@@ -1241,7 +1260,11 @@ elseif SCENARIO == "talents" then
     actions = { [1] = 686 }, bindings = { ACTIONBUTTON1 = "1" },
   })
   M.P.tree = tree
+  ClassCoachDB = { showDone = false }   -- the old "show what you already cast" switch, turned off
   local ns = load()
+  check("the old switch becomes 'no steps before'", ClassCoachDB.stepsBefore == 0 and ClassCoachDB.showDone == nil and ClassCoachDB.stepsAfter == 2,
+    tostring(ClassCoachDB.stepsBefore))
+  ClassCoachDB.stepsBefore = 2
   local function state() return ns.C.refreshTalents() end
   local function marks()
     local out = {}

@@ -64,7 +64,7 @@ The profile is picked from your talent points (the tree with the most points); b
 
 Press Esc, then Options > AddOns > ClassCoach. Everything is on one page and applies at once. (`/coach set` changes a single setting from chat, for example `/coach set compact on`. The addon never opens the game's settings panel itself: an addon doing that is a known way to upset action bars in combat.)
 
-- **Coach panel**: show or hide, size, compact (icons only), the left "already cast" icons, the timers line, the mana bar.
+- **Coach panel**: show or hide, size, compact (icons only), how many steps show before and after the current one (0 to 4 each), the timers line, the mana bar.
 - **Journey panel**: show or hide, size, and which reminders you want (food, rested XP, trainer and talents, repairs and bags).
 - **Look**: background darkness, thin border, class-colour line, lock in place.
 - **Coaching**: profile for this character, skipping damage over time on dying enemies, when to suggest drinking, tips in chat, keeping macros up to date.

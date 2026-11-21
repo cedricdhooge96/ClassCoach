@@ -485,7 +485,8 @@ local function tick()
     if ClassCoachDB.autoBar then safely("automatic bar fill", C.setupBar, nil, true) end
   end
   view.next = Engine.next(profile, s)
-  view.chain = Engine.chain(profile, s, 3)
+  local before, after = ns.Panel.steps(ClassCoachDB)
+  view.chain = Engine.chain(profile, s, 1 + after)
   view.planning = view.next == nil
   -- The smart key: when its next step is what the coach wants, show that key.
   -- After a resist the coach wants the same spell again: that is the Again key.
@@ -503,7 +504,7 @@ local function tick()
   local key = s.target and s.target.key
   view.done, view.dots = {}, {}
   if key then
-    for _, c in ipairs(C.tracker:recent(key, 2, now, 30)) do
+    for _, c in ipairs(before > 0 and C.tracker:recent(key, before, now, 30) or {}) do
       local sp = s.spells[c.name]
       view.done[#view.done + 1] = { label = sp and sp.name or c.name, icon = sp and sp.icon, missed = c.missed,
         left = profile.spells[c.name] and profile.spells[c.name].debuff and C.tracker:debuffLeft(key, c.name, now) or nil }
@@ -776,6 +777,10 @@ local function start()
   local db = ClassCoachDB
   -- settings saved by older versions
   if db.hidden ~= nil then db.showCoach = not db.hidden; db.hidden = nil end
+  if db.showDone ~= nil then   -- "show what you already cast" became a number of steps
+    if db.showDone == false and db.stepsBefore == nil then db.stepsBefore = 0 end
+    db.showDone = nil
+  end
   if ClassCoachCharDB.spec ~= nil then ClassCoachCharDB.specChoice = ClassCoachCharDB.spec; ClassCoachCharDB.spec = nil end
   if ClassCoachCharDB.specChoice == nil then ClassCoachCharDB.specChoice = "auto" end
   for k, v in pairs(ns.Options.defaults()) do if db[k] == nil then db[k] = v end end

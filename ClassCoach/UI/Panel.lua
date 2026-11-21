@@ -11,6 +11,7 @@ ns.Panel = Panel
 
 local WIDTH = 320
 local SIDE, MAIN, GAP = 28, 46, 16
+local MAX_SIDE = 4   -- the most steps shown on either side of the current one
 local ROW_TOP = -24
 local DEFAULT_BOTTOM = 260   -- how far above the bottom of the screen the panel starts
 local MISSING_SLOTS, MISSING_SIZE = 6, 26
@@ -50,6 +51,57 @@ local function slot(parent, size, x, y)
   return s
 end
 
+-- How many steps to show before and after the current one: 0 to 4 each, 2 unless you changed it.
+local function count(v)
+  v = tonumber(v)
+  if not v or v ~= v then return 2 end
+  return math.max(0, math.min(MAX_SIDE, math.floor(v + 0.5)))
+end
+function Panel.steps(db)
+  db = db or Panel.db or {}
+  return count(db.stepsBefore), count(db.stepsAfter)
+end
+
+-- Places the carousel for `before` icons on the left and `after` on the right.
+-- With more than four side icons they sit closer and get smaller, so the row
+-- always fits the panel.
+local function layout(f, before, after)
+  if f.before == before and f.after == after then return end
+  f.before, f.after = before, after
+  local n = before + after
+  local gap = n > 4 and 8 or GAP
+  local side = SIDE
+  local room = WIDTH - 20 - MAIN - gap * n
+  if n > 0 and side * n > room then side = math.max(16, math.floor(room / n)) end
+  local x = (WIDTH - (side * n + MAIN + gap * n)) / 2
+  local sideY, arrowY = ROW_TOP - (MAIN - side) / 2, ROW_TOP - MAIN / 2 + 6
+  for i = 1, MAX_SIDE do
+    local s = f.done[i]
+    if i <= before then
+      s:SetSize(side, side); s:ClearAllPoints(); s:SetPoint("TOPLEFT", x, sideY)
+      s.arrow:ClearAllPoints(); s.arrow:SetPoint("TOPLEFT", x + side + gap / 2 - 4, arrowY)
+      x = x + side + gap
+    else
+      s:Hide(); s.arrow:Hide()
+    end
+  end
+  f.glow:ClearAllPoints(); f.glow:SetPoint("TOPLEFT", x - 2, ROW_TOP + 2)
+  f.now:ClearAllPoints(); f.now:SetPoint("TOPLEFT", x, ROW_TOP)
+  x = x + MAIN
+  for i = 1, MAX_SIDE do
+    local s = f.upcoming[i]
+    if i <= after then
+      s.arrow:ClearAllPoints(); s.arrow:SetPoint("TOPLEFT", x + gap / 2 - 4, arrowY)
+      x = x + gap
+      s:SetSize(side, side); s:ClearAllPoints(); s:SetPoint("TOPLEFT", x, sideY)
+      x = x + side
+    else
+      s:Hide(); s.arrow:Hide()
+    end
+  end
+  f.side = side
+end
+
 function Panel.create(charDB, db)
   if Panel.frame then return Panel.frame end
   local f = CreateFrame("Frame", "ClassCoachPanel", UIParent)
@@ -87,38 +139,28 @@ function Panel.create(charDB, db)
   title:SetWidth(WIDTH - 20)
   f.title = title
 
-  -- Carousel: done, done, NOW, next, next
-  local total = SIDE * 4 + MAIN + GAP * 4
-  local x = (WIDTH - total) / 2
-  local sideY = ROW_TOP - (MAIN - SIDE) / 2
+  -- Carousel: what you did, NOW, what comes next. Up to four on each side; how
+  -- many show is yours to set (Panel.steps), and layout() places them.
   f.done, f.upcoming, f.arrows = {}, {}, {}
-  local function arrow(atX)
+  local function arrow()
     local a = font(f, "GameFontDisable")
-    a:SetPoint("TOPLEFT", atX + 4, ROW_TOP - MAIN / 2 + 6)
     a:SetText(">")
     f.arrows[#f.arrows + 1] = a
     return a
   end
-  for i = 1, 2 do
-    f.done[i] = slot(f, SIDE, x, sideY)
-    f.done[i].arrow = arrow(x + SIDE)
-    x = x + SIDE + GAP
+  for i = 1, MAX_SIDE do
+    f.done[i] = slot(f, SIDE, 0, ROW_TOP)
+    f.done[i].arrow = arrow()
+    f.upcoming[i] = slot(f, SIDE, 0, ROW_TOP)
+    f.upcoming[i].arrow = arrow()
   end
   local glow = f:CreateTexture(nil, "BORDER")
-  glow:SetPoint("TOPLEFT", x - 2, ROW_TOP + 2)
   glow:SetSize(MAIN + 4, MAIN + 4)
   glow:SetColorTexture(COLORS.gold[1], COLORS.gold[2], COLORS.gold[3], 0.9)
   f.glow = glow
-  f.now = slot(f, MAIN, x, ROW_TOP)
+  f.now = slot(f, MAIN, 0, ROW_TOP)
   f.icon, f.key = f.now.icon, f.now.key
-  x = x + MAIN
-  for i = 1, 2 do
-    local a = arrow(x)
-    x = x + GAP
-    f.upcoming[i] = slot(f, SIDE, x, sideY)
-    f.upcoming[i].arrow = a
-    x = x + SIDE
-  end
+  layout(f, Panel.steps(db))
   local caption = font(f, "GameFontDisableSmall")
   caption:SetPoint("TOPRIGHT", -10, -8)
   caption:SetJustifyH("RIGHT")
@@ -280,9 +322,11 @@ function Panel.render(view)
   f.chainLabel:SetText(view.planning and "Pull" or "Then")
 
   -- Left: what you already did here. Damage over time shows its seconds left.
-  local done = db.showDone ~= false and view.done or {}
-  for i = 1, 2 do
-    local d = done[#done - 2 + i]
+  local before, after = Panel.steps(db)
+  layout(f, before, after)
+  local done = view.done or {}
+  for i = 1, before do
+    local d = done[#done - before + i]
     local s = f.done[i]
     if fill(s, d, true) and d.missed then
       -- resisted: it did not land
@@ -303,7 +347,7 @@ function Panel.render(view)
 
   -- Right: what comes next. A step that isn't due yet shows when it will be.
   local names = {}
-  for i = 1, 2 do
+  for i = 1, after do
     local st = steps[i + 1]
     local s = f.upcoming[i]
     if fill(s, st, false) then
