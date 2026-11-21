@@ -35,6 +35,7 @@ local function log(fmt, ...)
     return
   end
   lastLogged, repeats = line, 1
+  if ns.Trace then pcall(ns.Trace.add, "log", "%s", line) end
   local timed, stamp = pcall(date, "%H:%M:%S")
   keep(db, ((timed and type(stamp) == "string") and stamp or "") .. " " .. line)
 end
@@ -752,6 +753,7 @@ local function tick()
     table.sort(view.dots, function(a, b) return a.start < b.start end)
   end
   view.otherDotted = C.tracker:otherDotted(key or "none", now)
+  if ns.Trace.recording() then safely("trace", C.traceView, view, s, smart) end
   if s.inCombat then
     view.status = Engine.advice(profile, s)
     view.statusKind = (s.manaLevel == "low" or (s.barPage and s.barPage ~= 1)) and "warn" or nil
@@ -829,6 +831,7 @@ local function tick()
       C.talentsRead, C.talentsStale = now, false
     end
     ns.Talents.update(C.talentState, ClassCoachDB, C.level)
+    if ns.Trace.recording() then ns.Trace.change("talents", "%s", ns.Talents.describe()) end
   end)
 end
 
@@ -991,6 +994,7 @@ function handlers.UNIT_SPELLCAST_START(unit, _, spellID)
   if not id then return end
   C.castStart = { id = id, key = currentTarget().key, at = GetTime() }
   API.noteCast(GetTime())
+  ns.Trace.add("start", "%s on %s", tostring(castKey(id)), ns.Trace.unit("target"))
 end
 
 function handlers.UNIT_SPELLCAST_SUCCEEDED(unit, _, spellID)
@@ -1014,6 +1018,8 @@ function handlers.UNIT_SPELLCAST_SUCCEEDED(unit, _, spellID)
   if not C.tracker.fight and C.lastMana and cost and cost > 0 then C.lastMana = math.max(0, C.lastMana - cost) end
   Mana.spend(C.ledger, GetTime(), cost or 0, meta and meta.restores and C.manaMax and meta.restores * C.manaMax or 0)
   C.tracker:cast(GetTime(), key, cost or 0, meta, onKey, sp and sp.duration)
+  ns.Trace.add("cast", "%s on %s%s, cost %s, recorded on %s", key, ns.Trace.unit("target"), onKey ~= t.key and " (started on the one before)" or "",
+    tostring(cost), onKey and (onKey == t.key and "this enemy" or "the enemy it started on") or "no enemy")
 end
 
 -- The game reports "something was resisted on your target" without saying
@@ -1025,6 +1031,7 @@ function handlers.UNIT_COMBAT(unit, action)
   local kind = SPELL_FAILS[API.plain(action) or ""]
   if not kind then return end
   local c = C.tracker:castMissed(GetTime(), kind == "immune", currentTarget().key)
+  ns.Trace.add("miss", "%s: %s", kind, c and c.name or "no cast of yours matched")
   C.stats = C.stats or { resists = 0, unmatched = 0 }
   if c then C.stats.resists = C.stats.resists + 1 else C.stats.unmatched = C.stats.unmatched + 1 end
 end
@@ -1032,6 +1039,7 @@ end
 function handlers.PLAYER_TARGET_CHANGED()
   API.targetChanged()
   C.targetKey = nil
+  ns.Trace.add("target", "%s", ns.Trace.unit("target"))
   -- a new target between fights: the smart key starts from the beginning
   if not API.inCombat() then safely("smart key", ns.Smart.restart) end
 end
@@ -1059,11 +1067,35 @@ function handlers.PLAYER_REGEN_DISABLED()
     target = t.hostile and t.name or nil, targetLevel = t.level, elite = t.elite,
     manaStart = C.lastMana, manaMax = C.manaMax, hasPet = C.petAtPull, demon = C.demonAtPull,
   })
+  local pct = C.lastState and tonumber(C.lastState.manaPct)
+  ns.Trace.add("fight", "started on %s, mana %s, demon %s", ns.Trace.unit("target"), pct and ("%.0f%%"):format(pct) or "?", tostring(C.demonAtPull))
+end
+
+-- One line for the trace when what the coach shows changed: the ring, what comes
+-- next, where the smart key is, mana and the timers on this enemy.
+function C.traceView(view, s, smart)
+  local function step(st)
+    if not st then return "-" end
+    return st.label .. (st.inSeconds and (" in %.0fs"):format(st.inSeconds) or "") .. (st.running and " (firing)" or "")
+  end
+  local nexts = {}
+  for i = 2, #(view.chain or {}) do nexts[#nexts + 1] = step(view.chain[i]) end
+  local dots = {}
+  for _, d in ipairs(view.dots or {}) do dots[#dots + 1] = ("%s %.0fs"):format(d.label, d.left) end
+  local keyText = "no smart key"
+  if smart and smart.ready then
+    keyText = ("key step %s %s%s"):format(tostring(smart.step), tostring(smart.nextLabel), view.followsKey and " (ring follows it)" or " (coach decides)")
+  end
+  ns.Trace.change("ring", "%s %s | next %s | %s | mana %s %s | on enemy: %s | %s",
+    view.inCombat and "fight" or (view.planning and "plan" or "pull"), step(view.chain and view.chain[1]), table.concat(nexts, " > "), keyText,
+    s.manaPct and ("%.0f%%"):format(s.manaPct) or "?", tostring(s.manaLevel), #dots > 0 and table.concat(dots, ", ") or "nothing",
+    tostring(view.status or ""))
 end
 
 local function finishFight()
   local cur, max = API.mana()
   local summary = C.tracker:endFight(GetTime(), cur, max)
+  ns.Trace.add("fight", "ended%s", summary and (", %.0fs, %d casts"):format(tonumber(summary.duration) or 0, type(summary.casts) == "table" and #summary.casts or 0) or "")
   if not summary or summary.duration < 3 then return end
   -- Learn how long your kills take: it decides when a new damage-over-time spell is wasted.
   -- Only fights against one enemy: with more, the time per enemy comes out far too short.
@@ -1226,6 +1258,11 @@ local function start()
     barReset = function() SlashCmdList.CLASSCOACH("bar reset") end,
     window = function() safely("settings window", ns.Window.show, "Coach") end,
   })
+  -- The debug trace: asks once, then records on this computer if you said yes (UI/Trace.lua)
+  C_Timer.After(4, function()
+    safely("trace", ns.Trace.onLogin, { version = API.addonVersion(),
+      who = ("%s %s level %s"):format(C.profile and C.profile.spec or "?", C.class or "?", tostring(C.level)) })
+  end)
   -- The first time: the setup page of the settings window, once, out of combat.
   if not db.welcomed then
     C_Timer.After(6, function()
@@ -1375,6 +1412,7 @@ local HELP = {
   "/coach hide | show — the coach panel",
   "/coach errors — problems the addon caught itself (for bug reports)",
   "/coach check — what the addon can read on this client (for bug reports)",
+  "/coach trace — the debug trace kept on this computer, if you allowed it (export, clear, consent)",
 }
 
 -- The settings are ClassCoach's own window (UI/Window.lua). The addon never
@@ -1438,6 +1476,8 @@ local function command(msg)
       say(("%s = %s"):format(option.name, tostring(store[option.key])))
       safely("settings window", ns.Window.refresh)
     end
+  elseif cmd == "trace" then
+    ns.Trace.command(arg)
   elseif cmd == "talents" then
     -- what the marks on the talent window found, and anything that went wrong drawing them
     say(ns.Talents.describe())

@@ -53,7 +53,7 @@ python3 tests/run.py            # everything
 python3 tests/run.py forever    # one scenario
 ```
 
-Scenarios: `shaman`, `priest`, `warlock`, `template`, `warrior`, `robust` (event storms, combat lockdown, chaos fuzzing), `forever` (no call to a function Forever lacks, off on other versions), `talents` (build following, talent window marks, link import, professions), `focus` (the ring: fonts, cue, bar highlight, click to cast, demo), `ui` (the glow, spellbook light, quiet coach, settings window, sharing, the mana ledger and mana-aware plans), `bars` (bar reset and undo, gapless and fixed layouts, potions, the bar watcher, hands off the game's frames), `sweep` (every level 1 to 60 per class, including the smart key's steps and the bar layout).
+Scenarios: `shaman`, `priest`, `warlock`, `template`, `warrior`, `robust` (event storms, combat lockdown, chaos fuzzing), `forever` (no call to a function Forever lacks, off on other versions), `talents` (build following, talent window marks, link import, professions), `focus` (the ring: fonts, cue, bar highlight, click to cast, demo), `ui` (the glow, spellbook light, quiet coach, settings window, sharing, the mana ledger and mana-aware plans), `bars` (bar reset and undo, gapless and fixed layouts, potions, the bar watcher, hands off the game's frames), `wand` (the next step while the wand fires, the global cooldown, spells in macros on your bars), `trace` (the debug trace: consent, privacy, limits, export), `sweep` (every level 1 to 60 per class, including the smart key's steps and the bar layout).
 
 `tests/mock.lua` offers only functions the Forever client has. Keep it that way: a test that needs a function from another version is testing the wrong thing. Run each scenario with a timeout; a hang is a finding, not a slow machine.
 
@@ -77,7 +77,11 @@ The coach is drawn only with what Forever has: flat colour textures, texture fil
 
 Forever's talent window is `PlayerSpellsFrame.TalentsFrame`; talents live in the traits system as ONE tree per class holding all three specs. ClassCoach finds talents by name and lays its own frames over the game's buttons (never as their children, never taking clicks): the glow, numbered discs, veils over talents outside the build, and a draggable build card. It learns a talent only when the player clicks the opt-in "Learn now" (`API.learnTalent`: `C_Traits.PurchaseRank`, then `C_ClassTalents.CommitConfig` for the last selected loadout, as the talent window's Apply does; refused while the window holds unapplied changes, rolled back when the game says no; out of combat only). The game's UI source for this exact client is the `forever` branch of github.com/Gethe/wow-ui-source.
 
-- The game draws its talent buttons inside a frame at level 1000 (`ButtonsParent`), far above the talent window itself, and a click brings the window to the front. The marks' holder and the glow take their level from the buttons on every refresh (`top + 20`, button + 10); never from the window.
+- The marks, the glow and the veils draw in the DIALOG strata (level 20, under the game's dialogs), not a few levels above the buttons: in game (0.15.4) frames placed 20 levels above the talent buttons in the same strata were "visible" yet never drawn. The glow only shows with an unspent point; the Next tag always.
+
+## Debug trace
+
+`UI/Trace.lua` works like QuestieTrace (idea only; its code is GPL and is not used): a consent pop-up of our own (not StaticPopup), sessions of every character recorded into `ClassCoachTrace.sessions` (the account's saved variables, written at /reload and logout), at most 10 sessions of 3000 lines, `/coach trace` status/export/clear/consent. Never record a player's name, a realm name or a player GUID (`Trace.clean`, `Trace.unit`). With Cedric's approval Claude reads `_forever_\WTF\Account\<account>\SavedVariables\ClassCoach.lua` to debug.
 
 ## Mana
 

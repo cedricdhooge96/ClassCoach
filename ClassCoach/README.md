@@ -57,6 +57,7 @@ ClassCoach is made for **World of Warcraft: Forever** (patch 1.60.x) and no othe
 | `/coach hide` / `show` | Hides or shows the coach |
 | `/coach reset` | Puts the coach and the journey list back where they started |
 | `/coach spec Enhancement` | Picks a profile by hand; `/coach spec auto` goes back to automatic |
+| `/coach trace` | The debug trace, if you allowed it: `export`, `clear`, `consent` |
 | `/coach check` | Prints what the addon can read on your client. Useful when something looks wrong |
 | `/coach errors` | Lists problems ClassCoach caught in itself. `/coach errors on` makes the game show every addon's error on screen; `off` hides them again |
 
@@ -218,6 +219,14 @@ Forever hides your mana number from addons in combat, and on some clients out of
 - **The plan follows it.** The pull plan, the `CC Pull` macro and the smart key spend that count step by step, so a plan at 40% mana is shorter than one at full. Out of combat, below your "drink" setting, the coach asks you to drink first.
 
 `/coach check` reports whether the game accepted the bar on your client.
+
+## The debug trace (only if you allow it)
+
+Like QuestieTrace (Questie's recorder), ClassCoach can keep a record of what it saw and decided in your fights, to find bugs. It asks once, with its own pop-up; "No" means nothing is ever recorded.
+
+- With "Yes" every play session is recorded: your target (an NPC by name and level, a player only as "a player"), each cast and the enemy it landed on, resists, the start and end of each fight, and each time what the coach shows changes (the ring, what comes next, where the smart key is, your mana, the timers on the enemy). Player names, realm names and player ids are never written down.
+- It stays on your computer, in ClassCoach's own saved file (`WTF\Account\<account>\SavedVariables\ClassCoach.lua`), which the game writes at `/reload`, logout and quit. At most 10 sessions of 3000 lines; the oldest go first.
+- `/coach trace` says what it is doing. `/coach trace export` shows the last session to copy (`export all` for every kept one); its "Save to disk" button reloads your interface so the game writes the file. `/coach trace clear` forgets them; `/coach trace consent` changes your answer.
 
 ## Safety
 

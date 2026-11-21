@@ -171,7 +171,8 @@ local NEEDS = {
   "PickupMacro", "ClearCursor", "CreateMacro", "EditMacro", "GetMacroBody", "GetMacroIndexByName", "GetMacroInfo", "GetNumMacros",
   "GetBindingKey", "GetBindingAction", "SetBinding", "SetBindingClick", "SaveBindings", "GetCurrentBindingSet", "RegisterStateDriver",
   "UnitAffectingCombat", "UnitCanAttack", "UnitClass", "UnitClassification", "UnitCreatureFamily", "UnitExists", "UnitFactionGroup",
-  "UnitGUID", "UnitHealth", "UnitHealthMax", "UnitIsDead", "UnitIsUnit", "UnitLevel", "UnitName", "UnitPower", "UnitPowerMax",
+  "UnitGUID", "UnitHealth", "UnitHealthMax", "UnitIsDead", "UnitIsPlayer", "UnitIsUnit", "UnitLevel", "UnitName", "UnitPower", "UnitPowerMax",
+  "C_UI.Reload", "C_AddOns.GetAddOnMetadata",
   "UnitPowerPercent", "UnitPowerType", "UnitXP", "UnitXPMax", "GetPowerRegen",
   "C_ActionBar.GetActionBarPage", "C_ActionBar.SetActionBarPage", "C_ActionBar.GetActionText", "C_ActionBar.GetActionTexture",
   "C_CVar.GetCVar", "C_CVar.SetCVar", "C_ClassTalents.GetActiveConfigID", "C_ClassTalents.HasUnspentTalentPoints",
@@ -320,6 +321,12 @@ end
 
 function API.macroExists(name)
   return (plain(try(GetMacroIndexByName, name)) or 0) > 0
+end
+
+-- ClassCoach's version, from its .toc.
+function API.addonVersion()
+  local v = plain(try(C_AddOns and C_AddOns.GetAddOnMetadata, "ClassCoach", "Version"))
+  return type(v) == "string" and v or "?"
 end
 
 -- The text of a macro, yours or the coach's, or nil.

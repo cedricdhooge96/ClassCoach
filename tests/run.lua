@@ -869,6 +869,90 @@ elseif SCENARIO == "warlock" then
   for _, slot in ipairs(f20.missing) do if rawget(slot, "spell") == "Summon Succubus" then shown = true end end
   check("level 20: no demon is fixed by the Succubus", missing(ns):find("No demon") ~= nil and shown == true, missing(ns))
 
+elseif SCENARIO == "trace" then
+  -- The debug trace, the way QuestieTrace works: ask first, record on this computer, export when you choose.
+  local function player()
+    M.player({
+      class = "WARLOCK", className = "Warlock", level = 13, mana = 300, maxMana = 300,
+      spells = { [348] = { name = "Immolate", cost = 25 }, [172] = { name = "Corruption", cost = 35 },
+        [980] = { name = "Bane of Agony", cost = 25 }, [697] = { name = "Summon Voidwalker", cost = 100 }, [5019] = { name = "Shoot", cost = 0 } },
+      book = { 348, 172, 980, 697, 5019 }, equipped = { [18] = 11287 }, talents = { 3, 0, 0 },
+    })
+  end
+  player()
+  local ns = load()
+  M.P.pet = { family = "Voidwalker" }
+  local function click(b) b.scripts.OnClick(b) end
+  local function sessions() return ClassCoachTrace and ClassCoachTrace.sessions or {} end
+  local function all() return ns.Trace.text(true) end
+  check("before you answer, nothing is recorded", #sessions() == 0 and not ns.Trace.recording())
+  M.advance(5); tick(ns)
+  local prompt = ns.Trace.promptFrame
+  check("it asks once, with its own pop-up (not the game's shared one)", prompt ~= nil and prompt.shown and prompt.name == "ClassCoachTraceConsent")
+  M.printed = {}
+  click(prompt.no)
+  check("No: nothing is recorded, and it says how to change your mind", ClassCoachTrace.settings.consent == false and #sessions() == 0
+    and table.concat(M.printed, " "):find("/coach trace consent", 1, true) ~= nil)
+  target({ name = "Defias Looter", level = 12, hostile = true, guid = "Creature-1" })
+  M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED"); cast(980); M.advance(2); tick(ns)
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(1)
+  check("...also not during a fight", #sessions() == 0)
+  SlashCmdList.CLASSCOACH("trace consent")
+  check("/coach trace consent asks again", prompt.shown)
+  click(prompt.yes)
+  check("Yes: a session starts, kept in ClassCoach's own saved file", ClassCoachTrace.settings.consent == true and ns.Trace.recording() and #sessions() == 1)
+  -- a fight is recorded: target, fight, casts, what the coach showed
+  target({ name = "Defias Pillager", level = 14, hostile = true, guid = "Creature-2" })
+  M.advance(1); tick(ns)
+  M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED")
+  M.fire("UNIT_SPELLCAST_START", "player", "c1", 348); M.advance(2); cast(348); M.advance(1); tick(ns)
+  cast(172); M.advance(1.5); tick(ns)
+  M.fire("UNIT_COMBAT", "target", "RESIST", "", 0, 32); M.advance(0.5); tick(ns)
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(1); tick(ns)
+  local text = all()
+  check("the trace holds the target, the fight, the casts, the resist and what the ring showed",
+    text:find("target  Defias Pillager (14)", 1, true) ~= nil and text:find("fight   started on Defias Pillager", 1, true) ~= nil
+    and text:find("cast    Immolate on Defias Pillager", 1, true) ~= nil and text:find("miss    resist", 1, true) ~= nil and text:find("ring    ", 1, true) ~= nil, "\n" .. text)
+  -- privacy: never a player's name, never your own
+  target({ name = "Bobbytheplayer", level = 14, hostile = true, guid = "Player-1234-0ABC", player = true })
+  M.advance(0.5); tick(ns)
+  ns.Trace.add("test", "Marida and Player-1234-0ABCDEF")
+  text = all()
+  check("privacy: another player is 'a player', never by name; your own name and player ids are never written",
+    text:find("target  a player", 1, true) ~= nil and not text:find("Bobbytheplayer", 1, true) and not text:find("Marida", 1, true)
+    and not text:find("Player-1234", 1, true) and text:find("<you> and player", 1, true) ~= nil, text:sub(-300))
+  -- the coach does not write a line for every refresh: only when what it shows changes
+  local before = #sessions()[#sessions()].events
+  for _ = 1, 20 do M.advance(0.1); tick(ns) end
+  check("a coach showing the same thing adds no lines", #sessions()[#sessions()].events == before, #sessions()[#sessions()].events - before)
+  -- export: a window to copy from, and a button that saves it to disk (it reloads the interface)
+  SlashCmdList.CLASSCOACH("trace export")
+  local ex = ns.Trace.exportFrame
+  check("/coach trace export shows it, ready to copy", ex.shown and ex.box.text:find("== ClassCoach trace", 1, true) ~= nil and ex.box.text:find("cast", 1, true) ~= nil)
+  click(ex.save)
+  check("Save to disk reloads the interface: the game then writes the saved file", M.reloaded == 1, tostring(M.reloaded))
+  -- limits: ten sessions, three thousand lines each
+  for _ = 1, 12 do ns.Trace.stop(); ns.Trace.start({ version = "x", who = "y" }) end
+  check("at most ten sessions are kept, the oldest go first", #sessions() == 10, #sessions())
+  for i = 1, 3100 do ns.Trace.add("test", "line %d", i) end
+  local last = sessions()[#sessions()]
+  check("at most 3000 lines a session, the oldest go first", #last.events == 3000 and last.dropped > 0 and last.events[3000]:find("line 3100", 1, true) ~= nil)
+  M.printed = {}
+  SlashCmdList.CLASSCOACH("trace")
+  check("/coach trace says what it is doing", table.concat(M.printed, " "):find("recording; 10 sessions", 1, true) ~= nil, table.concat(M.printed, " "))
+  SlashCmdList.CLASSCOACH("trace clear")
+  check("/coach trace clear forgets the kept sessions and goes on recording", #sessions() == 1 and ns.Trace.recording())
+  -- the next login: already allowed, so it records again by itself and says so
+  ns.Trace.stop()
+  player()
+  ns = load()
+  M.printed = {}
+  M.advance(5); tick(ns)
+  check("next login: it records again by itself, and says so", ns.Trace.recording() and table.concat(M.printed, " "):find("debug trace is being recorded", 1, true) ~= nil,
+    table.concat(M.printed, " "))
+  check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
+  check("hands off the game's frames", #M.violations == 0, table.concat(M.violations, "; "))
+
 elseif SCENARIO == "wand" then
   -- Regression (seen in game, 0.14.5): while the wand fires, the global cooldown runs.
   -- Forever then reports every spell's cooldown as active with its times hidden, and the

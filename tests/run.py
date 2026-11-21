@@ -6,7 +6,7 @@ from lupa import luajit21
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 failed = 0
 SCENARIOS = [("shaman", None), ("priest", None), ("warlock", None), ("template", None), ("warrior", None),
-             ("robust", None), ("forever", None), ("talents", None), ("focus", None), ("bars", None), ("ui", None), ("wand", None), ("sweep", "WARLOCK"), ("sweep", "SHAMAN"), ("sweep", "PRIEST")]
+             ("robust", None), ("forever", None), ("talents", None), ("focus", None), ("bars", None), ("ui", None), ("wand", None), ("trace", None), ("sweep", "WARLOCK"), ("sweep", "SHAMAN"), ("sweep", "PRIEST")]
 ONLY = [a for a in sys.argv[1:] if not a.startswith("--")]
 for scenario, sweep_class in SCENARIOS:
     if ONLY and scenario not in ONLY:

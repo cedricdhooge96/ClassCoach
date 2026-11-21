@@ -89,6 +89,10 @@ function UnitIsDead(u)
   return P.target and P.target.dead or false
 end
 function UnitName(u) if u == "target" then return P.target and hidden(P.target.name) end return "Marida" end
+function UnitIsPlayer(u) if u == "player" then return true end return u == "target" and P.target ~= nil and P.target.player == true end
+C_UI = { Reload = function() M.reloaded = (M.reloaded or 0) + 1 end }
+C_AddOns = C_AddOns or {}
+C_AddOns.GetAddOnMetadata = function(addon, field) if addon == "ClassCoach" and field == "Version" then return "test" end end
 function UnitClassification() return P.target and P.target.classification or "normal" end
 -- Some clients hide enemy ids: tests switch that on with M.secretGuid.
 function UnitGUID(u)

@@ -2,13 +2,13 @@
 ## Title: ClassCoach
 ## Notes: For WoW Forever. A beginner's coach for any class: mana coach, pre-fight checklist, next-ability hint, fight summary and level-up tips. It never presses anything for you.
 ## Author: Cedric
-## Version: 0.15.7
+## Version: 0.16.0
 ## Category: Combat
 ## IconTexture: Interface\Icons\INV_Misc_Book_09
 ## AddonCompartmentFunc: ClassCoach_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: ClassCoach_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: ClassCoach_OnAddonCompartmentLeave
-## SavedVariables: ClassCoachDB
+## SavedVariables: ClassCoachDB, ClassCoachTrace
 ## SavedVariablesPerCharacter: ClassCoachCharDB
 
 # Engine (no class knowledge in here)
@@ -38,4 +38,5 @@ UI\Spellbook.lua
 UI\Talents.lua
 UI\Options.lua
 UI\Window.lua
+UI\Trace.lua
 ClassCoach.lua
