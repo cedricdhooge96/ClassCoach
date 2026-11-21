@@ -78,12 +78,21 @@ local function nextText(f)
   end
   return table.concat(parts, " > ")
 end
--- Every timer the coach shows for this enemy: on the icons left of the ring, and in the line for the rest.
+-- The debuff icons above the ring: "Bane of Agony 20s, Corruption 8s".
+local function dotIcons(f)
+  local parts = {}
+  for _, d in ipairs(f.dotIcons) do
+    if d.shown then parts[#parts + 1] = rawget(d, "label") .. " " .. d.timer.text end
+  end
+  return table.concat(parts, ", ")
+end
+-- Every timer the coach shows for this enemy: on the icons left of the ring, above it, and in the line for the rest.
 local function timers(f)
   local parts = {}
   for _, s in ipairs(f.done) do
     if s.shown and rawget(s, "title") then parts[#parts + 1] = rawget(s, "title") .. " " .. s.timer.text end
   end
+  parts[#parts + 1] = dotIcons(f)
   parts[#parts + 1] = f.dots.text
   return table.concat(parts, " | ")
 end
@@ -538,20 +547,32 @@ elseif SCENARIO == "warlock" then
   check("mana start includes the pull spell", ns.C.tracker.fight.manaStart == 300, ns.C.tracker.fight.manaStart)
   check("then Corruption", f.name.text == "Corruption", f.name.text)
   check("the step nearest the ring shows Bane ticking", f.done[1].shown and f.done[1].timer.text == "24s" and rawget(f.done[1], "title") == "Bane of Agony", f.done[1].timer.text)
-  check("a timer shown on an icon is not repeated in words", f.dots.text == "" and f.leftLabel.text == "already cast", f.dots.text)
+  check("no line of words for timers any more", f.dots.text == "" and f.leftLabel.text == "already cast", f.dots.text)
+  check("above the ring: Bane of Agony as a debuff icon with its time left", dotIcons(f) == "Bane of Agony 24s"
+    and f.dotIcons[1].icon.texture ~= nil and rawget(f.dotIcons[1], "duration") == 24, dotIcons(f))
   cast(172); M.advance(2); f = tick(ns)
   check("then Immolate (mana high)", f.name.text == "Immolate", f.name.text)
   cast(348); M.advance(2); f = tick(ns)
   check("then wand", f.name.text == "Shoot", f.name.text)
   check("chain says when Corruption comes back", nextText(f) == "Corruption in 8s", nextText(f))
   check("two done slots, the latest nearest the ring", f.done[1].timer.text == "13s" and f.done[2].timer.text == "8s", f.done[1].timer.text .. "/" .. f.done[2].timer.text)
-  check("a timer with no icon gets a line", f.dots.text == "Also on this enemy: Bane of Agony 20s", f.dots.text)
+  check("every spell ticking on the enemy as an icon above the ring, in the order you cast them", dotIcons(f) == "Bane of Agony 20s, Corruption 8s, Immolate 13s"
+    and f.dots.text == "", dotIcons(f) .. " / " .. f.dots.text)
+  local x1, x3 = f.dotIcons[1].point[4], f.dotIcons[3].point[4]
+  check("the icons sit centred above the ring", x1 == -x3 and x1 < 0 and f.dotIcons[2].point[4] == 0 and f.dotIcons[1].point[3] == "TOP",
+    tostring(x1) .. "/" .. tostring(x3))
+  local startBefore = rawget(f.dotIcons[2], "start")
+  M.advance(0.2); f = tick(ns)
+  check("the sweep is not restarted while the spell just ticks", rawget(f.dotIcons[2], "start") == startBefore)
+  ClassCoachDB.showDots = false; f = tick(ns)
+  check("the setting hides them", dotIcons(f) == "", dotIcons(f))
+  ClassCoachDB.showDots = nil; f = tick(ns)
   -- How many steps show on each side is a setting (0 to 4)
   check("by default two before, two after", f.done[2].shown and not f.done[3].shown and not f.upcoming[3].shown)
   ClassCoachDB.stepsBefore, ClassCoachDB.stepsAfter = 4, 4
   f = tick(ns)
   check("four before: all three casts on this enemy show, the latest nearest", f.done[1].shown and f.done[2].shown and f.done[3].shown and not f.done[4].shown
-    and f.done[1].timer.text == "13s" and f.done[2].timer.text == "8s" and f.done[3].timer.text == "20s" and f.dots.text == "",
+    and f.done[1].timer.text == "13s" and f.done[2].timer.text == "8s" and f.done[3].timer.text == "19s" and f.dots.text == "",
     tostring(f.done[2].timer.text) .. "/" .. tostring(f.done[3].timer.text) .. "/" .. f.dots.text)
   check("steps further from the ring are smaller and sit higher", rawget(f.done[1], "width") == 34 and rawget(f.done[4], "width") == 22
     and f.done[1].point[5] == 0 and f.done[4].point[5] == 45 and f.upcoming[4].point[4] == 218, tostring(f.done[4].point[5]))
@@ -604,6 +625,9 @@ elseif SCENARIO == "warlock" then
   cast(172); M.advance(6); f = tick(ns)
   check("late in the fight: no Immolate, just wand", f.name.text == "Shoot", f.name.text)
   check("and it says why", f.status.text:find("nearly dead") ~= nil, f.status.text)
+  check("the step after the wand: what comes back once this enemy outlasts your usual kill", nextText(f) == "Bane of Agony in 2s", nextText(f))
+  M.advance(2.5); f = tick(ns)
+  check("it outlasted your usual kill: a tougher one, damage over time again", f.name.text == "Bane of Agony" and not f.status.text:find("nearly dead"), f.name.text .. " / " .. f.status.text)
   M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(0.5)
   ClassCoachCharDB.kill = nil
 

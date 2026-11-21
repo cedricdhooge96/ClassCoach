@@ -732,8 +732,11 @@ local function tick()
     end
     for _, d in ipairs(C.tracker:dotsOn(key, now)) do
       local sp = s.spells[d.name]
-      view.dots[#view.dots + 1] = { label = sp and sp.name or d.name, left = d.left }
+      view.dots[#view.dots + 1] = { label = sp and sp.name or d.name, icon = sp and sp.icon, left = d.left,
+        duration = d.duration, start = now + d.left - d.duration }
     end
+    -- in the order you cast them, as the game lines up an enemy's debuffs: an icon keeps its place
+    table.sort(view.dots, function(a, b) return a.start < b.start end)
   end
   view.otherDotted = C.tracker:otherDotted(key or "none", now)
   if s.inCombat then
@@ -837,6 +840,8 @@ local function demoViews(real)
     return out
   end
   local function did(st, left, missed) return { label = st.label, icon = st.icon, left = left, missed = missed } end
+  -- a spell ticking on the enemy, for the icons above the ring
+  local function ticking(st, left, lasts) return { label = st.label, icon = st.icon, left = left, duration = lasts, start = GetTime() + left - lasts } end
   local base = { usesMana = real.usesMana, drawMana = false, manaExact = true }
   local function view(fields)
     local v = {}
@@ -851,6 +856,7 @@ local function demoViews(real)
     { "An enemy targeted: how to pull", view({ chain = { with(a, { why = a.why or "Pull with this." }), b, c }, manaPct = 100, manaLevel = "high" }) },
     { "In the fight: next step", view({ inCombat = true, chain = { b, c, wait }, done = { did(a, 22) }, manaPct = 86, manaLevel = "high" }) },
     { "The steady part of a fight", view({ inCombat = true, chain = { wait, with(b, { inSeconds = 6 }) }, done = { did(a, 14), did(b, 6), did(c, 9) },
+      dots = { ticking(a, 14, 24), ticking(b, 6, 12), ticking(c, 9, 15) },
       manaPct = 62, manaLevel = "high" }) },
     { "A spell ran out: the ring pulses", view({ inCombat = true, chain = { with(b, { why = b.label .. " ran out: cast it again." }), wait },
       done = { did(a, 8), did(b, 0), did(c, 3) }, manaPct = 48, manaLevel = "medium" }) },
@@ -1029,7 +1035,8 @@ local function finishFight()
   local summary = C.tracker:endFight(GetTime(), cur, max)
   if not summary or summary.duration < 3 then return end
   -- Learn how long your kills take: it decides when a new damage-over-time spell is wasted.
-  if not summary.elite and not API.inGroup() and summary.duration < 120 then
+  -- Only fights against one enemy: with more, the time per enemy comes out far too short.
+  if not summary.elite and not API.inGroup() and summary.duration < 120 and summary.targets == 1 then
     local kill = ClassCoachCharDB.kill or { avg = 0, n = 0 }
     local per = summary.duration / summary.targets
     kill.avg = kill.n == 0 and per or (kill.avg * 0.7 + per * 0.3)

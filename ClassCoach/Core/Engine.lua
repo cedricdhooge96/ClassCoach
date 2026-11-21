@@ -73,12 +73,14 @@ end
 
 -- Is a new damage-over-time spell still worth its mana on this enemy?
 -- The enemy's health is hidden, so we go by how long your recent kills took
--- (killTime). Unknown, elite or in a group: always yes.
+-- (killTime). Unknown, elite or in a group: always yes. An enemy that already
+-- outlasted your usual kill is a tougher one: the guess is off, so yes again.
 function State:worthDot(key)
   local lasts = self:duration(key)
   if not lasts or not self.killTime or not self.inCombat then return true end
   if self.inGroup or (self.target and self.target.elite) then return true end
-  return self.killTime - self:timeOnTarget() >= lasts * 0.4
+  local left = self.killTime - self:timeOnTarget()
+  return left < 0 or left >= lasts * 0.4
 end
 
 function State:totemUp(element)
@@ -310,6 +312,11 @@ local function later(profile, s, sim)
   for key, at in pairs(sim.virtualAt) do
     local lasts = sim:duration(key)
     if lasts and at + lasts > sim.now then times[#times + 1] = at + lasts end
+  end
+  -- the moment this enemy outlasts your usual kill: what was skipped as "nearly dead" comes back
+  if s.killTime then
+    local over = s.killTime - sim:timeOnTarget()
+    if over > 0 then times[#times + 1] = sim.now + over end
   end
   table.sort(times)
   for _, t in ipairs(times) do

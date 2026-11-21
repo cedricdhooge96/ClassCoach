@@ -3,6 +3,7 @@
 --   left     what you already cast on this enemy (damage over time shows its
 --            seconds left); before a fight: what to fix first, in amber rings
 --   right    what comes next, each with its key
+--   above    your damage over time on this enemy, icons with the time left
 --   under    your true mana as a bar, the spell's name, why, and any advice
 -- The steps on either side sit on a rising arc and get smaller the further
 -- they are from now. Nothing here has a background except the plate behind
@@ -19,6 +20,7 @@ local SIZES, FADE = { 34, 30, 26, 22 }, { 1, 0.92, 0.80, 0.68 }
 local TEXT_WIDTH = 380
 local DEFAULT_ABOVE_BOTTOM = 240     -- how far the ring's middle starts above the bottom of the screen
 local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
+local DOT, DOT_GAP, MAX_DOTS = 26, 6, 6  -- the debuff icons above the ring
 local MANA_BY_LEVEL = { high = "mana", medium = "warn", low = "danger" }
 
 -- Where the k-th step from the middle sits: further out and a little higher each time.
@@ -74,6 +76,37 @@ local function slot(f, ringed)
   s:SetScript("OnDragStop", S.guard(function() local d = f:GetScript("OnDragStop"); if d then d(f) end end))
   s:Hide()
   return s
+end
+
+-- One of your spells ticking on the enemy, drawn the way the game draws a
+-- debuff: a square icon, a dark sweep for the time gone, the time left under it.
+-- It takes no clicks.
+local function dotIcon(f)
+  local S = ns.Style
+  local d = CreateFrame("Frame", nil, f)
+  d:SetSize(DOT, DOT)
+  local edge = d:CreateTexture(nil, "BACKGROUND")
+  edge:SetAllPoints()
+  edge:SetColorTexture(0, 0, 0, 0.9)
+  d.edge = edge
+  d.icon = d:CreateTexture(nil, "ARTWORK")
+  d.icon:SetPoint("TOPLEFT", 1, -1)
+  d.icon:SetPoint("BOTTOMRIGHT", -1, 1)
+  pcall(d.icon.SetTexCoord, d.icon, 0.07, 0.93, 0.07, 0.93)   -- crop the border spell art has built in
+  local ok, sweep = pcall(CreateFrame, "Cooldown", nil, d)
+  if ok and sweep then
+    sweep:SetAllPoints(d.icon)
+    for _, call in ipairs({ { "SetReverse", true }, { "SetDrawEdge", false }, { "SetHideCountdownNumbers", true },
+      { "SetSwipeColor", 0, 0, 0, 0.6 } }) do
+      if sweep[call[1]] then pcall(sweep[call[1]], sweep, unpack(call, 2)) end
+    end
+    d.sweep = sweep
+  end
+  d.timer = S.text(d, "body", 10, S.COLORS.ink, "OUTLINE")
+  d.timer:SetJustifyH("CENTER")
+  d.timer:SetPoint("TOP", d, "BOTTOM", 0, -2)
+  d:Hide()
+  return d
 end
 
 -- Puts a side slot on the k-th place of the arc; side is -1 for the left, 1 for the right.
@@ -181,6 +214,9 @@ function Panel.create(charDB, db)
     if i <= MAX_SIDE then seat(f, s, i, -1, 28) else seat(f, s, i - MAX_SIDE, -1, 28, 46) end
     f.missing[i] = s
   end
+  -- Above the ring: your damage over time on this enemy
+  f.dotIcons = {}
+  for i = 1, MAX_DOTS do f.dotIcons[i] = dotIcon(f) end
   f.leftLabel = S.text(f, "body", 11, C.muted, "OUTLINE")
   f.leftLabel:SetJustifyH("RIGHT")
   f.chainLabel = S.text(f, "body", 11, C.muted, "OUTLINE")
@@ -205,7 +241,7 @@ function Panel.create(charDB, db)
   f.msg = line("body", 12, C.ink)
   f.lines = { f.name, f.why, f.status, f.dots, f.msg }
   f.hint = S.text(f, "body", 11, C.muted, "OUTLINE")
-  f.hint:SetPoint("BOTTOM", f, "TOP", 0, 8)
+  f.hint:SetPoint("BOTTOM", f, "TOP", 0, 52)   -- above the debuff icons
   f.hint:SetText("Drag the ring to move the coach")
   f.hint:Hide()
 
@@ -470,21 +506,34 @@ function Panel.render(view)
   f.status:SetTextColor(tone[1], tone[2], tone[3])
   y = place(f.status, y, explain, 4)
 
+  -- Your damage over time on this enemy: icons above the ring, centred, in the order you cast them
+  local dots = db.showDots ~= false and view.dots or {}
+  local shownDots = math.min(#dots, MAX_DOTS)
+  for i = 1, MAX_DOTS do
+    local d, item = f.dotIcons[i], dots[i]
+    if i > shownDots then
+      d:Hide()
+    else
+      d:ClearAllPoints()
+      d:SetPoint("BOTTOM", f, "TOP", (i - (shownDots + 1) / 2) * (DOT + DOT_GAP), 18)
+      d.icon:SetTexture(item.icon or QUESTION)
+      local soon = item.left <= 3
+      d.timer:SetText(seconds(math.max(0, item.left)))
+      local c = soon and C.danger or C.ink
+      d.timer:SetTextColor(c[1], c[2], c[3])
+      -- the sweep runs by itself: only (re)start it when the spell was cast again
+      if d.sweep and item.duration and item.start and (d.start ~= item.start or d.duration ~= item.duration) then
+        pcall(d.sweep.SetCooldown, d.sweep, item.start, item.duration)
+        d.start, d.duration = item.start, item.duration
+      end
+      d.label = item.label
+      d:Show()
+    end
+  end
+
   local dotLine
-  if db.showDots ~= false then
-    local onIcon, parts = {}, {}
-    for i = 1, MAX_SIDE do
-      local s = f.done[i]
-      if s:IsShown() and s.title then onIcon[s.title] = true end
-    end
-    for _, d in ipairs(view.dots or {}) do
-      if not onIcon[d.label] then parts[#parts + 1] = ("%s %s"):format(d.label, seconds(d.left)) end
-    end
-    if #parts > 0 then dotLine = "Also on this enemy: " .. table.concat(parts, " · ") end
-    if view.otherDotted and view.otherDotted > 0 then
-      local other = view.otherDotted == 1 and "1 other enemy still ticking" or (view.otherDotted .. " other enemies still ticking")
-      dotLine = dotLine and (dotLine .. "\n" .. other) or other
-    end
+  if db.showDots ~= false and view.otherDotted and view.otherDotted > 0 then
+    dotLine = view.otherDotted == 1 and "1 other enemy still ticking" or (view.otherDotted .. " other enemies still ticking")
   end
   y = place(f.dots, y, dotLine, 4)
 
