@@ -20,8 +20,8 @@ local WARLOCK_SPELLS = {
   ["Drain Life"]     = { ids = { 689, 699, 709, 7651, 11699, 11700 }, learn = 14, harm = true },
   ["Drain Soul"]     = { ids = { 1120, 8288, 8289, 11675 }, learn = 10, harm = true },
   ["Fear"]           = { ids = { 5782, 6213, 6215 }, harm = true },
-  ["Demon Skin"]     = { ids = { 687, 696 } },
-  ["Demon Armor"]    = { ids = { 706, 1086, 11733, 11734, 11735 }, learn = 20 },
+  ["Demon Skin"]     = { self = true, ids = { 687, 696 } },
+  ["Demon Armor"]    = { self = true, ids = { 706, 1086, 11733, 11734, 11735 }, learn = 20 },
   -- `summons`: which demon it brings out, so the coach knows who is at your side
   ["Summon Imp"]     = { ids = { 688 }, summons = "Imp" },                -- class quest, level 1
   ["Summon Voidwalker"] = { ids = { 697 }, summons = "Voidwalker" },      -- class quest, level 10

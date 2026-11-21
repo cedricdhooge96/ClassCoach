@@ -451,6 +451,17 @@ if SCENARIO == "shaman" then
   check("no tick error", ns.C.lastError == nil, ns.C.lastError)
 
 ---------------------------------------------------------------------------
+  -- Seen in game: Lightning Shield cast with an enemy targeted showed under "already cast",
+  -- "You cast it on this enemy". A buff, heal or totem is never on the enemy.
+  target({ name = "Rockjaw Trogg", level = 11, hostile = true, guid = "Creature-99" })
+  M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED")
+  cast(324); cast(8075); M.advance(0.5); local fs = tick(ns)
+  local shown = {}
+  for _, d in ipairs(ns.C.lastView.done or {}) do shown[#shown + 1] = d.label end
+  check("a buff and a totem cast with an enemy targeted are not 'already cast' on it", #shown == 0, table.concat(shown, ", "))
+  check("...nor counted as an enemy of the fight", ns.C.tracker.fight and not ns.C.tracker.fight.onTarget[ns.Tracker.SELF] and ns.C.tracker.fight.targets == 0)
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(1)
+
 elseif SCENARIO == "priest" then
   M.player({
     class = "PRIEST", className = "Priest", level = 14, mana = 400, maxMana = 400,

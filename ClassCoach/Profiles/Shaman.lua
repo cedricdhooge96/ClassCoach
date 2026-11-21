@@ -12,21 +12,21 @@ local SHAMAN_SPELLS = {
   ["Earth Shock"]      = { ids = { 8042, 8044, 8045, 8046, 10412, 10413, 10414 }, cd = "shock", learn = 4, harm = true },
   ["Flame Shock"]      = { ids = { 8050, 8052, 8053, 10447, 10448, 29228 }, debuff = 12, cd = "shock", learn = 10 },
   ["Frost Shock"]      = { ids = { 8056, 8058, 10472, 10473 }, cd = "shock", harm = true },
-  ["Lightning Shield"] = { ids = { 324, 325, 905, 945, 8134, 10431, 10432 }, learn = 8 },
-  ["Water Shield"]     = {},  -- new in Forever (Restoration talent): looked up by name
-  ["Rockbiter Weapon"] = { ids = { 8017, 8018, 8019, 10399, 16314, 16315, 16316 } },
-  ["Flametongue Weapon"] = { ids = { 8024, 8027, 8030, 16339, 16341, 16342 } },
-  ["Windfury Weapon"]  = { ids = { 8232, 8235, 10486, 16362 } },
+  ["Lightning Shield"] = { self = true, ids = { 324, 325, 905, 945, 8134, 10431, 10432 }, learn = 8 },
+  ["Water Shield"]     = { self = true },  -- new in Forever (Restoration talent): looked up by name
+  ["Rockbiter Weapon"] = { self = true, ids = { 8017, 8018, 8019, 10399, 16314, 16315, 16316 } },
+  ["Flametongue Weapon"] = { self = true, ids = { 8024, 8027, 8030, 16339, 16341, 16342 } },
+  ["Windfury Weapon"]  = { self = true, ids = { 8232, 8235, 10486, 16362 } },
   ["Searing Totem"]    = { ids = { 3599, 6363, 6364, 6365, 10437, 10438 }, totem = "fire", lasts = 30 },
   ["Strength of Earth Totem"] = { ids = { 8075, 8160, 8161, 10442, 25361 }, totem = "earth", lasts = 120 },
   ["Stoneskin Totem"]  = { ids = { 8071, 8154, 8155, 10406, 10407, 10408 }, totem = "earth", lasts = 120 },
   ["Mana Spring Totem"] = { ids = { 5675, 10495, 10496, 10497 }, totem = "water", lasts = 60 },
   ["Healing Stream Totem"] = { ids = { 5394, 6375, 6377, 10462, 10463 }, totem = "water", lasts = 60 },
   ["Windfury Totem"]   = { ids = { 8512, 10613, 10614 }, totem = "air", lasts = 120 },
-  ["Healing Wave"]     = { ids = { 331, 332, 547, 913, 939, 959, 8005, 10395, 10396, 25357 } },
-  ["Lesser Healing Wave"] = { ids = { 8004, 8008, 8010, 10466, 10467, 10468 } },
-  ["Chain Heal"]       = { ids = { 1064, 10622, 10623 } },
-  ["Reincarnation"]    = { ids = { 20608 } },
+  ["Healing Wave"]     = { self = true, ids = { 331, 332, 547, 913, 939, 959, 8005, 10395, 10396, 25357 } },
+  ["Lesser Healing Wave"] = { self = true, ids = { 8004, 8008, 8010, 10466, 10467, 10468 } },
+  ["Chain Heal"]       = { self = true, ids = { 1064, 10622, 10623 } },
+  ["Reincarnation"]    = { self = true, ids = { 20608 } },
 }
 
 local function spells(extra)

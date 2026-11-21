@@ -21,6 +21,9 @@ end
 -- A wand (and a hunter's Auto Shot) reports every shot as a new cast. Shots
 -- that follow each other are ONE cast: the first shot goes into the history,
 -- the next ones only move its time on, until you cast something else.
+-- The target key of a cast that is not on an enemy (a buff, a heal, a totem, a demon).
+Tracker.SELF = "self"
+
 local REPEATS = { Shoot = true, ["Auto Shot"] = true }
 Tracker.REPEATS = REPEATS
 
@@ -32,6 +35,8 @@ local function record(f, c)
     f.spent = f.spent + c.cost
     f.spentBy[c.name] = (f.spentBy[c.name] or 0) + c.cost
   end
+  -- a buff, a heal or a totem ("self") is not an enemy: it never counts as one
+  if c.target == Tracker.SELF then return end
   local on = f.onTarget[c.target]
   if not on then
     on = {}

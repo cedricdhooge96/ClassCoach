@@ -10,12 +10,12 @@ local PRIEST_SPELLS = {
   ["Mind Blast"]         = { ids = { 8092, 8102, 8103, 8104, 8105, 8106, 10945, 10946, 10947 }, cd = true, learn = 10, harm = true },
   ["Holy Fire"]          = { ids = { 14914, 15262, 15263, 15264, 15265, 15266, 15267, 15261 }, harm = true },
   ["Penance"]            = { cd = true, harm = true },   -- Forever Discipline talent: looked up by name
-  ["Power Word: Shield"] = { ids = { 17, 592, 600, 3747, 6065, 6066, 10898, 10899, 10900, 10901 }, learn = 6 },
-  ["Power Word: Fortitude"] = { ids = { 1243, 1244, 1245, 2791, 10937, 10938 } },
-  ["Inner Fire"]         = { ids = { 588, 7128, 602, 1006, 10951, 10952 }, learn = 12 },
-  ["Renew"]              = { ids = { 139, 6074, 6075, 6076, 6077, 6078, 10927, 10928, 10929, 25315 } },
-  ["Lesser Heal"]        = { ids = { 2050, 2052, 2053 } },
-  ["Flash Heal"]         = { ids = { 2061, 9472, 9473, 9474, 10915, 10916, 10917 } },
+  ["Power Word: Shield"] = { self = true, ids = { 17, 592, 600, 3747, 6065, 6066, 10898, 10899, 10900, 10901 }, learn = 6 },
+  ["Power Word: Fortitude"] = { self = true, ids = { 1243, 1244, 1245, 2791, 10937, 10938 } },
+  ["Inner Fire"]         = { self = true, ids = { 588, 7128, 602, 1006, 10951, 10952 }, learn = 12 },
+  ["Renew"]              = { self = true, ids = { 139, 6074, 6075, 6076, 6077, 6078, 10927, 10928, 10929, 25315 } },
+  ["Lesser Heal"]        = { self = true, ids = { 2050, 2052, 2053 } },
+  ["Flash Heal"]         = { self = true, ids = { 2061, 9472, 9473, 9474, 10915, 10916, 10917 } },
   ["Shoot"]              = { ids = { 5019 }, core = true, auto = true },
 }
 

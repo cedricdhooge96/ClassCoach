@@ -1019,13 +1019,16 @@ function handlers.UNIT_SPELLCAST_SUCCEEDED(unit, _, spellID)
   local started = C.castStart
   if started and started.id == id and GetTime() - started.at < 10 then onKey = started.key end
   C.castStart = nil
+  -- A buff, a heal, a totem or a demon is not cast on the enemy, also with one targeted
+  -- (seen in game: Lightning Shield under "already cast" with "You cast it on this enemy").
+  if meta and (meta.self or meta.totem or meta.summons or meta.restores) then onKey = Tracker.SELF end
   local sp = C.spells[key]
   -- Out of combat the next exact reading may come after combat starts: keep our own count right.
   if not C.tracker.fight and C.lastMana and cost and cost > 0 then C.lastMana = math.max(0, C.lastMana - cost) end
   Mana.spend(C.ledger, GetTime(), cost or 0, meta and meta.restores and C.manaMax and meta.restores * C.manaMax or 0)
   C.tracker:cast(GetTime(), key, cost or 0, meta, onKey, sp and sp.duration)
   ns.Trace.add("cast", "%s on %s%s, cost %s, recorded on %s", key, ns.Trace.unit("target"), onKey ~= t.key and " (started on the one before)" or "",
-    tostring(cost), onKey and (onKey == t.key and "this enemy" or "the enemy it started on") or "no enemy")
+    tostring(cost), onKey == Tracker.SELF and "not an enemy (a buff, heal, totem or demon)" or onKey and (onKey == t.key and "this enemy" or "the enemy it started on") or "no enemy")
 end
 
 -- The game reports "something was resisted on your target" without saying
