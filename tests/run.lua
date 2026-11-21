@@ -614,6 +614,14 @@ elseif SCENARIO == "warlock" then
     tostring(ns.C.tracker:debuffLeft("g:Creature-6", "Immolate", M.now)))
   target({ name = "Gnoll", level = 11, hostile = true, guid = "Creature-5" })
   M.advance(0.5); f = tick(ns)
+  -- a resist on the enemy you just switched to never undoes a spell that landed on the other one
+  cast(172); M.advance(0.2)
+  target({ name = "Gnoll", level = 11, hostile = true, guid = "Creature-6" })
+  M.fire("UNIT_COMBAT", "target", "RESIST", "", 0, 32); M.advance(0.1)
+  check("a resist on the other enemy leaves this one's Corruption alone", ns.C.tracker:debuffLeft("g:Creature-5", "Corruption", M.now) > 10,
+    tostring(ns.C.tracker:debuffLeft("g:Creature-5", "Corruption", M.now)))
+  target({ name = "Gnoll", level = 11, hostile = true, guid = "Creature-5" })
+  M.advance(0.5); f = tick(ns)
 
   M.P.mana = 50; M.advance(3); f = tick(ns)
   check("low mana: Life Tap", f.name.text == "Life Tap", f.name.text)

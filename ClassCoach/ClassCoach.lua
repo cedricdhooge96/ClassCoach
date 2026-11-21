@@ -1009,7 +1009,7 @@ function handlers.UNIT_COMBAT(unit, action)
   if API.plain(unit) ~= "target" then return end
   local kind = SPELL_FAILS[API.plain(action) or ""]
   if not kind then return end
-  local c = C.tracker:castMissed(GetTime(), kind == "immune")
+  local c = C.tracker:castMissed(GetTime(), kind == "immune", currentTarget().key)
   C.stats = C.stats or { resists = 0, unmatched = 0 }
   if c then C.stats.resists = C.stats.resists + 1 else C.stats.unmatched = C.stats.unmatched + 1 end
 end
@@ -1020,12 +1020,15 @@ function handlers.PLAYER_TARGET_CHANGED()
   -- a new target between fights: the smart key starts from the beginning
   if not API.inCombat() then safely("smart key", ns.Smart.restart) end
 end
+-- Enemies told apart by nameplate: keep your target's key while it stays your
+-- target, so a plate that hides and comes back never forgets its timers. Only a
+-- key from the fallback count is looked at again (its plate may just have appeared).
 function handlers.NAME_PLATE_UNIT_ADDED(token)
   API.plateAdded(token)
-  C.targetKey = nil
+  if C.targetMode == "count" then C.targetKey = nil end
 end
 function handlers.NAME_PLATE_UNIT_REMOVED()
-  C.targetKey = nil
+  if C.targetMode == "count" then C.targetKey = nil end
 end
 
 function handlers.PLAYER_SWING()

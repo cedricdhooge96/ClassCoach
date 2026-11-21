@@ -107,13 +107,15 @@ end
 -- not say what, so we take your most recent harmful cast that could still be
 -- waiting for its result, and undo it: its damage over time is not running,
 -- and it does not count as cast on that enemy. `immune` also remembers that
--- this enemy cannot be affected by it. Returns the cast, or nil.
-function Tracker:castMissed(now, immune)
+-- this enemy cannot be affected by it. targetKey: the enemy the game reported
+-- it on (your target): a cast on another enemy is never undone. Returns the cast, or nil.
+function Tracker:castMissed(now, immune, targetKey)
   for i = #self.recentCasts, 1, -1 do
     local c = self.recentCasts[i]
     local window = c.meta.travel and FLIGHT_WINDOW or RESULT_WINDOW
     if now - c.at > FLIGHT_WINDOW then break end
-    if not c.missed and (c.meta.debuff or c.meta.harm) and now - c.at <= window then
+    if not c.missed and (c.meta.debuff or c.meta.harm) and now - c.at <= window
+      and (targetKey == nil or c.target == targetKey) then
       c.missed = immune and "immune" or "resist"
       if c.dotKey then self.dots[c.dotKey] = c.before end
       if immune then self.immune[c.target .. "|" .. c.name] = true end
