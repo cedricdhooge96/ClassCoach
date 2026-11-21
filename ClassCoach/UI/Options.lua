@@ -109,7 +109,9 @@ local function layout()
     { key = "smartKey", kind = "check", name = "Smart key: one key walks the coach's plan", default = true,
       tip = "Bind its three keys under Options > Keybindings > AddOns > ClassCoach: Next, Again (after a resist) and Restart. One press still casts one spell. Type /coach smart to see its steps." },
     { key = "autoBar", kind = "check", name = "Put newly learned spells on my bars", default = false,
-      tip = "When you train a spell, it goes to its button on the fight, react or prepare bar if that button is free. Nothing is ever overwritten." },
+      tip = "When you train a spell, it goes to a free button on the fight, react or prepare bar. Nothing is overwritten or moved; /coach bar reset sorts the bars again." },
+    { key = "barFixed", kind = "check", name = "Fixed buttons: leave a gap for spells I have not learned", default = false,
+      tip = "Off: the spells you have sit side by side from button 1, so a bar has no gaps; after you learn a spell, /coach bar reset sorts it into place and the buttons after it move one up. On: every spell has its own button for good, so a key never changes, and gaps fill in as you level." },
     { key = "autoMacros", kind = "check", name = "Keep my CC macros up to date", default = true,
       tip = "Rewrites the macros made by /coach macros when you learn spells or the pull plan changes." },
   }
@@ -211,7 +213,7 @@ function Options.build(db, charDB, actions)
     page:AddInitializer(CreateSettingsButtonInitializer("Action bar", "Fill empty buttons", actions.bar,
       "Lays out three bars by purpose: the fight on your main bar, reactions on Action Bar 2, preparation on Action Bar 3. Buttons that already hold something are left alone.", true))
     page:AddInitializer(CreateSettingsButtonInitializer("Action bar", "Reset to the coach's layout", actions.barReset,
-      "Makes those three bars exactly the coach's layout: every button gets its entry or is emptied. /coach bar undo puts back what was there.", true))
+      "Makes those three bars exactly the coach's layout: what you can use, side by side without gaps, and every other button emptied. /coach bar undo puts back what was there.", true))
     page:AddInitializer(CreateSettingsButtonInitializer("Panel positions", "Reset", actions.reset,
       "Puts both panels back where they started.", true))
   end)

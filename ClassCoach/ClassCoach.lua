@@ -292,14 +292,19 @@ function C.barPlan(s)
     macro = API.macroExists,
     book = function(name) local entry = C.book and C.book[name]; return entry and entry.ids[#entry.ids] or nil end,
     item = function(kind) return supplies and supplies.best[kind] end,
-  })
+  }, ClassCoachDB.barFixed)
+end
+
+local function sameAction(a, b)
+  return a ~= nil and b ~= nil and ((a.spell ~= nil and a.spell == b.spell) or (a.macro ~= nil and a.macro == b.macro) or (a.item ~= nil and a.item == b.item))
 end
 
 -- Lays out the profile's suggested bars: the fight on your main bar, reactions
 -- on Action Bar 2, preparation on Action Bar 3. mode:
 --   nil        fill only empty buttons; a taken spot sends the entry to the
---              next free button of the same bar
---   "replace"  put every entry on its own button, overwriting what is there
+--              next free button of the same bar, so nothing you use moves
+--   "replace"  put every entry on its own button, overwriting what is there,
+--              and take away the copy it leaves on another button of that bar
 --   "preview"  only say what would go where
 local BAR_OF = { fight = 1, react = 2, prep = 3 }
 local BAR_TITLE = { fight = "Fight", react = "React", prep = "Prepare" }
@@ -324,16 +329,21 @@ function C.setupBar(mode, quiet)
   if API.inCombat() then report("The action bars can only be changed out of combat.") return end
   if mode ~= "preview" and not quiet then C.syncMacros(false) end   -- the layout uses the CC macros
   local supplies = s.journey and s.journey.supplies
-  -- A button of ours holding an item that is used up, or a weaker one of the
-  -- same kind (old water, a smaller bandage), may be refreshed.
-  local function stale(slot, e)
-    local old = e.item and API.slotItem(slot)
-    if not old or old == e.item then return false end
-    local count = API.itemCount(old)
-    return count == 0 or (supplies and supplies.kindOf[old] == e.kindOfItem)
+  local fixed = ClassCoachDB.barFixed
+  -- The button of an item entry that may be refreshed: one on this bar holding
+  -- a weaker item of the same kind (old water, a smaller bandage), or the
+  -- entry's own button when what is on it is used up.
+  local function stale(info, e)
+    if not e.item then return nil end
+    for i = 1, 12 do
+      local old = API.slotItem(info.first + i - 1)
+      if old and old ~= e.item and supplies and supplies.kindOf[old] == e.kindOfItem then return i end
+    end
+    local old = API.slotItem(info.first + e.index - 1)
+    return old and old ~= e.item and API.itemCount(old) == 0 and e.index or nil
   end
   local plan = C.barPlan(s)
-  local total, off = 0, {}
+  local total, off, unsorted = 0, {}, false
   for _, group in ipairs(Engine.BAR_GROUPS) do
     local entries, bar = plan[group], BAR_OF[group]
     local info = API.barInfo(bar)
@@ -341,31 +351,47 @@ function C.setupBar(mode, quiet)
       off[#off + 1] = ("%s (%d buttons for %s)"):format(info.name, #entries, BAR_TITLE[group]:lower())
     elseif #entries > 0 then
       local placed, moved, already, full = {}, {}, {}, {}
+      local function put(e, button, list)
+        if not API.placeAction(info.first + button - 1, e) then return false end
+        list[#list + 1] = ("%d %s"):format(button, e.label)
+        unsorted = unsorted or button ~= e.index
+        return true
+      end
       if mode == "preview" then
         for _, e in ipairs(entries) do placed[#placed + 1] = ("%d %s"):format(e.index, e.label) end
       else
         local waiting = {}
         for _, e in ipairs(entries) do
-          local slot = info.first + e.index - 1
           local onBar = C.keys and C.keys[e.item and ("item:" .. e.item) or e.macro and ("macro:" .. e.macro) or e.label] ~= nil
-          if mode ~= "replace" and onBar then
+          if mode == "replace" then
+            put(e, e.index, placed)
+          elseif onBar then
             already[#already + 1] = e.label
-          elseif mode == "replace" or API.slotEmpty(slot) or stale(slot, e) then
-            if API.placeAction(slot, e) then placed[#placed + 1] = ("%d %s"):format(e.index, e.label) end
           else
-            waiting[#waiting + 1] = e
+            -- with fixed buttons an entry goes to its own button when that is free
+            local button = stale(info, e) or (fixed and API.slotEmpty(info.first + e.index - 1) and e.index)
+            if button then put(e, button, placed) else waiting[#waiting + 1] = e end
           end
         end
-        -- its own button was taken: the next free one on the same bar
+        -- the rest, in the layout's order: the first free button of the bar, so
+        -- a gap is filled first and nothing you already use has to move
         for _, e in ipairs(waiting) do
-          local put
+          local free
           for i = 1, 12 do
-            if API.slotEmpty(info.first + i - 1) then
-              if API.placeAction(info.first + i - 1, e) then put = i end
-              break
+            if API.slotEmpty(info.first + i - 1) then free = i break end
+          end
+          if not (free and put(e, free, fixed and moved or placed)) then full[#full + 1] = e.label end
+        end
+        if mode == "replace" then
+          -- an entry that came from another button of this bar would now be on it twice
+          local own = {}
+          for _, e in ipairs(entries) do own[e.index] = true end
+          for i = 1, 12 do
+            local had = not own[i] and API.slotContent(info.first + i - 1)
+            for _, e in ipairs(had and entries or {}) do
+              if sameAction(had, e) then API.clearAction(info.first + i - 1) break end
             end
           end
-          if put then moved[#moved + 1] = ("%d %s"):format(put, e.label) else full[#full + 1] = e.label end
         end
       end
       total = total + #placed + #moved
@@ -380,18 +406,16 @@ function C.setupBar(mode, quiet)
   if #off > 0 then
     report("Switched off: " .. table.concat(off, "; ") .. ". Turn it on in Esc > Options > Action Bars, then run /coach bar again.")
   end
-  if mode == "preview" then report("That is the plan. /coach bar fills empty buttons; /coach bar replace overwrites.")
-  elseif total == 0 and #off == 0 then report("Your bars already have everything.") end
+  if mode == "preview" then report("That is the plan. /coach bar fills empty buttons; /coach bar reset makes your bars exactly this.")
+  elseif total == 0 and #off == 0 then report("Your bars already have everything.")
+  elseif unsorted then report("Nothing you already use was moved, so the order is not the coach's. /coach bar reset sorts all three bars.") end
   if mode ~= "preview" and total > 0 then rescanKeysSoon() end
   return total
 end
 
-local function sameAction(a, b)
-  return a ~= nil and b ~= nil and ((a.spell ~= nil and a.spell == b.spell) or (a.macro ~= nil and a.macro == b.macro) or (a.item ~= nil and a.item == b.item))
-end
-
--- /coach bar reset: makes the three bars exactly the coach's layout. Every
--- button of a bar the layout uses gets its entry or is emptied. What the bars
+-- /coach bar reset: makes the three bars exactly the coach's layout: what you
+-- can use right now, side by side from button 1 (or each on its fixed button,
+-- with the "fixed buttons" setting). Every other button of those bars is emptied. What the bars
 -- held before is remembered, so /coach bar undo puts it back. Nothing is lost
 -- for good either way: a spell stays in your spellbook, a macro in /macro, an
 -- item in your bags.
@@ -1196,7 +1220,7 @@ local HELP = {
   "/coach pages — stop Shift+number from switching your main bar to an empty page",
   "/coach macros — create or refresh this class's helper macros (out of combat)",
   "/coach bar — lay out three bars by purpose: fight (main bar), react (Action Bar 2), prepare (Action Bar 3). Empty buttons only; \"preview\" just lists, \"replace\" overwrites",
-  "/coach bar reset — make those three bars exactly the coach's layout: every button gets its entry or is emptied. /coach bar undo puts back what was there",
+  "/coach bar reset — make those three bars exactly the coach's layout: what you can use, side by side without gaps, and every other button emptied. /coach bar undo puts back what was there",
   "/coach bars — what ClassCoach can see of the game's action bars, for when they vanish",
   "/coach tips — ten preparation habits from Forever guides",
   "/coach build — the talent build you follow; paste an Icy Veins or Warcraft Tavern calculator link after it to follow that one",

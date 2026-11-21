@@ -154,7 +154,8 @@ The smart key's steps come from the same pull plan as the macros
 
 ```lua
 bars = {                                  -- three bars by purpose, up to 12 buttons each
-  fight = {                               -- main bar: one entry per button, best candidate first
+  fight = {                               -- main bar: entries in bar order, best candidate first;
+                                          -- one you cannot use yet takes no button, so the bar has no gaps
     { "macro:CC Pull", "Frostbolt" },     -- a CC macro, else a spell key
   },
   react = { { "book:Blink" }, { "book:Counterspell" } },   -- Action Bar 2; "book:" = not in `spells`

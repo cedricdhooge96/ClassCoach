@@ -266,7 +266,8 @@ ns.RegisterProfile({
   -- Voidwalker out and no fight yet, it only sends it and waits for you.
   smart = { open = "CC Open", gate = { when = "[pet:Voidwalker,nocombat]", macro = "CC Send" } },
 
-  -- /coach bar: three bars by purpose, one entry per button, best candidate first.
+  -- /coach bar: three bars by purpose, the entries in the order they belong on the bar, best candidate first.
+  -- An entry you cannot use yet takes no button (or leaves a gap, with the "fixed buttons" setting).
   manaPotion = false,   -- Life Tap is the Warlock's mana potion
   bars = {
     fight = {

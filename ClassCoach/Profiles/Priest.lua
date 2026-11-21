@@ -151,7 +151,8 @@ ns.RegisterProfile({
   -- The smart key leaves the shield to its own key: it targets you, not the enemy.
   smart = { skip = { ["Power Word: Shield"] = true } },
 
-  -- /coach bar: three bars by purpose, one entry per button, best candidate first.
+  -- /coach bar: three bars by purpose, the entries in the order they belong on the bar, best candidate first.
+  -- An entry you cannot use yet takes no button (or leaves a gap, with the "fixed buttons" setting).
   bars = {
     fight = {
       { "macro:CC Pull", "Smite" },

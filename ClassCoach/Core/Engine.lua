@@ -340,38 +340,43 @@ end
 --   react  Action Bar 2: emergencies, heals, interrupts, crowd control
 --   prep   Action Bar 3: buffs, summons and other things for between fights
 -- profile.bars = { fight = {...}, react = {...}, prep = {...} }: up to 12
--- entries each, one per button. An entry is a list of candidates, best first:
--- a spell key, "macro:CC Pull", "book:Ghost Wolf" for a spell that is not
--- part of the rotation, or "item:bandage" / "item:healthstone" / "item:hearth"
--- for the best such item in your bags. Positions are fixed, so a button keeps its place as
--- you level and gaps fill in when you learn the spell.
+-- entries each, in the order they belong on the bar. An entry is a list of
+-- candidates, best first: a spell key, "macro:CC Pull", "book:Ghost Wolf" for
+-- a spell that is not part of the rotation, or "item:bandage" /
+-- "item:healthstone" / "item:hearth" for the best such item in your bags.
+-- An entry you cannot use yet (spell not learned, nothing of that kind in
+-- your bags) takes no button: what you have sits side by side from button 1,
+-- in the profile's order. With fixed = true every entry keeps the button of
+-- its place in the list instead, so nothing ever moves and gaps fill in as
+-- you learn spells.
 Engine.BAR_GROUPS = { "fight", "react", "prep" }
 
 -- Returns { fight = { { index, label, macro = name } | { index, label, spell = id } }, react = ..., prep = ... }.
--- Nothing appears twice.
-function Engine.bars(profile, s, has)
+-- index is the button on that bar (1-12). Nothing appears twice.
+function Engine.bars(profile, s, has, fixed)
   local layout = profile.bars or (profile.bar and { fight = profile.bar }) or {}
   local out, seen = {}, {}
   for _, group in ipairs(Engine.BAR_GROUPS) do
     local list = {}
-    for index, candidates in ipairs(layout[group] or {}) do
+    for place, candidates in ipairs(layout[group] or {}) do
       for _, c in ipairs(type(candidates) == "table" and candidates or { candidates }) do
         local macro, book, item = c:match("^macro:(.+)$"), c:match("^book:(.+)$"), c:match("^item:(.+)$")
         local entry
         if item then
           -- "item:bandage": the best one of that kind in your bags
           local found = has.item and has.item(item)
-          if found then entry = { index = index, label = found.name or item, item = found.id, kindOfItem = item } end
+          if found then entry = { label = found.name or item, item = found.id, kindOfItem = item } end
         elseif macro then
-          if has.macro(macro) then entry = { index = index, label = macro, macro = macro } end
+          if has.macro(macro) then entry = { label = macro, macro = macro } end
         elseif book then
           local id = has.book(book)
-          if id then entry = { index = index, label = book, spell = id } end
+          if id then entry = { label = book, spell = id } end
         elseif s.spells[c] then
-          entry = { index = index, label = s.spells[c].name, spell = s.spells[c].id }
+          entry = { label = s.spells[c].name, spell = s.spells[c].id }
         end
         if entry and not seen[entry.label] then
           seen[entry.label] = true
+          entry.index = fixed and place or #list + 1
           list[#list + 1] = entry
           break
         end

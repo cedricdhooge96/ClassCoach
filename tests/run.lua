@@ -90,6 +90,16 @@ end
 -- The key shown on a slot's badge ("" when it shows none).
 local function keyOn(slot) return slot.key.shown and slot.key.text.text or "" end
 
+-- What a bar holds from its first slot on, button by button: "CC Pull 8044 - item:1251" (trailing empty buttons left out).
+local function barRow(first)
+  local out = {}
+  for i = 0, 11 do
+    local a = M.P.actions[first + i]
+    out[#out + 1] = a == nil and "-" or type(a) == "table" and (a.macro or (a.item and "item:" .. a.item) or "?") or tostring(a)
+  end
+  return (table.concat(out, " "):gsub("[ %-]+$", ""))
+end
+
 local SCENARIO = SCENARIO
 
 ---------------------------------------------------------------------------
@@ -270,15 +280,13 @@ if SCENARIO == "shaman" then
   check("bar preview changes nothing", M.P.actions[5] == nil and M.P.actions[49] == nil and M.P.actions[61] == nil)
   SlashCmdList.CLASSCOACH("bar")
   check("bar: taken buttons are left alone", M.P.actions[1] == 529 and M.P.actions[2] == 8044 and M.P.actions[4] == 8017)
-  check("fight bar: Searing Totem on its own button", M.P.actions[5] == 3599, tostring(M.P.actions[5]))
-  check("fight bar: a taken button sends the entry to the next free one", type(M.P.actions[3]) == "table" and M.P.actions[3].macro == "CC Pull"
-    and M.P.actions[6] == 8050, tostring(M.P.actions[3]) .. "/" .. tostring(M.P.actions[6]))
+  check("fight bar: what is new takes the free buttons in the layout's order, so no gap is left", barRow(1) == "529 8044 CC Pull 8017 8050 3599 8075", barRow(1))
   local bolts = 0
   for slot = 1, 12 do if M.P.actions[slot] == 529 then bolts = bolts + 1 end end
   check("fight bar: what is already on a bar is not doubled", bolts == 1, bolts)
   check("react bar (Action Bar 2): the heal", M.P.actions[61] == 331, tostring(M.P.actions[61]))
   check("prepare bar (Action Bar 3): shield first", M.P.actions[49] == 324, tostring(M.P.actions[49]))
-  check("prepare bar: a spell already on a bar is not doubled", M.P.actions[50] == nil, tostring(M.P.actions[50]))
+  check("prepare bar: a spell already on a bar is not doubled, and leaves no gap either", barRow(49) == "324 CC Rest", barRow(49))
   M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(1); tick(ns)
   -- a bar that is switched off is not filled blindly
   M.P.actions = { [1] = 529 }; M.P.bars = { false, true }
@@ -288,8 +296,8 @@ if SCENARIO == "shaman" then
   M.P.bars = nil
   SlashCmdList.CLASSCOACH("bar replace")
   check("bar replace: the pull macro takes button 1", type(M.P.actions[1]) == "table" and M.P.actions[1].macro == "CC Pull", tostring(M.P.actions[1]))
-  check("bar replace: every known entry on its own button", M.P.actions[3] == 8044 and M.P.actions[4] == 8050 and M.P.actions[6] == 529
-    and M.P.actions[50] == 8017 and M.P.actions[61] == 331, tostring(M.P.actions[3]))
+  check("bar replace: what you know, side by side in the layout's order", barRow(1) == "CC Pull 8044 8050 3599 529 8075" and barRow(49) == "324 8017 CC Rest"
+    and barRow(61) == "331", barRow(1) .. " / " .. barRow(49) .. " / " .. barRow(61))
   M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(1); tick(ns)
   -- Food, water, bandage and Hearthstone
   M.P.bag = {
@@ -304,8 +312,7 @@ if SCENARIO == "shaman" then
   SlashCmdList.CLASSCOACH("bar")
   local rest = M.macros[GetMacroIndexByName("CC Rest")]
   check("rest macro: the best water you can use, then food", rest and rest.body == "#showtooltip\n/use item:1179\n/use item:4540", rest and rest.body)
-  check("rest macro, bandage and Hearthstone on the prepare bar", type(M.P.actions[58]) == "table" and M.P.actions[58].macro == "CC Rest"
-    and M.P.actions[59].item == 1251 and M.P.actions[60].item == 6948, tostring(M.P.actions[58]))
+  check("rest macro, bandage and Hearthstone on the prepare bar, right after the buffs", barRow(49) == "324 8017 CC Rest item:1251 item:6948", barRow(49))
   -- bags change: the macro follows, and a used-up or weaker item button is refreshed
   M.P.bag[2].count = 0; table.remove(M.P.bag, 2)
   M.P.bag[#M.P.bag + 1] = { id = 3530, count = 6, class = 0, sub = 7, name = "Wool Bandage", min = 1.5 }
@@ -314,7 +321,7 @@ if SCENARIO == "shaman" then
   M.fire("BAG_UPDATE_DELAYED"); M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(1); tick(ns); M.advance(1); tick(ns)
   rest = M.macros[GetMacroIndexByName("CC Rest")]
   check("rest macro rewrites itself when your bags change", rest.body == "#showtooltip\n/use item:159\n/use item:4540", rest.body)
-  check("a better bandage replaces the old one on its button", M.P.actions[59].item == 3530, tostring(M.P.actions[59].item))
+  check("a better bandage replaces the old one on its button", barRow(49) == "324 8017 CC Rest item:3530 item:6948", barRow(49))
   ClassCoachDB.autoBar = false
   M.P.bag = { { id = 159, count = 2, class = 0, sub = 5, use = "Drink", name = "Refreshing Spring Water", min = 1 } }
   M.P.level = 16; M.fire("PLAYER_LEVEL_UP", 16); M.fire("MERCHANT_SHOW"); M.fire("BAG_UPDATE_DELAYED"); M.advance(3); tick(ns)
@@ -364,9 +371,11 @@ if SCENARIO == "shaman" then
 
   -- new spells find their button by themselves when you ask for that
   ClassCoachDB.autoBar = true
+  local prepBefore = barRow(49)
   M.P.spells[8024] = { name = "Flametongue Weapon", cost = 30 }; M.P.book[#M.P.book + 1] = 8024; M.P.knownIds[8024] = true
   M.fire("SPELLS_CHANGED"); M.advance(1); tick(ns); M.advance(1); tick(ns)
-  check("a newly learned spell takes its button", M.P.actions[52] == 8024, tostring(M.P.actions[52]))
+  check("a newly learned spell takes the first free button of its bar, and nothing else moves", not prepBefore:find("-", 1, true) and barRow(49) == prepBefore .. " 8024",
+    prepBefore .. " -> " .. barRow(49))
   ClassCoachDB.autoBar = false
 
   -- The settings screen
@@ -374,7 +383,7 @@ if SCENARIO == "shaman" then
   check("settings page registered with the game", S.category ~= nil and S.category.name == "ClassCoach")
   local count = 0
   for _ in pairs(S.list) do count = count + 1 end
-  check("every option made it onto the page", count == 37 and #ns.Options.registered == 37 and #ns.Options.keys() == 37, count)
+  check("every option made it onto the page", count == 38 and #ns.Options.registered == 38 and #ns.Options.keys() == 38, count)
   check("sections and action buttons", #S.headers == 6 and #S.buttons == 4, #S.headers .. "/" .. #S.buttons)
   check("options write to the saved settings", S.list.compact.tbl == ClassCoachDB and S.list.specChoice.tbl == ClassCoachCharDB)
   check("slider shows its unit", S.list.opacity.opts.format(60) == "60%" and S.list.scale.opts.format(1.1) == "1.10x")
@@ -882,6 +891,28 @@ elseif SCENARIO == "sweep" then
     end
   end
 
+  -- The bars at every level: what you know sits side by side from button 1, and
+  -- the fixed-buttons setting shows the same entries in the same order, each on its own button.
+  local function barLayout(level, spells)
+    local s = ns.C.lastState
+    local has = { macro = function() return true end, book = function() return nil end, item = function() return nil end }
+    local packed, fixed = ns.Engine.bars(profile, s, has), ns.Engine.bars(profile, s, has, true)
+    for _, group in ipairs(ns.Engine.BAR_GROUPS) do
+      local tag = ("%s L%d %s bar"):format(WANT, level, group)
+      local gapless, same, rising, known = #packed[group] <= 12, #packed[group] == #fixed[group], true, true
+      for i, e in ipairs(packed[group]) do
+        if e.index ~= i then gapless = false end
+        local other = fixed[group][i]
+        if not other or other.label ~= e.label then same = false end
+        if other and (other.index < i or other.index > 12 or (i > 1 and other.index <= fixed[group][i - 1].index)) then rising = false end
+        if e.spell and not spells[e.spell] then known = false end
+      end
+      check(tag .. ": no gaps", gapless)
+      check(tag .. ": fixed buttons hold the same entries in the same order", same and rising)
+      check(tag .. ": only spells you know", known)
+    end
+  end
+
   for level = 1, 60 do
     for _, wand in ipairs(def.wand and { false, true } or { false }) do
       for _, pet in ipairs(def.pet and { false, true } or { false }) do
@@ -889,7 +920,7 @@ elseif SCENARIO == "sweep" then
           local opts = { wand = wand and level >= 5, pet = pet, mana = mana, noImp = def.pet and not pet and level < 10 }
           local spells = setup(level, opts)
           local f = look(level, opts, spells, "idle")
-          if mana == 300 then smartKey(level, opts, spells) end
+          if mana == 300 then smartKey(level, opts, spells); barLayout(level, spells) end
           check(("%s L%d: a pull plan is shown"):format(WANT, level), ns.C.lastView.planning == true and f.name.text ~= "" and f.name.text ~= "Ready"
             and (f.chainLabel.text == "your pull plan" or not f.upcoming[1].shown), f.name.text)
           if opts.noImp then
@@ -1668,10 +1699,9 @@ elseif SCENARIO == "bars" then
   SlashCmdList.CLASSCOACH("bar preview")
   check("preview changes nothing", A[1] == 980 and A[5] == 172 and on(9) == "MyOwn")
   SlashCmdList.CLASSCOACH("bar reset")
-  check("fight bar: every entry on its own button", on(1) == "CC Pull" and on(2) == "CC Wand" and A[3] == 686 and A[4] == 1454 and A[7] == 980 and A[8] == 172 and A[9] == 348,
-    tostring(on(1)) .. "/" .. tostring(on(2)) .. "/" .. tostring(A[3]) .. "/" .. tostring(A[9]))
-  check("fight bar: what the layout does not use is gone (the duplicate, the macro of your own, the mount)", A[5] == nil and A[6] == nil and A[12] == nil and A[10] == nil,
-    tostring(A[5]) .. "/" .. tostring(A[12]))
+  check("fight bar: the spells you have, side by side from button 1, with no gap for Drain Life or Drain Soul", barRow(1) == "CC Pull CC Wand 686 1454 980 172 348", barRow(1))
+  check("fight bar: what the layout does not use is gone (the duplicate, the macro of your own, the mount)", A[8] == nil and A[9] == nil and A[12] == nil and A[10] == nil,
+    tostring(A[9]) .. "/" .. tostring(A[12]))
   check("react bar: Fear on its button, the leftovers gone", A[61] == 5782 and A[66] == nil, tostring(A[61]) .. "/" .. tostring(A[66]))
   check("prepare bar: armor and demon on their buttons, the misplaced Fear gone", A[49] == 687 and A[50] ~= 5782, tostring(A[49]) .. "/" .. tostring(A[50]))
   check("a bar the layout does not use is not touched", A[25] == 686)
@@ -1691,7 +1721,7 @@ elseif SCENARIO == "bars" then
   check("what was there is remembered for undo", backup and backup.slots[1].spell == 980 and backup.slots[9].macro == "MyOwn" and backup.slots[12].other == "summonmount"
     and backup.slots[2] == false and backup.slots[25] == nil)
   SlashCmdList.CLASSCOACH("bar reset")
-  check("a second reset changes nothing and keeps the layout", on(1) == "CC Pull" and A[5] == nil and A[61] == 5782)
+  check("a second reset changes nothing and keeps the layout", barRow(1) == "CC Pull CC Wand 686 1454 980 172 348" and A[61] == 5782, barRow(1))
 
   -- 3. Undo
   ClassCoachCharDB.barBackup = backup   -- the first reset's memory, as if you undo right away
@@ -1742,12 +1772,56 @@ elseif SCENARIO == "bars" then
   check("Alchemy's Discolored potions heal at a price: not counted", sup.kindOf[990001] == nil)
   check("with a potion and bandages the lines are gone", not journey(ns):find("No healing potion", 1, true) and not journey(ns):find("No bandages", 1, true), journey(ns))
   SlashCmdList.CLASSCOACH("bar reset")
-  check("the healing potion gets its own button on the react bar", on(66) == "item:929", tostring(on(66)))
+  check("the healing potion gets its own button on the react bar, right after Fear", barRow(61) == "5782 item:929", barRow(61))
   M.P.bag[3] = { id = 4306, count = 9, class = 7, sub = 5, name = "Silk Cloth", min = 1 }   -- drank it
   M.P.items = M.P.items or {}; M.P.items[929] = 0
   M.fire("BAG_UPDATE_DELAYED"); M.advance(3); tick(ns); M.advance(3); tick(ns)
   SlashCmdList.CLASSCOACH("bar")
-  check("used up: the button moves to the next best one you carry", on(66) == "item:858", tostring(on(66)))
+  check("used up: the button moves to the next best one you carry", barRow(61) == "5782 item:858", barRow(61))
+
+  -- 5b. Bars that follow what you know: no gaps, and nothing you press moves by itself
+  SlashCmdList.CLASSCOACH("bar reset")
+  local fightBefore = barRow(1)
+  M.P.spells[689] = { name = "Drain Life", cost = 55 }; M.P.book[#M.P.book + 1] = 689; M.P.knownIds[689] = true
+  M.fire("SPELLS_CHANGED"); M.advance(3); tick(ns); M.advance(3); tick(ns)
+  check("learning a spell changes no bar by itself", barRow(1) == fightBefore and fightBefore == "CC Pull CC Wand 686 1454 980 172 348", barRow(1))
+  M.printed = {}
+  SlashCmdList.CLASSCOACH("bar")
+  check("/coach bar: the new spell takes the first free button, and nothing you already press moves", barRow(1) == fightBefore .. " 689", barRow(1))
+  check("...and you are told how to sort the bars", table.concat(M.printed, " | "):find("/coach bar reset sorts all three bars", 1, true) ~= nil, table.concat(M.printed, " | "))
+  M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(3); tick(ns)
+  SlashCmdList.CLASSCOACH("bar reset")
+  check("/coach bar reset: Drain Life goes to its place in the order and the rest closes up", barRow(1) == "CC Pull CC Wand 686 1454 689 980 172 348", barRow(1))
+  M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(3); tick(ns)
+  -- a hole you made yourself is filled first
+  A[4] = nil
+  M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(3); tick(ns)
+  SlashCmdList.CLASSCOACH("bar")
+  check("a button you emptied is filled again before anything goes to the end", barRow(1) == "CC Pull CC Wand 686 1454 689 980 172 348", barRow(1))
+  M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(3); tick(ns)
+  -- the other way, for who wants a key to mean the same spell for good
+  ClassCoachDB.barFixed = true
+  SlashCmdList.CLASSCOACH("bar reset")
+  check("fixed buttons: every spell on the button of its place in the list, with a gap for Drain Soul", barRow(1) == "CC Pull CC Wand 686 1454 689 - 980 172 348", barRow(1))
+  check("fixed buttons: the react and prepare bars keep their gaps too", A[61] == 5782 and A[62] == nil and on(66) == "item:858" and A[49] == 687 and A[51] == nil and on(59) == "item:1251",
+    barRow(61) .. " / " .. barRow(49))
+  M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(3); tick(ns)
+  M.P.spells[1120] = { name = "Drain Soul", cost = 55 }; M.P.book[#M.P.book + 1] = 1120; M.P.knownIds[1120] = true
+  M.fire("SPELLS_CHANGED"); M.advance(3); tick(ns); M.advance(3); tick(ns)
+  SlashCmdList.CLASSCOACH("bar")
+  check("fixed buttons: a new spell fills its own gap", barRow(1) == "CC Pull CC Wand 686 1454 689 1120 980 172 348", barRow(1))
+  M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(3); tick(ns)
+  -- back to the default from a layout with gaps: replace leaves nothing on a bar twice
+  ClassCoachDB.barFixed = false
+  SlashCmdList.CLASSCOACH("bar replace")
+  check("/coach bar replace from a layout with gaps: closed up, nothing twice", barRow(61) == "5782 item:858" and barRow(49):find("^687 688 ") ~= nil and not barRow(49):find("-", 1, true),
+    barRow(61) .. " / " .. barRow(49))
+  local plan2, tidy = ns.C.barPlan(ns.C.lastState), true
+  for _, entries in pairs(plan2) do
+    for i, e in ipairs(entries) do if e.index ~= i then tidy = false end end
+  end
+  check("the plan itself numbers the buttons 1, 2, 3... on every bar", tidy)
+  M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(3); tick(ns)
   M.P.bagSizes = { 6, 0, 0, 6 }
   ns.C.journey = nil; M.advance(3); tick(ns)
   check("an empty bag slot is pointed out", journey(ns):find("2 bag slots are empty", 1, true) ~= nil, journey(ns))

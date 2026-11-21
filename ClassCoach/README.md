@@ -134,12 +134,14 @@ The steps follow the Forever guides on wow-professions.com, which are based on t
 | Action Bar 2 | **React**: emergencies and answers | Fear, heals, shield, interrupts, cleanses |
 | Action Bar 3 | **Prepare**: between fights | Armor and weapon buffs, summons, conjuring, travel |
 
-- Every spell has a fixed button, so nothing moves as you level; gaps fill in when you learn the spell.
-- `/coach bar` only fills empty buttons. If a spell's own button is taken, it goes to the next free one on the same bar. Nothing already on your bars is doubled.
-- `/coach bar preview` only lists the plan. `/coach bar replace` puts everything on its own button, overwriting what is there.
-- `/coach bar reset` makes the three bars **exactly** the coach's layout: every button gets its entry or is emptied, so leftovers and doubles are gone. Other bars are not touched. `/coach bar undo` puts back what was there (a mount or equipment set cannot be put back; the addon tells you if one was on a button). Nothing is lost either way: a spell stays in your spellbook, a macro in `/macro`, an item in your bags.
+- **No gaps.** A bar shows what you can use right now, side by side from button 1, in the order you use it. A spell you have not learned takes no button.
+- `/coach bar` only fills empty buttons: something new goes to the first free button of its bar, so nothing you already press moves and nothing is doubled.
+- After you learn a spell, `/coach bar reset` sorts it into its place in the order; the buttons after it move one up.
+- Rather have a key mean the same spell for good? Turn on **Fixed buttons** in the settings: every spell keeps its own button and gaps fill in as you level.
+- `/coach bar preview` only lists the plan. `/coach bar replace` puts everything on its button, overwriting what is there.
+- `/coach bar reset` makes the three bars **exactly** the coach's layout: every button gets its entry or is emptied, so gaps, leftovers and doubles are gone. Other bars are not touched. `/coach bar undo` puts back what was there (a mount or equipment set cannot be put back; the addon tells you if one was on a button). Nothing is lost either way: a spell stays in your spellbook, a macro in `/macro`, an item in your bags.
 - A bar that is switched off is skipped, and the addon tells you to turn it on (Esc > Options > Action Bars).
-- Optional setting: put newly learned spells on their button automatically. It never overwrites.
+- Optional setting: put newly learned spells on a free button automatically. It never overwrites or moves anything.
 - The prepare bar also gets **CC Rest** (one press drinks and eats the best you carry; it rewrites itself when your bags change), your best **bandage** and your **Hearthstone**. Warlocks get their **Healthstone** on the react bar. A used-up or weaker item on one of these buttons is swapped for the better one.
 - A **healing potion** you carry gets its own button on the react bar (the strongest one you can use), and so does a **mana potion** for classes that have no other way to get mana back. A potion is instant and works in a fight: it is your emergency button. With none in your bags, the journey list says so from level 10 and how to get one: in Forever, First Aid makes healing potions (Minor from skill 55, Lesser from 85, Healing from 135).
 
