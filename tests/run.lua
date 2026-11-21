@@ -346,7 +346,7 @@ if SCENARIO == "shaman" then
   check("settings page registered with the game", S.category ~= nil and S.category.name == "ClassCoach")
   local count = 0
   for _ in pairs(S.list) do count = count + 1 end
-  check("every option made it onto the page", count == 28 and #ns.Options.registered == 28 and #ns.Options.keys() == 28, count)
+  check("every option made it onto the page", count == 29 and #ns.Options.registered == 29 and #ns.Options.keys() == 29, count)
   check("sections and action buttons", #S.headers == 5 and #S.buttons == 3, #S.headers .. "/" .. #S.buttons)
   check("options write to the saved settings", S.list.compact.tbl == ClassCoachDB and S.list.specChoice.tbl == ClassCoachCharDB)
   check("slider shows its unit", S.list.opacity.opts.format(75) == "75%" and S.list.scale.opts.format(1.1) == "1.10x")
@@ -1375,6 +1375,28 @@ elseif SCENARIO == "talents" then
       local built, why = ns.Engine.decodeBuild(b.link, p.class, links)
       check(p.class .. " build link: " .. b.name, built ~= nil and #built == 51, tostring(why) .. " " .. (built and #built or 0))
     end
+  end
+  -- 10. Professions on the journey panel
+  M.P.talentPoints = 0
+  M.P.professions = { { name = "Tailoring", skill = 62, max = 75 }, { name = "Enchanting", skill = 40, max = 75 }, { name = "First Aid", skill = 75, max = 75 } }
+  ns.C.journey = nil; M.advance(3); tick(ns)
+  check("professions: what to craft next, from the Forever guide", journeyNow(ns):find("Tailoring 62: craft Bolt of Woolen Cloth", 1, true) ~= nil, journeyNow(ns))
+  check("professions: at the cap, any profession", journeyNow(ns):find("First Aid 75 of 75: train the next rank", 1, true) ~= nil, journeyNow(ns))
+  check("a profession without a guide says nothing until it is capped", not journeyNow(ns):find("Enchanting", 1, true), journeyNow(ns))
+  M.P.professions[1].skill = 73; ns.C.journey = nil; M.advance(3); tick(ns)
+  check("Tailoring near its cap: train Journeyman", journeyNow(ns):find("Tailoring 73 of 75: train the next rank", 1, true) ~= nil, journeyNow(ns))
+  ClassCoachDB.remindProfessions = false; ns.C.journey = nil; M.advance(3); tick(ns)
+  check("the setting turns profession lines off", not journeyNow(ns):find("Tailoring", 1, true), journeyNow(ns))
+  ClassCoachDB.remindProfessions = true
+  M.P.professions = nil; ns.C.journey = nil; M.advance(3); tick(ns)
+  check("no professions: nothing shown, no error", not journeyNow(ns):find("craft", 1, true) and errors() == 0)
+  for name, guide in pairs(ns.ProfessionData) do
+    local last = 1
+    for _, st in ipairs(guide.steps) do
+      if st[1] ~= last or st[2] <= st[1] then check(name .. " steps join up at " .. st[1], false, last) end
+      last = st[2]
+    end
+    check(name .. " steps run from 1 to 300", last == 300, last)
   end
   check("level up: the tip is your build's next talent", ns.Engine.levelUp(ns.C.profile, 12, "Suppression (1 of 5)")[3] == "Talent point: Suppression (1 of 5).")
   check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))

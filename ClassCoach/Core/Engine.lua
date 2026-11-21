@@ -778,6 +778,31 @@ function Engine.journey(profile, s, options)
     end
   end
 
+  -- Professions: at the skill cap (a trainer visit), and what to craft next where we have a guide for it.
+  if options.professions ~= false and j.professions then
+    local guides = options.professionData or {}
+    local crafted = false
+    for _, p in ipairs(j.professions) do
+      local guide = guides[p.name]
+      if p.max and p.max < 300 and p.skill >= p.max - 5 then
+        local tier
+        for _, t in ipairs(guide and guide.tiers or {}) do if t.cap == p.max then tier = t end end
+        add("do", ("%s %d of %d: train the next rank"):format(p.name, p.skill, p.max),
+          tier and ("%s %s needs %s. At %d you stop gaining skill until you train it."):format(tier.name, p.name, tier.needs, p.max)
+            or ("At %d you stop gaining skill. A %s trainer teaches the next rank."):format(p.max, p.name), p.icon or ICON.trainer)
+      elseif guide and not crafted and p.skill < 300 then
+        for _, step in ipairs(guide.steps or {}) do
+          if p.skill >= step[1] and p.skill < step[2] then
+            crafted = true
+            add("info", ("%s %d: craft %s"):format(p.name, p.skill, step[3]),
+              ("%s takes you from %d to %d. From the Forever guide on %s."):format(step[3], step[1], step[2], guide.source), p.icon or ICON.trainer)
+            break
+          end
+        end
+      end
+    end
+  end
+
   -- The roadmap: milestones due now, the next one coming, and where to be.
   if options.roadmap ~= false then
     local data = options.data or {}

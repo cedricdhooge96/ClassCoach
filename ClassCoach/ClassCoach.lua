@@ -420,7 +420,7 @@ function C.journeyData(now)
   end
   local talents = C.talentState
   j = { at = now, xp = API.xp(), talentPoints = API.unspentTalents(), durability = API.durability(),
-    talentsSpent = talents and talents.have and talents.have.spent or nil,
+    talentsSpent = talents and talents.have and talents.have.spent or nil, professions = API.professions(),
     freeSlots = API.freeBagSlots(), hasItem = API.hasItem, supplies = C.suppliesCache,
     atVendor = C.atVendor == true, canRepair = C.atVendor and API.canRepair() or false }
   C.journey = j
@@ -532,7 +532,8 @@ local function tick()
     safely("journey panel", function()
       local db = ClassCoachDB
       local journey = Engine.journey(profile, s, { food = db.food, rested = db.remindRested, train = db.remindTrain, gear = db.remindGear,
-        supplies = db.remindSupplies, roadmap = db.roadmap, data = ns.JourneyData })
+        supplies = db.remindSupplies, roadmap = db.roadmap, data = ns.JourneyData,
+        professions = db.remindProfessions, professionData = ns.ProfessionData })
       journey.title = ("Journey · level %d"):format(s.level)
       for _, line in ipairs(journey.lines) do
         if type(line.icon) == "table" then   -- { spell = key }: that spell's own icon, learned or not
@@ -853,6 +854,12 @@ local function check()
   add("class %s, level %s, profile %s %s (%s)", tostring(C.class), tostring(C.level), C.profile.class, C.profile.spec, tostring(C.profileWhy))
   local pts = API.talentPoints()
   add("talent points %s", pts and table.concat({ pts[1] or 0, pts[2] or 0, pts[3] or 0 }, "/") or "unreadable")
+  local have = API.talents()
+  add("talents read by name: %s; talent window found: %s; build: %s", have and (#have.list .. " (" .. have.spent .. " points spent)") or "none",
+    tostring(ns.Talents.window() ~= nil), C.talentState and C.talentState.build.name or "none")
+  local profs = {}
+  for _, p in ipairs(API.professions() or {}) do profs[#profs + 1] = ("%s %s/%s"):format(p.name, tostring(p.skill), tostring(p.max)) end
+  add("professions: %s", #profs > 0 and table.concat(profs, ", ") or "none read")
   add("mana now %s / %s (combat %s)", describe(API.try(UnitPower, "player", 0)), describe(API.try(UnitPowerMax, "player", 0)), tostring(API.inCombat()))
   local names = {}
   for key, sp in pairs(C.spells) do

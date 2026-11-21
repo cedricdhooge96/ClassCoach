@@ -46,6 +46,8 @@ local function layout()
       tip = "Spells you can learn now, unspent talent points, and the next level with something new." },
     { key = "remindGear", kind = "check", name = "Remind me: repairs and full bags", default = true,
       tip = "Gear below 25% durability, or two bag slots left." },
+    { key = "remindProfessions", kind = "check", name = "Remind me: professions", default = true,
+      tip = "Tells you when a profession is at its skill cap and needs a trainer, and what to craft next (Tailoring so far)." },
     { key = "remindSupplies", kind = "check", name = "Remind me: food, water and reagents", default = true,
       tip = "At a vendor when you are running low, and anywhere when you have run out." },
     { key = "roadmap", kind = "check", name = "Show milestones, zones and dungeons", default = true,

@@ -21,6 +21,7 @@ ClassCoach/            the addon (this folder is what gets installed)
   Core/Tracker.lua     casts, resists and timers counted from your own casts
   Core/Profiles.lua    profile registration and choice
   Data/Journey.lua     milestones, zones, dungeons, vendor food and drink
+  Data/Professions.lua what to craft next per profession (Tailoring so far)
   Data/TalentLinks.lua generated: talent calculator link symbols to talent names (from Zbuilds, MIT)
   Profiles/*.lua       one file per class (Shaman, Priest, Warlock, Generic)
   UI/*.lua             coach panel, journey panel, smart key, talent window marks, settings

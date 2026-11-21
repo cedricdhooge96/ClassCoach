@@ -96,6 +96,10 @@ Open the game's talent window (N). The talent to take next has a **gold frame an
 
 To switch the marks off: Options > AddOns > ClassCoach > "Mark my next talent in the talent window".
 
+## Professions
+
+The journey panel tells you when a profession is at its skill cap and needs a trainer, and for Tailoring what to craft next (from wow-professions.com's Forever guide, which is based on the beta). Other professions get the cap reminder only for now. Switch it off with "Remind me: professions".
+
 ## Action bars
 
 `/coach bar` lays out three bars, each with one job, so a key always means the same kind of thing:

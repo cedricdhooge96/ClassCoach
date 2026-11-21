@@ -321,6 +321,15 @@ function GetActionBarToggles()
   local b = P.bars or {}
   return b[1] ~= false, b[2] ~= false, true, true
 end
+-- P.professions = { { name, skill, max } }: the first two are the primary ones, as GetProfessions returns them.
+function GetProfessions()
+  local list = P.professions or {}
+  return list[1] and 1 or nil, list[2] and 2 or nil, nil, list[3] and 3 or nil, list[4] and 4 or nil
+end
+function GetProfessionInfo(i)
+  local p = (P.professions or {})[i]
+  if p then return p.name, "Interface\\Icons\\Trade_" .. p.name, p.skill, p.max, 0, 0, 100 + i end
+end
 function UnitFactionGroup() return P.faction or "Alliance" end
 function CanMerchantRepair() return P.vendorRepairs == true end
 function GetBindingKey(b) return P.bindings[b] end

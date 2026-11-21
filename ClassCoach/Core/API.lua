@@ -157,7 +157,7 @@ end
 -- Every Forever function ClassCoach calls. /coach check lists the ones this
 -- client does not have, so a change in a Forever patch shows up by name.
 local NEEDS = {
-  "issecretvalue", "GetTime", "GetBuildInfo", "InCombatLockdown", "IsInGroup", "IsResting", "GetXPExhaustion", "GetTotemInfo",
+  "issecretvalue", "GetTime", "GetBuildInfo", "GetProfessions", "GetProfessionInfo", "InCombatLockdown", "IsInGroup", "IsResting", "GetXPExhaustion", "GetTotemInfo",
   "GetInventoryItemID", "GetInventoryItemDurability", "CanMerchantRepair", "GetActionInfo", "GetActionBarToggles", "PlaceAction",
   "PickupMacro", "ClearCursor", "CreateMacro", "EditMacro", "GetMacroBody", "GetMacroIndexByName", "GetMacroInfo", "GetNumMacros",
   "GetBindingKey", "GetBindingAction", "SetBinding", "SetBindingClick", "SaveBindings", "GetCurrentBindingSet", "RegisterStateDriver",
@@ -539,6 +539,24 @@ function API.unspentTalents()
     end
   end)
   return count > 0 and count or true
+end
+
+-- Your professions: { { name, icon, skill, max } }, or nil when the game won't say.
+function API.professions()
+  local out = {}
+  local indices = { try(GetProfessions) }
+  for i = 1, 8 do
+    local index = plain(indices[i])
+    if type(index) == "number" then
+      local name, icon, skill, max = try(GetProfessionInfo, index)
+      name, skill, max = plain(name), plain(skill), plain(max)
+      if type(name) == "string" and type(skill) == "number" and skill >= 0 and skill <= 450 then
+        out[#out + 1] = { name = name, icon = picture(icon), skill = skill, max = (type(max) == "number" and max >= skill) and max or nil }
+      end
+    end
+  end
+  if #out == 0 then return nil end
+  return out
 end
 
 -- Lowest durability of anything you wear, in percent.
