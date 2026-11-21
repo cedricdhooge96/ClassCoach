@@ -2385,12 +2385,13 @@ elseif SCENARIO == "ui" then
   end
   local afterOne, nowAfterOne, nextAfterOne = doneText(), f.name.text, nextText(f)
   for _ = 1, 5 do cast(5019); M.advance(1.5); f = tick(ns) end
-  check("wand shots in a row: one wand step in what you already cast", doneText() == "Corruption, Shoot" and afterOne == "Corruption, Shoot", doneText())
+  check("a wand that is still firing is not on the done side at all", doneText() == "Corruption" and afterOne == "Corruption", doneText())
+  check("...the recent casts hold its shots as one", #ns.C.tracker:recent("g:Creature-77", 10, M.now) == 2)
   check("...and the coach's steps stay put while the wand fires", f.name.text == nowAfterOne and nextText(f) == nextAfterOne, f.name.text .. " | " .. nextText(f))
   cast(348); M.advance(1.5); f = tick(ns)
   cast(5019); M.advance(0.5); f = tick(ns)
   cast(5019); M.advance(1.5); f = tick(ns)
-  check("another spell in between: the wand starts a new step after it", doneText() == "Corruption, Shoot, Immolate, Shoot", doneText())
+  check("another spell cast: the wand moves to the done side then, once; the new wand run is not done yet", doneText() == "Corruption, Shoot, Immolate", doneText())
   M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(1); target(nil)
   ClassCoachDB.stepsBefore = 2
   check("no errors logged", errors() == 0, table.concat(ClassCoachDB.log or {}, " | "))

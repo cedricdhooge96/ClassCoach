@@ -202,7 +202,7 @@ Its limits, which come from how the game's secure buttons work:
 
 What it is not: the addon does not decide during a fight what the key casts. The game forbids that, and nothing here works around it. The plan is loaded into the game's own secure button between fights; in a fight one press is still one cast, the same rule macros follow.
 
-A wand reports every shot to addons as a new cast. Shots in a row count as one: the wand shows once on the left of the ring until you cast something else.
+A wand reports every shot to addons as a new cast. Shots in a row count as one, and while the wand is still firing it stays in the ring: it only moves to the left ("already cast") once you cast something else.
 
 ## How the timers work
 

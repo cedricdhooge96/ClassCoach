@@ -62,6 +62,7 @@ end
 -- that follow each other are ONE cast: the first shot goes into the history,
 -- the next ones only move its time on, until you cast something else.
 local REPEATS = { Shoot = true, ["Auto Shot"] = true }
+Tracker.REPEATS = REPEATS
 
 function Tracker:cast(now, name, cost, meta, targetKey, duration)
   self.lastCast[name] = now

@@ -715,7 +715,12 @@ local function tick()
   local key = s.target and s.target.key
   view.done, view.dots = {}, {}
   if key then
-    for _, c in ipairs(before > 0 and C.tracker:recent(key, before, now, 30) or {}) do
+    local recent = before > 0 and C.tracker:recent(key, before + 1, now, 30) or {}
+    -- a wand that is still firing is not done yet: it moves to the left once you cast something else
+    local last = recent[#recent]
+    if last and Tracker.REPEATS[last.name] then table.remove(recent) end
+    if #recent > before then table.remove(recent, 1) end
+    for _, c in ipairs(recent) do
       local sp = s.spells[c.name]
       view.done[#view.done + 1] = { label = sp and sp.name or c.name, icon = sp and sp.icon, missed = c.missed,
         left = profile.spells[c.name] and profile.spells[c.name].debuff and C.tracker:debuffLeft(key, c.name, now) or nil }
