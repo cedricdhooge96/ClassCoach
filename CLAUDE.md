@@ -21,8 +21,9 @@ ClassCoach/            the addon (this folder is what gets installed)
   Core/Tracker.lua     casts, resists and timers counted from your own casts
   Core/Profiles.lua    profile registration and choice
   Data/Journey.lua     milestones, zones, dungeons, vendor food and drink
+  Data/TalentLinks.lua generated: talent calculator link symbols to talent names (from Zbuilds, MIT)
   Profiles/*.lua       one file per class (Shaman, Priest, Warlock, Generic)
-  UI/*.lua             coach panel, journey panel, smart key, settings
+  UI/*.lua             coach panel, journey panel, smart key, talent window marks, settings
   ClassCoach.lua       wiring: events, refresh loop, /coach commands
 docs/EXTENDING.md      how to add a class or spec
 tests/                 offline tests against a fake Forever client
@@ -36,11 +37,15 @@ python3 tests/run.py            # everything
 python3 tests/run.py forever    # one scenario
 ```
 
-Scenarios: `shaman`, `priest`, `warlock`, `template`, `warrior`, `robust` (event storms, combat lockdown, chaos fuzzing), `forever` (no call to a function Forever lacks, off on other versions), `sweep` (every level 1 to 60 per class).
+Scenarios: `shaman`, `priest`, `warlock`, `template`, `warrior`, `robust` (event storms, combat lockdown, chaos fuzzing), `forever` (no call to a function Forever lacks, off on other versions), `talents` (build following, talent window marks, link import), `sweep` (every level 1 to 60 per class).
 
 `tests/mock.lua` offers only functions the Forever client has. Keep it that way: a test that needs a function from another version is testing the wrong thing. Run each scenario with a timeout; a hang is a finding, not a slow machine.
 
 The tests run offline. Nothing is proven in the real game until Cedric has tried it, so say "passes the offline tests, not yet tried in game" until he confirms.
+
+## Talent window
+
+Forever's talent window is `PlayerSpellsFrame.TalentsFrame`; talents live in the traits system as ONE tree per class holding all three specs. ClassCoach finds talents by name, lays its own frames over the game's buttons (never as their children, never taking clicks) and never learns a talent for the player.
 
 ## Workflow for every change
 

@@ -97,22 +97,43 @@ C_ClassTalents = {
   GetActiveConfigID = function() return 1 end,
   HasUnspentTalentPoints = function() return (P.talentPoints or 0) > 0 end,
 }
+-- With P.tree set ({ { name, max, rank, staged } ... }) the character has ONE tree holding every talent of the
+-- class, as the Forever client does. Without it: three anonymous trees filled from P.talents.
 C_Traits = {
-  GetConfigInfo = function() return { treeIDs = P.oneTree and { 11 } or { 11, 12, 13 } } end,
-  -- twelve talents a tree, five ranks each, filled from the top
+  GetConfigInfo = function()
+    if P.tree then return { treeIDs = { 77 } } end
+    return { treeIDs = P.oneTree and { 11 } or { 11, 12, 13 } }
+  end,
   GetTreeNodes = function(tree)
     local nodes = {}
-    for k = 1, 12 do nodes[k] = tree * 100 + k end
+    if tree == 77 then
+      for k = 1, #P.tree do nodes[k] = 7000 + k end
+      return nodes
+    end
+    for k = 1, 12 do nodes[k] = tree * 100 + k end   -- twelve talents a tree, five ranks each, filled from the top
     return nodes
   end,
   GetNodeInfo = function(_, node)
+    if node >= 7000 then
+      local t = P.tree[node - 7000]
+      if not t then return nil end
+      return { ID = node, ranksPurchased = t.rank or 0, currentRank = t.staged or t.rank or 0, maxRanks = t.max or 5,
+        entryIDs = { node + 1000 }, isVisible = t.hidden ~= true }
+    end
     local tree, k = math.floor(node / 100) - 10, node % 100
     local left = (P.talents[tree] or 0) - 5 * (k - 1)
     return { ranksPurchased = math.max(0, math.min(5, left)) }
   end,
+  GetEntryInfo = function(_, entry) return { definitionID = entry + 1000 } end,
+  GetDefinitionInfo = function(definition)
+    local t = P.tree and P.tree[definition - 9000]
+    if not t then return nil end
+    M.names[definition + 10000] = t.name
+    return { spellID = definition + 10000 }
+  end,
   GetTreeCurrencyInfo = function(_, tree)
     if P.noTalentCount then return {} end
-    return { { quantity = tree == 11 and (P.talentPoints or 0) or 0, spent = 0 } }
+    return { { quantity = (tree == 11 or tree == 77) and (P.talentPoints or 0) or 0, spent = 0 } }
   end,
 }
 C_CVar = {
@@ -242,6 +263,28 @@ function PlaceAction(slot)
   if held then P.actions[slot] = held.spell or held end   -- a spell id, { macro = name } or { item = id }
 end
 function UnitClassification(u) if u == "target" and P.target then return P.target.elite and "elite" or "normal" end end
+-- The game's talent window: PlayerSpellsFrame.TalentsFrame, one button per talent of P.tree.
+function M.talentWindow(open)
+  if open == nil then PlayerSpellsFrame = nil return end
+  local buttons = {}
+  for k = 1, #(P.tree or {}) do
+    local node = 7000 + k
+    buttons[k] = { GetNodeID = function() return node end, IsVisible = function() return P.tree[k].hidden ~= true end, node = node }
+  end
+  local talents = {
+    open = open,
+    IsVisible = function(self) return self.open == true end,
+    EnumerateAllTalentButtons = function()
+      local i = 0
+      return function() i = i + 1; return buttons[i] end
+    end,
+    GetFrameStrata = function() return "HIGH" end,
+    GetFrameLevel = function() return 10 end,
+    buttons = buttons,
+  }
+  PlayerSpellsFrame = { TalentsFrame = talents }
+  return talents
+end
 -- Secure environment
 M.drivers = {}
 function RegisterStateDriver(frame, state, conditions) M.drivers[state] = { frame = frame, conditions = conditions } end
@@ -317,6 +360,7 @@ local function widget()
     GetScale = function(self) return rawget(self, "scale") or 1 end,
     SetScale = function(self, v) rawset(self, "scale", v) end,
     SetFrameStrata = function(self, v) rawset(self, "strata", v) end,
+    EnableMouse = function(self, v) rawset(self, "mouse", v) end,
     SetPoint = function(self, ...) rawset(self, "point", { ... }) end,
     -- secure buttons: attributes may not change in combat, like the real thing
     SetAttribute = function(self, k, v)

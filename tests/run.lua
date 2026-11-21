@@ -346,7 +346,7 @@ if SCENARIO == "shaman" then
   check("settings page registered with the game", S.category ~= nil and S.category.name == "ClassCoach")
   local count = 0
   for _ in pairs(S.list) do count = count + 1 end
-  check("every option made it onto the page", count == 27 and #ns.Options.registered == 27 and #ns.Options.keys() == 27, count)
+  check("every option made it onto the page", count == 28 and #ns.Options.registered == 28 and #ns.Options.keys() == 28, count)
   check("sections and action buttons", #S.headers == 5 and #S.buttons == 3, #S.headers .. "/" .. #S.buttons)
   check("options write to the saved settings", S.list.compact.tbl == ClassCoachDB and S.list.specChoice.tbl == ClassCoachCharDB)
   check("slider shows its unit", S.list.opacity.opts.format(75) == "75%" and S.list.scale.opts.format(1.1) == "1.10x")
@@ -1208,6 +1208,176 @@ elseif SCENARIO == "forever" then
   check("every level 1-60 has a zone", (function() for l = 1, 60 do local ok = false
     for _, e in ipairs(data.zones.Alliance) do if l >= e[1] and l <= e[2] then ok = true end end
     if not ok then return false end end return true end)())
+
+---------------------------------------------------------------------------
+-- Talent guidance: follow a guide's build from the talents you actually have,
+-- and mark the next one in the game's own talent window.
+elseif SCENARIO == "talents" then
+  local links = {}
+  assert(loadfile(ROOT .. "/ClassCoach/Data/TalentLinks.lua"))("ClassCoach", links)
+  links = links.TalentLinks
+  -- the Warlock's tree as Forever has it: one tree, every talent by name
+  local MAX = { ["Improved Life Tap"] = 2, ["Siphon Life"] = 1, ["Wrack"] = 1, ["Amplify Curse"] = 1, ["Demonic Sacrifice"] = 1,
+    ["Improved Bane of Agony"] = 2, ["Nightfall"] = 2, ["Demonic Energies"] = 2, ["Demonic Aegis"] = 2, ["Pandemic"] = 3,
+    ["Improved Drains"] = 3, ["Soul Siphon"] = 3, ["Fel Concentration"] = 3, ["Fel Vitality"] = 3, ["Grim Reach"] = 2 }
+  local tree, at, seen = {}, {}, {}
+  local symbols = {}
+  for sym in pairs(links.iv.WARLOCK) do symbols[#symbols + 1] = sym end
+  table.sort(symbols)
+  for _, sym in ipairs(symbols) do
+    local name = links.iv.WARLOCK[sym]
+    if not seen[name] then
+      seen[name] = true
+      tree[#tree + 1] = { name = name, max = MAX[name] or 5, rank = 0 }
+      at[name] = #tree
+    end
+  end
+  local function node(name) return 7000 + at[name] end
+  local function spend(name, n) tree[at[name]].rank = n; M.fire("PLAYER_TALENT_UPDATE"); M.advance(3) end
+  M.player({
+    class = "WARLOCK", className = "Warlock", level = 11, mana = 300, maxMana = 300,
+    spells = { [686] = { name = "Shadow Bolt", cost = 25 }, [172] = { name = "Corruption", cost = 35 }, [688] = { name = "Summon Imp", cost = 60 } },
+    book = { 686, 172, 688 }, pet = { family = "Imp" },
+    actions = { [1] = 686 }, bindings = { ACTIONBUTTON1 = "1" },
+  })
+  M.P.tree = tree
+  local ns = load()
+  local function state() return ns.C.refreshTalents() end
+  local function marks()
+    local out = {}
+    local holder = ns.Talents.holder
+    if not holder or not ns.Talents.shown then return out end
+    for _, m in ipairs(holder.marks) do
+      if m.shown and rawget(m, "node") then out[#out + 1] = { node = rawget(m, "node"), role = rawget(m, "role"), text = rawget(m, "text") } end
+    end
+    return out
+  end
+  local function banner() return ns.Talents.shown and rawget(ns.Talents.holder.banner, "text") or "(hidden)" end
+
+  -- 1. Reading the talents by name
+  local have = ns.API.talents()
+  check("every talent of the tree is read by name", have ~= nil and #have.list == #tree and have.byName[ns.API.talentKey("Improved Life Tap")].max == 2,
+    have and #have.list)
+  check("names compare whatever the punctuation", ns.API.talentKey("Improved  Life-Tap") == ns.API.talentKey("improved life tap"))
+
+  -- 2. Nothing spent: the profile's own build, from its first point
+  local s = state()
+  check("nothing spent: the default build", s.build.name:find("Warcraft Tavern", 1, true) ~= nil and s.how == "auto", s.build.name)
+  check("its first point", ns.Engine.nextTalent(s.plan) == "Improved Corruption (1 of 5)", ns.Engine.nextTalent(s.plan))
+  check("every point of the default build is a talent of the tree", #s.plan.unknown == 0, table.concat(s.plan.unknown, ", "))
+
+  -- 3. Two points already in Improved Life Tap, the way the Icy Veins build starts
+  spend("Improved Life Tap", 2)
+  s = state()
+  check("points already spent: the build that fits them", s.build.name:find("Icy Veins", 1, true) ~= nil and s.how == "auto", s.build.name)
+  check("continues where you are", ns.Engine.nextTalent(s.plan) == "Suppression (1 of 5)" and s.plan.taken == 2 and s.plan.extra == 0,
+    tostring(ns.Engine.nextTalent(s.plan)))
+  check("all 51 points of the link are talents of the tree", #s.plan.steps == 51 and #s.plan.unknown == 0, #s.plan.steps .. " / " .. table.concat(s.plan.unknown, ", "))
+  tick(ns)
+  check("the first-talent-point reminder is gone once a point is spent", not journey(ns):find("First talent point", 1, true), journey(ns))
+  M.P.talentPoints = 1; ns.C.journey = nil; M.advance(3); tick(ns)
+  check("a point to spend: the suggestion is your build's next talent", journey(ns):find("1 talent point to spend", 1, true) ~= nil
+    and journey(ns):find("Suggested: Suppression (1 of 5)", 1, true) ~= nil, journey(ns))
+
+  -- 4. The game's talent window
+  check("window closed: nothing drawn", #marks() == 0 and banner() == "(hidden)")
+  local win = M.talentWindow(true)
+  M.advance(1); tick(ns)
+  local m = marks()
+  check("window open: NEXT on the next talent", m[1] and m[1].node == node("Suppression") and m[1].role == "next" and m[1].text == "NEXT",
+    m[1] and (m[1].node .. " " .. tostring(m[1].text)))
+  check("and 2 on the talent after it", m[2] and m[2].node == node("Improved Corruption") and m[2].text == "2" and m[2].role == "later",
+    m[2] and (m[2].node .. " " .. tostring(m[2].text)))
+  check("five marks at most, each on a different talent", #m == 5 and (function() local u = {} for _, x in ipairs(m) do if u[x.node] then return false end u[x.node] = true end return true end)(), #m)
+  check("the line names the build and the next talent", banner() == "Next: Suppression (1 of 5)"
+    and ns.Talents.holder.banner.title.text:find("Icy Veins: Wrack Build", 1, true) ~= nil, banner() .. " / " .. ns.Talents.holder.banner.title.text)
+  check("the marks take no clicks and are not the game's children", (function()
+    for _, mk in ipairs(ns.Talents.holder.marks) do if rawget(mk, "mouse") ~= false then return false end end
+    return rawget(win.buttons[1], "children") == nil end)())
+  -- a point clicked but not applied yet moves the mark on at once
+  tree[at["Suppression"]].staged = 1
+  M.advance(1); tick(ns)
+  check("a clicked point counts before Apply", banner() == "Next: Suppression (2 of 5)", banner())
+  tree[at["Suppression"]].staged = nil
+  -- closing the window removes everything
+  win.open = false; M.advance(1); tick(ns)
+  check("closed again: marks gone", #marks() == 0 and banner() == "(hidden)")
+  win.open = true; M.advance(1); tick(ns)
+  ClassCoachDB.talentMarks = false; M.advance(1); tick(ns)
+  check("the setting turns the marks off", #marks() == 0)
+  ClassCoachDB.talentMarks = true; M.advance(1); tick(ns)
+
+  -- 5. Choosing a build by hand
+  M.printed = {}
+  SlashCmdList.CLASSCOACH("build")
+  local said = table.concat(M.printed, "\n")
+  check("/coach build lists the builds and where you are", said:find("1. Warcraft Tavern", 1, true) ~= nil and said:find("2. Icy Veins: Wrack Build", 1, true) ~= nil
+    and said:find("<- you follow this one", 1, true) ~= nil and said:find("2 of 51 points taken. Next: Suppression (1 of 5).", 1, true) ~= nil, said)
+  SlashCmdList.CLASSCOACH("build 1")
+  M.advance(1); tick(ns)
+  check("/coach build 1: that build, with your stray points named", ns.C.talentState.how == "chosen" and banner():find("Next: Improved Corruption (1 of 5)", 1, true) ~= nil
+    and banner():find("2 points taken earlier than this build does", 1, true) ~= nil, banner())
+  local stray = ns.Engine.talentPlan({ { name = "Suppression" } }, ns.API.talents())
+  check("points the build never asks for are counted as outside it", stray.extra == 2 and stray.offPlan[1].name == "Improved Life Tap")
+  M.printed = {}
+  SlashCmdList.CLASSCOACH("build 9")
+  check("a number that is not on the list", table.concat(M.printed, " "):find("no build number 9", 1, true) ~= nil and ClassCoachCharDB.build == 1)
+
+  -- 6. A link from a guide
+  M.printed = {}
+  SlashCmdList.CLASSCOACH("build https://www.icy-veins.com/wow-forever/warlock-talent-calculator#tc-0011122~70959-a8fe1dab")
+  M.advance(1); tick(ns)
+  check("an Icy Veins link is followed", ClassCoachCharDB.build == "custom" and table.concat(M.printed, " "):find("Following your Icy Veins link: 7 talent points", 1, true) ~= nil
+    and ns.C.talentState.build.name == "Your Icy Veins link" and banner() == "Next: Suppression (1 of 5)", table.concat(M.printed, " ") .. " / " .. banner())
+  check("the version at the end of the link is not a talent", #ns.C.talentState.plan.steps == 7)
+  M.printed = {}
+  SlashCmdList.CLASSCOACH("build https://www.warcrafttavern.com/forever/tools/talent-calculator/warlock#?t=A1111122222008")
+  local order = ns.C.talentState.build.order
+  check("a Warcraft Tavern link is followed", ns.C.talentState.build.name == "Your Warcraft Tavern link" and #order == 13 and order[1].name == "Suppression"
+    and order[6].name == "Improved Corruption" and order[11].name == "Improved Life Tap", #order .. " " .. tostring(order[1].name))
+  local kept = ClassCoachCharDB.buildLink
+  for _, bad in ipairs({
+    { "https://www.icy-veins.com/wow-forever/priest-talent-calculator#tc-22222", "priest build" },
+    { "https://www.icy-veins.com/wow-forever/warlock-talent-calculator#tc-00!!", "do not know" },
+    { "https://example.com/talents", "not one of those" },
+    { "https://www.icy-veins.com/wow-forever/warlock-talent-calculator#tc-" .. string.rep("0", 60), "more than 51" },
+  }) do
+    M.printed = {}
+    SlashCmdList.CLASSCOACH("build " .. bad[1])
+    check("refused, with the reason: " .. bad[2], table.concat(M.printed, " "):find(bad[2], 1, true) ~= nil and ClassCoachCharDB.buildLink == kept,
+      table.concat(M.printed, " "))
+  end
+  SlashCmdList.CLASSCOACH("build auto")
+  check("/coach build auto goes back to the best fit", ClassCoachCharDB.build == "auto" and ns.C.talentState.build.name:find("Icy Veins: Wrack Build", 1, true) ~= nil)
+
+  -- 7. A build that names a talent the game does not have is not guessed at
+  local plan = ns.Engine.talentPlan({ { name = "Improved Life Tap" }, { name = "Improved Life Tap" }, { name = "No Such Talent", label = "No Such Talent" },
+    { name = "Suppression" } }, ns.API.talents())
+  check("an unknown talent stops the plan there", plan.next == 3 and plan.steps[3].known == false and plan.unknown[1] == "No Such Talent"
+    and ns.Engine.nextTalent(plan) == "No Such Talent")
+  plan = ns.Engine.talentPlan({ { name = "Improved Life Tap" }, { name = "Improved Life Tap" }, { name = "Improved Life Tap" } }, ns.API.talents())
+  check("more ranks than the talent has is not followed", plan.next == 3 and plan.steps[3].known == false)
+
+  -- 8. The game hides the talents: fall back to the level, mark nothing, raise nothing
+  local realNodes = C_Traits.GetTreeNodes
+  C_Traits.GetTreeNodes = function() error("no talents for you") end
+  M.fire("PLAYER_TALENT_UPDATE"); M.advance(3); ns.C.journey = nil; tick(ns)
+  check("talents unreadable: no marks, and the line says why", #marks() == 0 and banner():find("did not give your talents", 1, true) ~= nil, banner())
+  check("and the suggestion goes by your level", journey(ns):find("Suggested:", 1, true) ~= nil and errors() == 0, journey(ns))
+  C_Traits.GetTreeNodes = realNodes
+  M.talentWindow(nil)
+  M.fire("PLAYER_TALENT_UPDATE"); M.advance(3); tick(ns)
+  check("no talent window at all: nothing drawn, no error", #marks() == 0 and errors() == 0 and ns.C.lastError == nil, tostring(ns.C.lastError))
+
+  -- 9. Every build link shipped with a profile reads cleanly for its class
+  for _, p in ipairs(ns.Profiles.list) do
+    for _, b in ipairs(p.builds or {}) do
+      local built, why = ns.Engine.decodeBuild(b.link, p.class, links)
+      check(p.class .. " build link: " .. b.name, built ~= nil and #built == 51, tostring(why) .. " " .. (built and #built or 0))
+    end
+  end
+  check("level up: the tip is your build's next talent", ns.Engine.levelUp(ns.C.profile, 12, "Suppression (1 of 5)")[3] == "Talent point: Suppression (1 of 5).")
+  check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
 
 ---------------------------------------------------------------------------
 elseif SCENARIO == "template" then

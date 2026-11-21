@@ -323,6 +323,13 @@ ns.RegisterProfile({
       hint = "A short class quest for your free mount." },
   },
 
+  -- Builds you can follow (/coach build). The first is the default; with points
+  -- already spent, the one that fits them best is followed.
+  talentsName = "Warcraft Tavern: Affliction leveling (41/7/3)",
+  builds = {
+    { name = "Icy Veins: Wrack Build (Affliction)",
+      link = "https://www.icy-veins.com/wow-forever/warlock-talent-calculator#tc-00111112222266999aaaaabbdfffffgjjjjjllnnnqBBBBBeee8~70959-a8fe1dab" },
+  },
   -- Warcraft Tavern's Affliction build for Forever (41/7/3): no respec needed.
   talents = {
     { 10, 14, "Improved Corruption" }, { 15, 17, "Suppression" }, { 18, 22, "Unholy Power (Demonology)" },

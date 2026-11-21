@@ -99,6 +99,8 @@ local function rescan()
   C.spells, C.idToKey, C.costById, C.probes, C.book = spells, idToKey, costById, probes, book
   C.keys = API.scanKeys()
   refreshIcons()
+  safely("talents", C.refreshTalents)
+  C.talentsStale = false
   C.hasWand = API.equipped(18)
   C.usesMana = API.usesMana()
   C.syncMacros(true)
@@ -138,6 +140,54 @@ local function rescanSoon(keysOnly)
   rescanQueued = queued and now or nil
 end
 local function rescanKeysSoon() rescanSoon(true) end
+
+---------------------------------------------------------------------------
+-- Talents: the build you follow and where you are in it
+---------------------------------------------------------------------------
+
+-- The builds this character can follow: the profile's own list first, then the
+-- guide links the profile names. Read once per profile.
+local function buildsFor(profile)
+  if C.buildList and C.buildListFor == profile then return C.buildList end
+  local list = {}
+  if profile.talents and #profile.talents > 0 then
+    list[#list + 1] = { name = profile.talentsName or (profile.spec .. " leveling"), order = Engine.talentOrder(profile.talents) }
+  end
+  for _, b in ipairs(profile.builds or {}) do
+    local order, problem = Engine.decodeBuild(b.link, C.class, ns.TalentLinks)
+    if order then
+      list[#list + 1] = { name = b.name, link = b.link, order = order }
+    else
+      log("build %s: %s", tostring(b.name), tostring(problem))
+    end
+  end
+  C.buildList, C.buildListFor = list, profile
+  return list
+end
+C.buildsFor = buildsFor
+
+-- The build from a link you pasted with /coach build <link>, or nil.
+local function customBuild()
+  local link = ClassCoachCharDB.buildLink
+  if type(link) ~= "string" or link == "" then return nil end
+  if C.customBuild and C.customBuild.link == link then return C.customBuild end
+  local order, site = Engine.decodeBuild(link, C.class, ns.TalentLinks)
+  if not order then return nil end
+  C.customBuild = { name = "Your " .. site .. " link", link = link, order = order }
+  return C.customBuild
+end
+
+-- Reads your talents and works out the next point of your build. Cheap enough
+-- to run while the talent window is open; otherwise it runs when talents change.
+function C.refreshTalents()
+  local profile = C.profile
+  if not profile then return end
+  local have = API.talents()
+  local build, how = Engine.pickBuild(buildsFor(profile), customBuild(), have, ClassCoachCharDB.build)
+  if not build then C.talentState = nil return end
+  C.talentState = { build = build, how = how, have = have, plan = Engine.talentPlan(build.order, have) }
+  return C.talentState
+end
 
 ---------------------------------------------------------------------------
 -- Target, demon and macros
@@ -368,7 +418,9 @@ function C.journeyData(now)
   if not C.suppliesCache or C.suppliesStale then
     C.suppliesCache, C.suppliesStale = API.supplies(C.level or API.level()), false
   end
+  local talents = C.talentState
   j = { at = now, xp = API.xp(), talentPoints = API.unspentTalents(), durability = API.durability(),
+    talentsSpent = talents and talents.have and talents.have.spent or nil,
     freeSlots = API.freeBagSlots(), hasItem = API.hasItem, supplies = C.suppliesCache,
     atVendor = C.atVendor == true, canRepair = C.atVendor and API.canRepair() or false }
   C.journey = j
@@ -403,6 +455,7 @@ local function buildState(now)
     keys = C.keys, spells = C.spells, bookReady = next(C.spells) ~= nil, tracker = C.tracker, fightTime = C.tracker:fightTime(now),
     check = { ready = API.ready, usable = API.usable, repeating = API.repeating }, barPage = API.barPage(),
     itemCount = API.itemCount, equipped = API.equipped, faction = C.faction, journey = (not inCombat) and C.journeyData(now) or nil,
+    talent = C.talentState,
   })
 end
 
@@ -494,6 +547,15 @@ local function tick()
   if s.inCombat then safely("journey panel", ns.Journey.render, { inCombat = true }) end
   if C.trouble then view.status, view.statusKind = C.trouble, "warn" end
   ns.Panel.render(view)
+  -- The game's talent window: while it is open, keep the mark on the next talent of your build.
+  safely("talent marks", function()
+    if ClassCoachDB.talentMarks == false or not ns.Talents.open() then ns.Talents.hide() return end
+    if C.talentsStale or not C.talentState or now - (C.talentsRead or 0) >= 0.5 then
+      C.refreshTalents()
+      C.talentsRead, C.talentsStale = now, false
+    end
+    ns.Talents.update(C.talentState, ClassCoachDB)
+  end)
 end
 
 -- The update loop protects the game from the addon:
@@ -677,7 +739,9 @@ function handlers.PLAYER_LEVEL_UP(level)
   if type(level) ~= "number" then return end
   C.level = level
   C.suppliesStale = true   -- what you can use changes with your level
-  local lines = Engine.levelUp(C.profile, level)
+  safely("talents", C.refreshTalents)
+  local state = C.talentState
+  local lines = Engine.levelUp(C.profile, level, state and state.plan.readable and Engine.nextTalent(state.plan) or nil)
   ns.Panel.flash(lines, 25)
   for _, l in ipairs(lines) do say(l) end
   rescanSoon()
@@ -689,6 +753,8 @@ end
 
 local function talentsChanged()
   chooseProfile()
+  C.talentsStale = true
+  C.journey = nil
   rescanSoon()
 end
 
@@ -699,7 +765,7 @@ end
 for _, e in ipairs({ "ACTIONBAR_SLOT_CHANGED", "UPDATE_BINDINGS", "UPDATE_MACROS" }) do
   handlers[e] = rescanKeysSoon
 end
-for _, e in ipairs({ "PLAYER_TALENT_UPDATE", "CHARACTER_POINTS_CHANGED", "ACTIVE_TALENT_GROUP_CHANGED" }) do
+for _, e in ipairs({ "PLAYER_TALENT_UPDATE", "CHARACTER_POINTS_CHANGED", "ACTIVE_TALENT_GROUP_CHANGED", "TRAIT_CONFIG_UPDATED" }) do
   handlers[e] = talentsChanged
 end
 
@@ -833,6 +899,7 @@ local HELP = {
   "/coach pages — stop Shift+number from switching your main bar to an empty page",
   "/coach macros — create or refresh this class's helper macros (out of combat)",
   "/coach bar — lay out three bars by purpose: fight (main bar), react (Action Bar 2), prepare (Action Bar 3). Empty buttons only; \"preview\" just lists, \"replace\" overwrites",
+  "/coach build — the talent build you follow; paste an Icy Veins or Warcraft Tavern calculator link after it to follow that one",
   "/coach smart — the smart key: one key that walks the coach's plan (shows its steps and keys)",
   "/coach last — repeat the last fight report",
   "/coach reset — put both panels back where they started",
@@ -927,6 +994,55 @@ local function command(msg)
   elseif cmd == "reset" then ns.Panel.resetPosition(); ns.Journey.reset(); say("Both panels are back where they started.")
   elseif cmd == "journey" then
     if arg == "reset" then ns.Journey.reset() else db.journey = arg ~= "off" end
+  elseif cmd == "build" then
+    -- which talent build to follow: a number from the list, "auto", or a calculator link
+    local list = buildsFor(C.profile)
+    local wanted = arg:lower()
+    if arg:find("://", 1, true) or arg:find("talent%-calculator") then
+      local order, site = Engine.decodeBuild(arg, C.class, ns.TalentLinks)
+      if not order then say(site) return end
+      ClassCoachCharDB.buildLink, ClassCoachCharDB.build = arg, "custom"
+      C.customBuild = nil
+      say(("Following your %s link: %d talent points."):format(site, #order))
+    elseif wanted == "auto" then
+      ClassCoachCharDB.build = "auto"
+    elseif wanted == "mine" or wanted == "custom" then
+      if not customBuild() then say("You have not pasted a link yet. Type /coach build and the link.") return end
+      ClassCoachCharDB.build = "custom"
+    elseif tonumber(wanted) then
+      if not list[tonumber(wanted)] then say("There is no build number " .. wanted .. ". Type /coach build to see the list.") return end
+      ClassCoachCharDB.build = tonumber(wanted)
+    elseif wanted ~= "" then
+      say("Type /coach build to see the list, /coach build 2 to pick one, /coach build auto, or /coach build and a calculator link.")
+      return
+    end
+    C.journey = nil
+    local state = C.refreshTalents()
+    if not state then
+      say("No talent build for this class yet. Paste one: /coach build and an Icy Veins or Warcraft Tavern talent calculator link.")
+      return
+    end
+    for i, b in ipairs(list) do
+      print(("  %d. %s%s"):format(i, b.name, b == state.build and "   <- you follow this one" or ""))
+    end
+    local mine = customBuild()
+    if mine then print(("  mine. %s%s"):format(mine.name, mine == state.build and "   <- you follow this one" or "")) end
+    local plan = state.plan
+    if state.how == "auto" then print("  Picked automatically: the build that fits the talents you already have.") end
+    if not plan.readable then
+      print("  The game did not give your talents, so I cannot tell where you are in it.")
+    else
+      local nextUp = Engine.nextTalent(plan)
+      print(("  %d of %d points taken. %s"):format(plan.taken, #plan.steps, nextUp and ("Next: " .. nextUp .. ".") or "The build is complete."))
+      if plan.extra > 0 then
+        local names = {}
+        for _, off in ipairs(plan.offPlan) do names[#names + 1] = ("%s x%d"):format(off.name, off.extra) end
+        print(("  Outside this build: %s."):format(table.concat(names, ", ")))
+      end
+      if plan.ahead > 0 then print(("  %d point%s you took earlier than this build does."):format(plan.ahead, plan.ahead == 1 and "" or "s")) end
+      if #plan.unknown > 0 then print("  Not in your talent window: " .. table.concat(plan.unknown, ", ") .. ".") end
+    end
+    print("  Open your talents (N): the next talent has a gold frame.")
   elseif cmd == "spec" then
     local wanted = arg:lower()
     local choice = (wanted == "" or wanted == "auto") and "auto" or nil

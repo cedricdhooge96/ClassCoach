@@ -234,6 +234,11 @@ ns.RegisterProfile({
     { level = 40, text = "Mail armour", hint = "Your trainer teaches it at 40. Replace leather as mail drops." },
   },
 
+  talentsName = "All Things How: Enhancement leveling",
+  builds = {
+    { name = "Icy Veins: Solo and Dungeon Level 60 Build (Enhancement)",
+      link = "https://www.icy-veins.com/wow-forever/shaman-talent-calculator#tc-hhhhhiiikkknnnosrrvvuutzzzzzAAA11111222555633388llw~70959-a8fe1dab" },
+  },
   -- Forever's Enhancement talents, in the order after the 12 November 2026 patch (All Things How).
   talents = {
     { 10, 14, "Thundering Strikes" }, { 15, 17, "Mental Dexterity" }, { 18, 19, "Improved Lightning Shield" },

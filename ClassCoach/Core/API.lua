@@ -173,7 +173,8 @@ local NEEDS = {
   "C_Spell.GetSpellTexture", "C_Spell.IsAutoRepeatSpell", "C_Spell.IsSpellUsable", "C_Spell.PickupSpell",
   "C_SpellBook.GetNumSpellBookSkillLines", "C_SpellBook.GetSpellBookItemInfo", "C_SpellBook.GetSpellBookItemTexture",
   "C_SpellBook.GetSpellBookSkillLineInfo", "C_SpellBook.IsSpellKnown", "C_Timer.After",
-  "C_Traits.GetConfigInfo", "C_Traits.GetNodeInfo", "C_Traits.GetTreeCurrencyInfo", "C_Traits.GetTreeNodes",
+  "C_Traits.GetConfigInfo", "C_Traits.GetDefinitionInfo", "C_Traits.GetEntryInfo", "C_Traits.GetNodeInfo",
+  "C_Traits.GetTreeCurrencyInfo", "C_Traits.GetTreeNodes",
   "C_UnitAuras.GetAuraDataByIndex",
 }
 function API.missing()
@@ -732,6 +733,58 @@ function API.talentPoints()
   end)
   if #points ~= 3 then return nil end
   return points
+end
+
+-- A talent name reduced to letters and digits, so "Improved Life Tap" from a
+-- guide and from the game compare equal whatever the spacing or punctuation.
+function API.talentKey(name)
+  return (tostring(name):lower():gsub("[^%a%d]", ""))
+end
+
+-- Every talent in your talent window, by name:
+--   { list = { { node, name, rank, bought, max } }, byName = { [key] = entry }, spent = points }
+-- `rank` includes points you have clicked but not applied yet; `bought` does not.
+-- nil when the game won't say.
+local talentNames = {}   -- node id -> name (a talent keeps its name for the whole session)
+function API.talents()
+  local out = { list = {}, byName = {}, spent = 0 }
+  eachTalentTree(function(config, tree)
+    local nodes = C_Traits.GetTreeNodes(tree)
+    if type(nodes) ~= "table" then return end
+    for n = 1, upTo(#nodes, 400) do
+      pcall(function()
+        local node = plain(nodes[n])
+        if type(node) ~= "number" then return end
+        local info = C_Traits.GetNodeInfo(config, node)
+        if type(info) ~= "table" or field(info, "isVisible") == false then return end
+        local name = talentNames[node]
+        if not name then
+          local entries = field(info, "entryIDs")
+          local entry = type(entries) == "table" and plain(entries[1])
+          if type(entry) ~= "number" then return end
+          local definition = field(C_Traits.GetEntryInfo(config, entry), "definitionID")
+          if type(definition) ~= "number" then return end
+          local def = C_Traits.GetDefinitionInfo(definition)
+          name = field(def, "overrideName")
+          if type(name) ~= "string" or name == "" then
+            local spell = field(def, "spellID") or field(def, "overriddenSpellID")
+            name = type(spell) == "number" and API.spellName(spell) or nil
+          end
+          if type(name) ~= "string" or name == "" then return end
+          talentNames[node] = name
+        end
+        local bought, current, max = field(info, "ranksPurchased"), field(info, "currentRank"), field(info, "maxRanks")
+        bought = (type(bought) == "number" and bought > 0 and bought <= 10) and bought or 0
+        local rank = (type(current) == "number" and current > bought and current <= 10) and current or bought
+        local e = { node = node, name = name, rank = rank, bought = bought, max = (type(max) == "number" and max >= 1 and max <= 10) and max or 1 }
+        out.list[#out.list + 1] = e
+        out.byName[API.talentKey(name)] = e
+        out.spent = out.spent + bought
+      end)
+    end
+  end)
+  if #out.list == 0 then return nil end
+  return out
 end
 
 ---------------------------------------------------------------------------

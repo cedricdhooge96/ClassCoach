@@ -36,6 +36,8 @@ local function layout()
       tip = "The panel stays up during a fight, showing what it showed before the pull. It updates again when the fight ends. Turn off to hide it in combat." },
     { key = "journeyScale", kind = "slider", name = "Size", default = 1, min = 0.6, max = 1.6, step = 0.05, unit = "x",
       tip = "Size of the journey panel." },
+    { key = "talentMarks", kind = "check", name = "Mark my next talent in the talent window", default = true,
+      tip = "In the game's talent window (N), the next talent of your build gets a gold frame and the ones after it a number. Pick the build with /coach build." },
     { key = "food", kind = "check", name = "Remind me: food buff", default = true,
       tip = "In Forever, cooked food (marked Nutritious) gives +5% XP from kills for 15 minutes." },
     { key = "remindRested", kind = "check", name = "Remind me: rested XP, tent and sleeping bag", default = true,

@@ -205,6 +205,11 @@ ns.RegisterProfile({
 
   -- Forever's wand build: Wand Specialization, Spirit Tap, then Discipline up to
   -- Meditation and Penance (Penance is a Discipline talent from level 30).
+  talentsName = "Wand build: Wand Specialization, Spirit Tap, then Discipline",
+  builds = {
+    { name = "Icy Veins: The Mitigation Machine (Discipline)",
+      link = "https://www.icy-veins.com/wow-forever/priest-talent-calculator#tc-22222555558777aaa999dfffffeggghkkkkkmmmmmiiinpppssq~70959-a8fe1dab" },
+  },
   talents = {
     { 10, 11, "Wand Specialization" },
     { 12, 16, "Spirit Tap (Shadow): mana back after kills" },

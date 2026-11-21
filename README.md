@@ -42,6 +42,10 @@ docs/         how to add classes, a profile template
 tests/        offline tests against a fake game client
 ```
 
+## Credits
+
+The tables that turn an Icy Veins or Warcraft Tavern talent calculator link into talent names (`ClassCoach/Data/TalentLinks.lua`) come from [Zbuilds](https://github.com/Zael98/Zbuilds) by Zael98, MIT License.
+
 ## Tests
 
 ```

@@ -680,7 +680,8 @@ function Engine.journey(profile, s, options)
   -- a number, or true when the game says "some" without a count
   local unspent = j.talentPoints
   if train and (unspent == true or (type(unspent) == "number" and unspent > 0)) then
-    local pick = Engine.talentFor(profile, s.level)
+    -- from the build you follow and the talents you already have; by level only when the game hides them
+    local pick = (s.talent and s.talent.plan.readable and Engine.nextTalent(s.talent.plan)) or Engine.talentFor(profile, s.level)
     add("do", unspent == true and "Talent points to spend" or unspent == 1 and "1 talent point to spend" or (unspent .. " talent points to spend"),
       pick and ("Suggested: " .. pick .. ".") or "Open your talents (N) and spend it.", ICON.talent)
   end
@@ -922,13 +923,154 @@ end
 -- Level up
 ---------------------------------------------------------------------------
 
+---------------------------------------------------------------------------
+-- Talent builds: an ordered list of points, followed from what you have
+---------------------------------------------------------------------------
+
+local function talentKey(name) return (tostring(name):lower():gsub("[^%a%d]", "")) end
+
+-- A profile's talent list ({ fromLevel, toLevel, "Name (Tree): note" }) as one
+-- entry per point: { name = "Name", label = the text as written }.
+function Engine.talentOrder(list)
+  local order = {}
+  for _, t in ipairs(list or {}) do
+    local label = tostring(t[3])
+    local name = label:gsub("%s*%b()", ""):gsub(":.*$", ""):gsub("^%s+", ""):gsub("%s+$", "")
+    local from, to = tonumber(t[1]) or 0, tonumber(t[2]) or 0
+    for _ = from, math.min(to, from + 60) do order[#order + 1] = { name = name, label = label } end
+  end
+  return order
+end
+
+-- Reads a build out of a talent calculator link (Icy Veins or Warcraft Tavern).
+-- `tables` is ns.TalentLinks. Returns order, site name - or nil, what is wrong.
+function Engine.decodeBuild(link, class, tables)
+  link = tostring(link or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  if link == "" then return nil, "Paste a talent calculator link from Icy Veins or Warcraft Tavern." end
+  local site, slug, symbols = "Icy Veins", link:match("wow%-forever/(%a+)%-talent%-calculator#tc%-([^~%s]+)")
+  local keys = {}
+  if slug then
+    for i = 1, math.min(#symbols, 80) do keys[i] = symbols:sub(i, i) end
+    tables = tables and tables.iv
+  else
+    site = "Warcraft Tavern"
+    slug, symbols = link:match("talent%-calculator/(%a+)#%?t=(%w+)")
+    if not slug then
+      return nil, "I can read Icy Veins and Warcraft Tavern talent calculator links. This is not one of those."
+    end
+    local tree
+    for i = 1, math.min(#symbols, 120) do
+      local ch = symbols:sub(i, i)
+      if ch:match("[ABC]") then tree = ch elseif tree then keys[#keys + 1] = tree .. ch end
+    end
+    tables = tables and tables.tavern
+  end
+  if slug:upper() ~= tostring(class) then
+    return nil, ("That link is a %s build; your character is a %s."):format(slug:lower(), tostring(class):lower())
+  end
+  local names = tables and tables[class]
+  if not names then return nil, "I have no talent list for this class." end
+  if #keys == 0 then return nil, "That link has no talent points in it. Pick talents on the site first, then copy the link." end
+  if #keys > 51 then return nil, "That link has more than 51 talent points, so it is not a level 60 build for Forever." end
+  local order = {}
+  for i, key in ipairs(keys) do
+    local name = names[key]
+    if not name then return nil, ("Point %d of that link is a talent I do not know. The site may have changed its links."):format(i) end
+    order[i] = { name = name, label = name }
+  end
+  return order, site
+end
+
+-- Where you are in a build. `have` is API.talents() or nil.
+--   steps[k] = { name, label, want (the rank this point gives), node, max, known, taken }
+--   next     = the first step you have not taken (nil when the build is done)
+--   extra    = points you spent that the build never asks for; offPlan lists them
+--   ahead    = points you spent that the build only asks for later (taken out of its order)
+--   unknown  = talents the build names that your talent window does not have
+function Engine.talentPlan(order, have)
+  local plan = { steps = {}, offPlan = {}, unknown = {}, extra = 0, taken = 0, ahead = 0 }
+  local wanted, missing = {}, {}
+  for k, step in ipairs(order or {}) do
+    local key = talentKey(step.name)
+    wanted[key] = (wanted[key] or 0) + 1
+    local t = have and have.byName[key]
+    local s = { name = t and t.name or step.name, label = step.label or step.name, want = wanted[key], node = t and t.node,
+      max = t and t.max, known = t ~= nil, taken = t ~= nil and t.rank >= wanted[key] }
+    if t and wanted[key] > t.max then s.known, s.taken = false, false end   -- the build asks for more ranks than exist
+    plan.steps[k] = s
+    if s.taken then
+      plan.taken = plan.taken + 1
+      if plan.next then plan.ahead = plan.ahead + 1 end
+    end
+    if not plan.next and not s.taken then plan.next = k end
+    if have and not s.known and not missing[key] then
+      missing[key] = true
+      plan.unknown[#plan.unknown + 1] = step.name
+    end
+  end
+  if have then
+    for _, t in ipairs(have.list) do
+      local extra = t.rank - (wanted[talentKey(t.name)] or 0)
+      if extra > 0 then
+        plan.offPlan[#plan.offPlan + 1] = { name = t.name, extra = extra, node = t.node }
+        plan.extra = plan.extra + extra
+      end
+    end
+  end
+  plan.readable = have ~= nil
+  return plan
+end
+
+-- "Suppression (1 of 5)" for the next point of a plan, or nil when it is done.
+function Engine.nextTalent(plan)
+  local s = plan and plan.next and plan.steps[plan.next]
+  if not s then return nil end
+  if not s.known then return s.label end
+  return ("%s (%d of %d)"):format(s.name, s.want, s.max or s.want)
+end
+
+-- The points after the next one, as distinct talents in order: { { node, name, order = 2.. } }.
+function Engine.upcomingTalents(plan, count)
+  local out, seen = {}, {}
+  if not plan or not plan.next then return out end
+  local first = plan.steps[plan.next]
+  if first.node then seen[first.node] = true end
+  for k = plan.next + 1, #plan.steps do
+    local s = plan.steps[k]
+    if s.known and s.node and not s.taken and not seen[s.node] then
+      seen[s.node] = true
+      out[#out + 1] = { node = s.node, name = s.name, order = #out + 2 }
+      if #out >= (count or 4) then break end
+    end
+  end
+  return out
+end
+
+-- Which build to follow. builds = { { name, order } }, choice = "auto", a number,
+-- or "custom" (then `custom` is used). On "auto" it is the build that fits the
+-- points you already spent best: the fewest points outside it or ahead of its
+-- order. The first one wins a tie, so it is the one you get with nothing spent.
+function Engine.pickBuild(builds, custom, have, choice)
+  if choice == "custom" and custom then return custom, "yours" end
+  if type(choice) == "number" and builds[choice] then return builds[choice], "chosen" end
+  local best, bestExtra
+  for _, b in ipairs(builds) do
+    local plan = have and Engine.talentPlan(b.order, have)
+    local extra = plan and (plan.extra + plan.ahead) or 0
+    if not best or extra < bestExtra then best, bestExtra = b, extra end
+  end
+  if not best then return custom, custom and "yours" or nil end
+  return best, "auto"
+end
+
 function Engine.talentFor(profile, level)
   for _, t in ipairs(profile.talents) do
     if level >= t[1] and level <= t[2] then return t[3] end
   end
 end
 
-function Engine.levelUp(profile, level)
+-- pick: the next talent of the build you follow, when the game told us your talents
+function Engine.levelUp(profile, level, pick)
   local lines = { ("Level %d!"):format(level) }
   local new = profile.trainer[level]
   if new then
@@ -937,7 +1079,7 @@ function Engine.levelUp(profile, level)
     lines[#lines + 1] = "Visit your trainer for new spell ranks."
   end
   if level >= 10 then
-    local t = Engine.talentFor(profile, level)
+    local t = pick or Engine.talentFor(profile, level)
     lines[#lines + 1] = t and ("Talent point: " .. t .. ".") or "Spend your new talent point."
   end
   return lines

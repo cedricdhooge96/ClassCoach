@@ -37,6 +37,7 @@ ClassCoach is made for **World of Warcraft: Forever** (patch 1.60.x) and no othe
 | `/coach set compact on` | Changes one setting from chat; `/coach set` lists them |
 | `/coach pages` | Stops Shift+number from switching your main bar to an empty page |
 | `/coach macros` | Creates or refreshes this class's helper macros (out of combat) |
+| `/coach build` | The talent build you follow. `/coach build 2` picks one from the list, `/coach build auto` lets the addon choose, and `/coach build` followed by an Icy Veins or Warcraft Tavern talent calculator link follows that build |
 | `/coach smart` | Shows the smart key's steps and keys; `/coach smart next 1` binds a key |
 | `/coach bar` | Lays out the fight, react and prepare bars on empty buttons; `preview` only lists, `replace` overwrites |
 | `/coach last` | Repeats the last fight report in chat |
@@ -83,6 +84,17 @@ What the journey panel adds on top of that:
 And on the coach panel, before a pull, a red or amber icon when the enemy is one you shouldn't fight alone: far above your level, elite, or grey (no XP).
 
 The two panels move independently: drag each where you like. `/coach reset` puts both back.
+
+## Talents
+
+Open the game's talent window (N). The talent to take next has a **gold frame and NEXT** above it, and the four after it carry a small 2, 3, 4, 5. A line at the bottom left names the build and the next talent. ClassCoach only marks; you click.
+
+- **It follows what you already have.** The next talent is worked out from the points you have spent, not from your level, so it stays right if you took a point early or late. A point you have clicked but not applied yet already counts.
+- **Which build.** Each class comes with a leveling build and an Icy Veins build. With nothing spent you get the first; once you have spent points, the build that fits them best is followed. `/coach build` shows the list and where you are; `/coach build 2` pins one.
+- **Your own guide.** On the Icy Veins or Warcraft Tavern talent calculator, set up the build (or open the one a guide links to), copy the address from your browser and type `/coach build ` followed by the link. The link holds the talents in the order they were clicked, and that is the order ClassCoach follows.
+- **Nothing is guessed.** A link that names a talent your game does not have is refused with the reason. Points outside the build, or taken earlier than the build has them, are counted and shown.
+
+To switch the marks off: Options > AddOns > ClassCoach > "Mark my next talent in the talent window".
 
 ## Action bars
 

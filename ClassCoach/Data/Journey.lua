@@ -15,7 +15,13 @@ local ICON = "Interface\\Icons\\"
 ns.JourneyData = {
   milestones = {
     { level = 10, text = "First talent point", icon = ICON .. "Ability_Marksmanship",
-      hint = "From level 10 you get one talent point per level. Press N to spend it." },
+      hint = "From level 10 you get one talent point per level. Press N to spend it: the talent to take has a gold frame.",
+      -- done once you have spent a point or have none to spend; gone by level 12 if the game won't say
+      done = function(s)
+        local j = s.journey
+        if s.level >= 12 or not j then return s.level >= 12 end
+        return j.talentPoints == 0 or (type(j.talentsSpent) == "number" and j.talentsSpent > 0)
+      end },
     { level = 14, text = "Cozy Sleeping Bag quest chain", icon = ICON .. "INV_Misc_Bag_10",
       hint = "From level 14. It starts at a Nailed Plank on Alexston Farmstead in Westfall (Horde: Burned-Out Remains in the Barrens). Resting on the bag gives +1% XP per minute, up to 3%.",
       done = function(s) return s.journey and s.journey.hasItem and s.journey.hasItem("Cozy Sleeping Bag") end },
