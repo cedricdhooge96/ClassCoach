@@ -185,19 +185,19 @@ if SCENARIO == "shaman" then
   check("chain label", f.chainLabel.text == "next", f.chainLabel.text)
   check("mana bar exact out of combat", f.bar.value == 300 and f.barText.text == "100%", f.barText.text)
   cast(8075); M.P.totems[2] = true; M.advance(1.5); f = tick(ns)
-  check("Earth totem down: the Fire totem", f.name.text == "Searing Totem" and nextText(f) == "Lightning Bolt > Flame Shock", f.name.text .. " / " .. nextText(f))
+  check("Earth totem down: the Fire totem", f.name.text == "Searing Totem" and nextText(f) == "Lightning Bolt > Earth Shock", f.name.text .. " / " .. nextText(f))
   cast(3599); M.P.totems[1] = true; M.advance(1.5); f = tick(ns)
   check("totems down: pull with Lightning Bolt", f.name.text == "Lightning Bolt", f.name.text)
   check("opener keybind", f.key.text == "1", f.key.text)
-  -- before level 20: one shock per enemy (Flame Shock on an enemy that lives long enough), then melee
-  check("chain after the pull: one shock, then melee", nextText(f) == "Flame Shock > Melee", nextText(f))
+  -- before level 20: one Earth Shock per enemy, then melee (Flame Shock only in a group)
+  check("chain after the pull: one shock, then melee", nextText(f) == "Earth Shock > Melee", nextText(f))
 
   -- Fight (the game already hides the enemy's name when combat starts)
   local beforePull = journey(ns)
   M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED")
   cast(529)
   M.advance(1.5); f = tick(ns)
-  check("in combat: the one shock next", f.name.text == "Flame Shock", f.name.text)
+  check("in combat: the one shock next", f.name.text == "Earth Shock", f.name.text)
   check("journey panel stays up in combat, as it was before the pull", journey(ns) ~= "(hidden)" and journey(ns) == beforePull, journey(ns))
   ClassCoachDB.journeyInCombat = false; tick(ns)
   check("unless you turn that off", journey(ns) == "(hidden)", journey(ns))
@@ -207,7 +207,7 @@ if SCENARIO == "shaman" then
   check("mana text written by the game", f.barText.secretText == true and f.barText.text == "%.0f%%", f.barText.text)
   -- the shock cast, during the global cooldown (every spell reads "active", times hidden):
   -- melee from here, and the ring holds still (before 20 one shock per enemy)
-  cast(8050); M.P.cooldowns[8050] = M.now + 6
+  cast(8044); M.P.cooldowns[8044] = M.now + 6; M.P.cooldowns[8042] = M.now + 6
   M.gcdUntil = M.now + 1.5
   M.advance(0.3); f = tick(ns)
   check("right after the shock, in the global cooldown: melee", f.name.text == "Melee", f.name.text)
@@ -235,7 +235,7 @@ if SCENARIO == "shaman" then
   check("report headline without the hidden name", r and r.headline:find("^Fight: ") ~= nil, r and r.headline)
   local tips = r and table.concat(r.tips, " | ") or ""
   check("too many shocks before 20: tip", tips:find("3 shocks on one enemy") ~= nil, tips)
-  check("report casts line", r and r.casts and r.casts:find("Earth Shock ×2") ~= nil, r and r.casts)
+  check("report casts line", r and r.casts and r.casts:find("Earth Shock ×3") ~= nil, r and r.casts)
 
   M.fire("PLAYER_LEVEL_UP", 16)
   local flashed = ns.Panel.frame.msg.text
@@ -479,7 +479,7 @@ if SCENARIO == "shaman" then
   M.fire("UNIT_AURA", "player")
   target({ name = "Rockjaw Trogg", level = 11, hostile = true, guid = "Creature-77" })
   M.advance(1); f = tick(ns)
-  check("no shield: the pull plan starts with Lightning Shield", f.name.text == "Lightning Shield" and nextText(f) == "Lightning Bolt > Flame Shock",
+  check("no shield: the pull plan starts with Lightning Shield", f.name.text == "Lightning Shield" and nextText(f) == "Lightning Bolt > Earth Shock",
     f.name.text .. " / " .. nextText(f))
   SlashCmdList.CLASSCOACH("macros")
   local pullMacro = M.macros[GetMacroIndexByName("CC Pull")]

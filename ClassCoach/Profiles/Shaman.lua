@@ -181,8 +181,11 @@ local MILESTONES = {
 -- every spell stops your mana regen for five seconds. So (Forever guides:
 -- Icy Veins, wowfdb, Mobalytics, Method, Warcraft Tavern, classicwowforever):
 --   pull   a missing shield, the totems worth their mana, Lightning Bolt
---   1-19   melee, and ONE shock per enemy (Flame Shock on an enemy that
---          lives long enough, else Earth Shock); keep Earth Shock for a caster
+--   1-19   melee, and ONE Earth Shock per enemy; against a caster keep it
+--          to stop a spell
+--   Flame Shock only in a group (Icy Veins: "Alternate Flame Shock & Earth
+--          Shock in groups"; wowfdb also uses Earth Shock alone). Some other
+--          guides keep Flame Shock up alone on long fights: not followed here.
 --   20+    Shamanistic Focus makes shocks cheap: one Earth Shock after every
 --          Stormstrike (25+), while mana is not low
 --   always Fire Nova only on two or more enemies at your Fire totem
@@ -219,13 +222,10 @@ ns.RegisterProfile({
     { spell = "Rage of the Farseer", when = tough, why = "A tough fight: Rage of the Farseer now." },
     { spell = "Stormstrike", why = "Your main attack: press it every time it is ready (every 8 seconds)." },
     -- in a group: Flame Shock when it has run out, Earth Shock on the other turns
-    { spell = "Flame Shock", minLevel = 20, mana = "medium",
+    { spell = "Flame Shock", mana = "medium",
       when = function(s) return s.inGroup and not s:debuffUp("Flame Shock") and afterStrike(s) end,
       why = "In a group: Flame Shock when it has run out, Earth Shock in between." },
     -- before 20: one shock per enemy
-    { spell = "Flame Shock", maxLevel = 19, mana = "medium",
-      when = function(s) return solo(s) and shocksHere(s) == 0 and lasts(s, 12) end,
-      why = "One shock per enemy before level 20: Flame Shock early, so it burns the whole fight." },
     { spell = "Earth Shock", maxLevel = 19, mana = "medium",
       when = function(s) return shocksHere(s) == 0 end,
       why = "One shock per enemy before level 20, then melee. Against a caster, keep it to stop a spell." },
