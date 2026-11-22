@@ -250,8 +250,8 @@ ns.RegisterProfile({
   -- Out of combat, enemy targeted: a missing shield, the totems worth it, then pull.
   -- In a group nothing here passes and the coach says: let the tank pull.
   opener = list(PREPULL_SHIELD, PREPULL_TOTEMS, {
-    { spell = "Lightning Bolt", when = solo,
-      why = "Pull with Lightning Bolt: it only has to bring the enemy to you (a low rank on your bar saves mana). Then melee." },
+    { spell = "Lightning Bolt", rank = 1, when = solo,
+      why = "Pull with Lightning Bolt rank 1: it only has to bring the enemy to you, for a fraction of the mana. Then melee." },
   }),
 
   checklist = list(CHECKLIST, {
@@ -308,12 +308,13 @@ ns.RegisterProfile({
   -- buffs, cooldowns or totems: each key does one kind of thing, the coach says which.
   macros = {
     { name = "CC Pull",
-      about = "Follows the coach's pull plan, one spell per press: a missing shield, the totems worth it, then Lightning Bolt.",
+      about = "Follows the coach's pull plan, one spell per press: a missing shield, the totems worth it, then Lightning Bolt rank 1.",
       body = function(s, plan)
         local order = ns.Engine.sequence(ns.Engine.pullPart({ spells = SHAMAN_SPELLS }, plan or {}))
         if #order == 0 then
           if not s:known("Lightning Bolt") then return nil end
-          order = { s.spells["Lightning Bolt"].name }
+          local lb = s.spells["Lightning Bolt"]
+          order = { lb.name .. (lb.lowest and lb.lowest ~= lb.id and "(Rank 1)" or "") }
         end
         return "#showtooltip\n" .. (#order == 1 and "/cast " or "/castsequence reset=target/combat ") .. table.concat(order, ", ")
       end },

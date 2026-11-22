@@ -649,7 +649,8 @@ local function sequenceEntry(sequence)
     e = { index = 1, spells = {}, names = {}, reset = (reset or ""):lower() }
     for part in (spells .. ","):gmatch("([^,]*),") do
       local a = part:match("^%s*(.-)%s*$")
-      if a ~= "" then e.spells[#e.spells + 1] = a:lower(); e.names[#e.names + 1] = a:gsub("^!", "") end
+      -- "Name(Rank 1)" is that spell at rank 1: the game casts it and moves on when it goes off
+      if a ~= "" then e.spells[#e.spells + 1] = a:lower():gsub("%(rank %d+%)$", ""); e.names[#e.names + 1] = a:gsub("^!", "") end
     end
     M.sequences[sequence] = e
   end

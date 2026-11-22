@@ -51,10 +51,10 @@ function State:ready(key)
   return nil
 end
 
-function State:usable(key)
+function State:usable(key, rank)
   local sp = self.spells[key]
   if not sp then return false end
-  local usable, short = self.check.usable(sp.id)
+  local usable, short = self.check.usable(rank == 1 and sp.lowest or sp.id)
   if short == true then return false end
   return usable
 end
@@ -175,7 +175,7 @@ local function allowed(entry, s)
   -- A spell that repeats by itself (your wand) reads as "on cooldown" while it
   -- is firing. That is it working, not a reason to stop suggesting it.
   local repeats = s.meta and s.meta[entry.spell] and s.meta[entry.spell].auto
-  if not repeats and (s:ready(entry.spell) == false or s:usable(entry.spell) == false) then return nil end
+  if not repeats and (s:ready(entry.spell) == false or s:usable(entry.spell, entry.rank) == false) then return nil end
   if entry.when then
     local fine, result = pcall(entry.when, s)
     if not (fine and result) then return nil end
@@ -191,6 +191,11 @@ end
 local function step(entry, sp, s)
   local out = { key = entry.spell, label = sp.name, icon = sp.icon, keybind = s.keys and s.keys[sp.name],
     why = text(entry.why, s) }
+  -- `rank = 1`: cast at rank 1 (a pull only has to bring the enemy to you). Macros and the
+  -- smart key write "Name(Rank 1)", which Forever's /cast and /castsequence accept (seen in game).
+  if entry.rank == 1 and sp.lowest and sp.lowest ~= sp.id then
+    out.rank, out.text, out.cost = 1, sp.name .. "(Rank 1)", sp.lowestCost
+  end
   if s.check and s.check.repeating and s.meta and s.meta[entry.spell] and s.meta[entry.spell].auto
     and s.check.repeating(sp.id) == true then
     out.running = true
@@ -263,12 +268,12 @@ end
 local STEP = 1.5   -- seconds one press takes (the global cooldown)
 
 local Sim = {}
-function Sim:pressed(key)
+function Sim:pressed(key, cost)
   local meta = self.profile.spells[key]
   -- The plan spends mana as it goes: a step it cannot afford any more drops out.
   if self.mana then
     local sp = self.spells[key]
-    self.mana = math.max(0, self.mana - (sp and sp.cost or 0)) + (meta and meta.restores or 0) * self.manaMax
+    self.mana = math.max(0, self.mana - (cost or sp and sp.cost or 0)) + (meta and meta.restores or 0) * self.manaMax
     if self.mana > self.manaMax then self.mana = self.manaMax end
     self.manaPct = self.mana / self.manaMax * 100
     self.manaLevel = ns.Mana.level(self.manaPct, self.profile.mana or {}, self.manaLevel)
@@ -319,9 +324,10 @@ end
 function Sim:castsOnTarget(key)
   return self.base:castsOnTarget(key) + (self.virtual[key] or 0)
 end
-function Sim:usable(key)
+function Sim:usable(key, rank)
   local sp = self.spells[key]
-  if self.mana and sp and (sp.cost or 0) > self.mana then return false end
+  local cost = sp and (rank == 1 and sp.lowestCost or sp.cost) or 0
+  if self.mana and sp and cost > self.mana then return false end
   return self.base:usable(key)
 end
 -- Seconds until a spell with `cdTime` is back, counted from your own casts (0 = ready, nil = unknown).
@@ -436,7 +442,7 @@ function Engine.chain(profile, s, max, fight)
       steps[#steps + 1] = again
       current = again   -- pressed below like any other step
     end
-    sim:pressed(current.key)
+    sim:pressed(current.key, current.cost)
     -- Before the pull, a totem or a buff on yourself does not start the fight:
     -- the plan goes on with the pull list (the next totem, then the pull spell).
     local nextStep
@@ -558,14 +564,16 @@ local function pullSmartSteps(profile, s, has, smart)
   local entries = {}
   for _, st in ipairs(pullPart(profile, Engine.plan(profile, s))) do
     if s.spells[st.key] and not st.melee and not (smart.skip and smart.skip[st.key]) then
-      entries[#entries + 1] = { key = st.key, label = st.label, text = st.label }
+      entries[#entries + 1] = { key = st.key, label = st.label, text = st.text or st.label }
     end
   end
   local combat = smart.combat and s.spells[smart.combat] and smart.combat
   local tail = combat or (entries[#entries] and not (profile.spells[entries[#entries].key] or {}).totem
     and not (profile.spells[entries[#entries].key] or {}).self and entries[#entries].key)
   if tail and s.spells[tail] then
-    entries[#entries + 1] = { key = tail, label = s.spells[tail].name, text = s.spells[tail].name }
+    local last = entries[#entries]
+    local text = (not combat and last and last.key == tail) and last.text or s.spells[tail].name
+    entries[#entries + 1] = { key = tail, label = s.spells[tail].name, text = text }
   end
   if #entries == 0 then return { entries = {} } end
   local texts = {}
@@ -759,7 +767,7 @@ function Engine.sequence(plan, skip, tail)
   for _, st in ipairs(plan) do
     if not (skip and skip[st.key]) then
       if not st.filler then
-        names[#names + 1] = st.label
+        names[#names + 1] = st.text or st.label
       elseif not st.melee and st.key ~= "Shoot" then
         for _ = 1, tail or 0 do names[#names + 1] = st.label end
       end

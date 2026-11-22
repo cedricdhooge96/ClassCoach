@@ -483,13 +483,13 @@ if SCENARIO == "shaman" then
     f.name.text .. " / " .. nextText(f))
   SlashCmdList.CLASSCOACH("macros")
   local pullMacro = M.macros[GetMacroIndexByName("CC Pull")]
-  check("the pull macro: the shield, then the pull", pullMacro and pullMacro.body == "#showtooltip\n/castsequence reset=target/combat Lightning Shield, Lightning Bolt",
+  check("the pull macro: the shield, then the pull", pullMacro and pullMacro.body == "#showtooltip\n/castsequence reset=target/combat Lightning Shield, Lightning Bolt(Rank 1)",
     pullMacro and pullMacro.body)
   M.P.buffs["Lightning Shield"] = true; M.fire("UNIT_AURA", "player"); M.advance(1); f = tick(ns)
   SlashCmdList.CLASSCOACH("macros")
   pullMacro = M.macros[GetMacroIndexByName("CC Pull")]
   check("shield up: it drops out of the plan and the macro", f.name.text == "Lightning Bolt"
-    and pullMacro and pullMacro.body == "#showtooltip\n/cast Lightning Bolt", pullMacro and pullMacro.body)
+    and pullMacro and pullMacro.body == "#showtooltip\n/cast Lightning Bolt(Rank 1)", pullMacro and pullMacro.body)
   M.P.mana = 50; M.P.buffs["Lightning Shield"] = nil; M.fire("UNIT_AURA", "player"); M.advance(1); f = tick(ns)
   check("no shield but little mana: no shield on the plan", f.name.text ~= "Lightning Shield", f.name.text)
   M.P.mana = 300; M.P.buffs["Lightning Shield"] = true; M.fire("UNIT_AURA", "player")
@@ -511,14 +511,14 @@ if SCENARIO == "shaman" then
   M.player({
     class = "SHAMAN", className = "Shaman", level = 25, mana = 900, maxMana = 900,
     spells = {
-      [915] = { name = "Lightning Bolt", cost = 75 }, [8046] = { name = "Earth Shock", cost = 45 },
+      [403] = { name = "Lightning Bolt", cost = 15 }, [915] = { name = "Lightning Bolt", cost = 75 }, [8046] = { name = "Earth Shock", cost = 45 },
       [8052] = { name = "Flame Shock", cost = 55 }, [8056] = { name = "Frost Shock", cost = 60 },
       [905] = { name = "Lightning Shield", cost = 40 }, [8019] = { name = "Rockbiter Weapon", cost = 80 },
       [6363] = { name = "Searing Totem", cost = 60 }, [8160] = { name = "Strength of Earth Totem", cost = 120 },
       [408342] = { name = "Fire Nova", cost = 150 }, [17364] = { name = "Stormstrike", cost = 30 },
       [939] = { name = "Healing Wave", cost = 110 }, [8004] = { name = "Lesser Healing Wave", cost = 100 },
     },
-    book = { 915, 8046, 8052, 8056, 905, 8019, 6363, 8160, 408342, 17364, 939, 8004 },
+    book = { 403, 915, 8046, 8052, 8056, 905, 8019, 6363, 8160, 408342, 17364, 939, 8004 },
     actions = { [1] = 17364, [2] = 8046 },
     bindings = { ACTIONBUTTON1 = "1", ACTIONBUTTON2 = "2" },
     talents = { 0, 21, 0 },
@@ -534,13 +534,13 @@ if SCENARIO == "shaman" then
   local key = ns.Smart.button
   local ktext = key and key:GetAttribute("cc-text") or ""
   check("25: the smart key walks the pull only out of a fight, and is Stormstrike in one", ktext ==
-    "/startattack [@target,harm,nodead]\n/castsequence [nocombat] reset=target/combat Strength of Earth Totem, Searing Totem, Lightning Bolt, Stormstrike\n/cast [combat] Stormstrike", ktext)
+    "/startattack [@target,harm,nodead]\n/castsequence [nocombat] reset=target/combat Strength of Earth Totem, Searing Totem, Lightning Bolt(Rank 1), Stormstrike\n/cast [combat] Stormstrike", ktext)
   local _, what = M.press(key)
   check("25: first press out of a fight: the Earth totem", what == "Strength of Earth Totem", tostring(what))
   cast(8160); M.P.totems[2] = true; _, what = M.press(key)
   cast(6363); M.P.totems[1] = true; _, what = M.press(key)
-  check("25: then the bolt", what == "Lightning Bolt", tostring(what))
-  cast(915); _, what = M.press(key)
+  check("25: then the bolt, at rank 1", what == "Lightning Bolt(Rank 1)", tostring(what))
+  cast(403); _, what = M.press(key)
   check("25: pressed again while the bolt flies: Stormstrike, not the totems over again", what == "Stormstrike", tostring(what))
   M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED"); M.advance(1.5); f = tick(ns)
   check("25: in the fight: Stormstrike first", f.name.text == "Stormstrike", f.name.text)
