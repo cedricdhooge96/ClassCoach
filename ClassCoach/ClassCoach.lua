@@ -636,6 +636,20 @@ local function buildState(now)
   local inCombat = API.inCombat() or C.tracker.fight ~= nil
   local manaPct, exact = readMana(now, inCombat)
   C.manaLevel = Mana.level(manaPct, C.profile.mana, C.manaLevel)
+  -- In a fight the estimate only goes down: the ledger adds regen between casts,
+  -- and a level climbing back over a line made a dropped spell come back (the
+  -- ring went back and forth). An exact reading from the game still counts.
+  local RANK = { low = 1, medium = 2, high = 3 }
+  local fight = C.tracker.fight
+  if fight ~= C.fightManaFor then C.fightMana, C.fightManaFor = nil, fight end   -- a new fight starts afresh
+  if inCombat and not exact then
+    if C.fightMana and RANK[C.manaLevel] and RANK[C.fightMana] and RANK[C.manaLevel] > RANK[C.fightMana] then
+      C.manaLevel = C.fightMana
+    end
+    C.fightMana = C.manaLevel
+  else
+    C.fightMana = inCombat and C.manaLevel or nil
+  end
   local buffs, mainHand
   if not inCombat then
     if not C.buffsAt or now - C.buffsAt > 1 or C.aurasDirty then

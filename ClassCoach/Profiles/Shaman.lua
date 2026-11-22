@@ -24,7 +24,7 @@ local SHAMAN_SPELLS = {
   ["Flame Shock"]      = { ids = { 8050, 8052, 8053, 10447, 10448, 29228 }, debuff = 12, cd = "shock", cdTime = 6, learn = 10 },
   ["Frost Shock"]      = { ids = { 8056, 8058, 10472, 10473 }, cd = "shock", cdTime = 6, learn = 20, harm = true },
   -- Forever's Fire Nova: a spell that bursts from your Fire totem (not the old totem)
-  ["Fire Nova"]        = { ids = { 408341, 408342, 408343, 408344, 408345 }, cd = true, learn = 12 },
+  ["Fire Nova"]        = { ids = { 408341, 408342, 408343, 408344, 408345 }, cd = true, cdTime = 10, learn = 12 },  -- 10 s: Icy Veins rotation page
   ["Lightning Shield"] = { self = true, ids = { 324, 325, 905, 945, 8134, 10431, 10432 }, learn = 8 },
   ["Water Shield"]     = { self = true, ids = { 408510 } },   -- Restoration talent (Enhancement takes it at 46)
   ["Rockbiter Weapon"] = { self = true, ids = { 8017, 8018, 8019, 10399, 16314, 16315, 16316 } },
@@ -130,22 +130,27 @@ local PREPULL_SHIELD = {
     why = "No shield: Lightning Shield first." },
 }
 
--- Totems before the pull (Icy Veins: "Drop Totems before engaging"). Each one
--- only while that element has none standing; they are 5-minute totems, so
--- usually only the Fire totem is new on a pull.
+-- Fights worth a totem or a damage-over-time spell.
+local function solo(s) return not s.inGroup end
+local function tough(s) return s.inGroup or (s.target and s.target.elite) end
+-- Your usual kill (median of your last fights) is at least this long. Unknown counts as yes.
+local function lasts(s, seconds) return tough(s) or not s.killTime or s.killTime >= seconds end
+
+-- Totems before the pull ("Drop totems before engaging"), each only while that
+-- element has none standing. The 5-minute totems only on a bar over half full
+-- (below that: drink first, the checklist says so); the Fire totem only alone (in a group Magma goes down inside the
+-- pack, not where you stand) and only on a fight long enough to earn its mana.
 local PREPULL_TOTEMS = {
-  { spell = "Strength of Earth Totem", when = function(s) return not s:totemUp("earth") end,
-    why = "Earth totem first: Strength of Earth (5 minutes). Stoneskin instead if you take a lot of hits." },
-  { spell = "Stoneskin Totem", when = function(s) return not s:totemUp("earth") end,
-    why = "Earth totem first: Stoneskin (5 minutes)." },
-  { spell = "Windfury Totem", when = function(s) return not s:totemUp("air") end,
+  { spell = "Strength of Earth Totem", mana = "high", when = function(s) return not s:totemUp("earth") end,
+    why = "Earth totem: Strength of Earth (5 minutes). Stoneskin instead if you take a lot of hits." },
+  { spell = "Stoneskin Totem", mana = "high", when = function(s) return not s:totemUp("earth") end,
+    why = "Earth totem: Stoneskin (5 minutes)." },
+  { spell = "Windfury Totem", mana = "high", when = function(s) return not s:totemUp("air") end,
     why = "Air totem: Windfury (5 minutes). Grounding Totem instead against casters." },
-  { spell = "Mana Spring Totem", when = function(s) return not s:totemUp("water") end,
+  { spell = "Mana Spring Totem", mana = "high", when = function(s) return not s:totemUp("water") end,
     why = "Water totem: Mana Spring." },
-  { spell = "Magma Totem", mana = "high", when = function(s) return s.inGroup and not s:totemUp("fire") end,
-    why = "Fire totem: Magma against a group of enemies." },
-  { spell = "Searing Totem", mana = "medium", when = function(s) return not s:totemUp("fire") end,
-    why = "Fire totem: Searing. It also lets Fire Nova burst." },
+  { spell = "Searing Totem", mana = "medium", when = function(s) return solo(s) and not s:totemUp("fire") and lasts(s, 15) end,
+    why = "Fire totem: Searing, on a fight long enough to pay for it." },
 }
 
 local function list(...)
@@ -160,6 +165,7 @@ local MILESTONES = {
   { level = 4, text = "Earth totem quest", hint = "Your trainer starts it. Without the totem you cannot drop Earth totems." },
   { level = 10, text = "Fire totem quest", hint = "Your trainer starts it; it continues outside your starting zone. Bring a friend for the last part." },
   { level = 20, text = "Water totem quest and Ghost Wolf", hint = "A long quest chain, but healing totems need it. Ghost Wolf makes the running faster." },
+  { level = 20, text = "Shamanistic Focus and Call of the Elements", hint = "Shocks get cheap: from now one Earth Shock after each strike. Set your totem bar once, then one key drops them all." },
   { level = 25, text = "Stormstrike talent", hint = "Your main attack from here on. Put it on an easy key." },
   { level = 30, text = "Air totem quest and Windfury Weapon", hint = "Windfury replaces Rockbiter on your weapon." },
   { level = 32, text = "Windfury Totem", hint = "Your Air totem from here on, in groups and alone." },
@@ -170,7 +176,32 @@ local MILESTONES = {
 
 ---------------------------------------------------------------------------
 -- Enhancement: melee leveling spec
+--
+-- Mana is the whole game for this spec while leveling: your swings are free,
+-- every spell stops your mana regen for five seconds. So (Forever guides:
+-- Icy Veins, wowfdb, Mobalytics, Method, Warcraft Tavern, classicwowforever):
+--   pull   a missing shield, the totems worth their mana, Lightning Bolt
+--   1-19   melee, and ONE shock per enemy (Flame Shock on an enemy that
+--          lives long enough, else Earth Shock); keep Earth Shock for a caster
+--   20+    Shamanistic Focus makes shocks cheap: one Earth Shock after every
+--          Stormstrike (25+), while mana is not low
+--   always Fire Nova only on two or more enemies at your Fire totem
+-- Each spell's cooldown is counted (cdTime), so the ring stays on one plan
+-- press after press, and in a fight the mana estimate only goes down.
 ---------------------------------------------------------------------------
+local function shocksHere(s)
+  return s:castsOnTarget("Earth Shock") + s:castsOnTarget("Flame Shock") + s:castsOnTarget("Frost Shock")
+end
+-- Earth Shock belongs right after Stormstrike (it hits 20% harder for 12 seconds)
+-- and never just before the next one: Stormstrike every 8 seconds, shocks every 6,
+-- so the steady loop is Stormstrike, Earth Shock, melee. When Stormstrike cannot
+-- be used (out of reach), the shock is not held back for it.
+local function afterStrike(s)
+  if not s:known("Stormstrike") then return true end
+  local since = s:sinceCast("Stormstrike")
+  return since < 6 or since > 12
+end
+
 ns.RegisterProfile({
   class = "SHAMAN", spec = "Enhancement", tab = 2, default = true,
   freeDamage = "your melee swings",
@@ -178,62 +209,82 @@ ns.RegisterProfile({
   spells = spells({
     -- Forever: 8 second cooldown since the 11 November 2026 hotfix
     ["Stormstrike"] = { ids = { 17364 }, core = true, cd = true, cdTime = 8 },
-    ["Rage of the Farseer"] = { ids = { 425336 }, cd = true },   -- optional Forever talent (not in the Icy Veins build)
+    -- optional Forever talent (not in the Icy Veins build). Its cooldown is not in any
+    -- source; cdTime only counts while the game says nothing (the global cooldown),
+    -- a clear "ready" or "not ready" from the game always wins.
+    ["Rage of the Farseer"] = { ids = { 425336 }, cd = true, cdTime = 60 },
   }),
 
-  -- In combat, Icy Veins' leveling priority. Each spell is pressed on its
-  -- cooldown, so the plan stays the same press after press:
-  --   Stormstrike, Earth Shock, Fire Nova (Fire totem up, spare mana), melee.
-  -- In a group Flame Shock takes turns with Earth Shock.
   priority = {
-    { spell = "Rage of the Farseer", why = "Your big cooldown: press it when it is ready." },
-    { spell = "Stormstrike", why = function(s)
-        if s.level >= 43 then
-          return "Stormstrike on cooldown. At 5 Maelstrom Weapon stacks, an instant Lightning Bolt."
-        end
-        return "Your main attack: press it every time it is ready (every 8 seconds)."
-      end },
-    { spell = "Flame Shock", mana = "medium", when = function(s) return s.inGroup and not s:debuffUp("Flame Shock") end,
-      why = "In a group: Flame Shock and Earth Shock take turns." },
-    { spell = "Earth Shock", mana = "medium",
+    { spell = "Rage of the Farseer", when = tough, why = "A tough fight: Rage of the Farseer now." },
+    { spell = "Stormstrike", why = "Your main attack: press it every time it is ready (every 8 seconds)." },
+    -- in a group: Flame Shock when it has run out, Earth Shock on the other turns
+    { spell = "Flame Shock", minLevel = 20, mana = "medium",
+      when = function(s) return s.inGroup and not s:debuffUp("Flame Shock") and afterStrike(s) end,
+      why = "In a group: Flame Shock when it has run out, Earth Shock in between." },
+    -- before 20: one shock per enemy
+    { spell = "Flame Shock", maxLevel = 19, mana = "medium",
+      when = function(s) return solo(s) and shocksHere(s) == 0 and lasts(s, 12) end,
+      why = "One shock per enemy before level 20: Flame Shock early, so it burns the whole fight." },
+    { spell = "Earth Shock", maxLevel = 19, mana = "medium",
+      when = function(s) return shocksHere(s) == 0 end,
+      why = "One shock per enemy before level 20, then melee. Against a caster, keep it to stop a spell." },
+    -- from 20: one Earth Shock after each Stormstrike
+    { spell = "Earth Shock", minLevel = 20, mana = "medium", when = afterStrike,
       why = function(s)
-        if s.inGroup and s:known("Frost Shock") then return "Earth Shock on cooldown. Frost Shock instead if you pull threat." end
-        return "Earth Shock every time it is ready."
+        if not s:known("Stormstrike") then return "Earth Shock when it is ready: from level 20 shocks are cheap." end
+        if s.inGroup and s:known("Frost Shock") then return "Earth Shock after Stormstrike. Frost Shock instead if the enemy turns on you." end
+        return "Earth Shock right after Stormstrike: it hits 20% harder."
       end },
     { spell = "Searing Totem", mana = "medium",
-      when = function(s) return not s:totemUp("fire") and (s.target.elite or s.inGroup) end,
-      why = "No Fire totem on a tough fight: drop Searing Totem." },
-    { spell = "Fire Nova", mana = "high", when = function(s) return s:totemUp("fire") end,
-      why = "Spare mana and a Fire totem up: Fire Nova." },
+      when = function(s) return not s:totemUp("fire") and tough(s) end,
+      why = "No Fire totem on a long fight: drop Searing Totem." },
+    { spell = "Fire Nova", mana = "high",
+      when = function(s) return s:totemUp("fire") and (s.inGroup or s:enemies() >= 2) end,
+      why = "Two or more enemies at your Fire totem, and spare mana: Fire Nova." },
   },
   filler = {
     { label = "Melee", why = "Your swings cost nothing. Let them work until the next spell is ready." },
   },
 
-  -- Out of combat, enemy targeted: totems first, then pull from range.
+  -- Out of combat, enemy targeted: a missing shield, the totems worth it, then pull.
+  -- In a group nothing here passes and the coach says: let the tank pull.
   opener = list(PREPULL_SHIELD, PREPULL_TOTEMS, {
-    { spell = "Lightning Bolt", why = "Pull with Lightning Bolt from range (a low rank saves mana), then melee." },
+    { spell = "Lightning Bolt", when = solo,
+      why = "Pull with Lightning Bolt: it only has to bring the enemy to you (a low rank on your bar saves mana). Then melee." },
   }),
 
-  checklist = CHECKLIST,
+  checklist = list(CHECKLIST, {
+    { check = function(s) return s.healthPct ~= nil and s.healthPct < 60 and s.healthPct >= 50 and s.manaLevel ~= "low" end,
+      label = "Hurt", fix = function() return "Healing Wave" end,
+      hint = "Healing Wave on yourself first, then drink: your mana comes back while you sit." },
+  }),
 
   advice = {
     low = function(s)
-      return "Mana low: melee only." .. (s:known("Earth Shock") and " Earth Shock only to interrupt a caster." or "")
+      return (s:known("Stormstrike") and "Mana low: Stormstrike and melee only." or "Mana low: melee only.")
+        .. " Keep the rest for a heal, and drink after the fight."
     end,
     medium = function(s)
-      local main = s:have({ "Stormstrike", "Earth Shock" })
-      if not main then return "Mana half: melee, and skip the extra spells." end
-      return "Mana half: " .. main .. " on cooldown" .. (s:known("Fire Nova") and ", no Fire Nova or extra totems." or ", no extra totems.")
+      if s.level < 20 then
+        return "Mana half: melee only now." .. (s:known("Earth Shock") and " Earth Shock only to stop a caster." or "")
+      end
+      if s:known("Stormstrike") then return "Mana half: Stormstrike and one Earth Shock after it. No Fire Nova, no new totems." end
+      return "Mana half: melee and an Earth Shock now and then. No Fire Nova, no new totems."
     end,
   },
 
   -- After-fight coaching. Return a sentence or nil.
   tips = {
-    function(f)
-      if n(f, "Earth Shock") >= 3 and (f.endPct or 100) < 25 then
-        return ("Earth Shock ×%d left you at %d%% mana. Once mana is low, melee only and drink after the fight.")
-          :format(n(f, "Earth Shock"), math.floor(f.endPct or 0))
+    function(f, s)
+      local shocks = n(f, "Earth Shock") + n(f, "Flame Shock")
+      if s.level < 20 and f.targets == 1 and shocks >= 2 and (f.endPct or 100) < 60 then
+        return ("%d shocks on one enemy. Before level 20 one is enough: your swings are free."):format(shocks)
+      end
+    end,
+    function(f, s)
+      if n(f, "Fire Nova") > 0 and f.targets == 1 and not f.elite and not s.inGroup then
+        return "Fire Nova on one enemy costs more than it gives. Keep it for two or more enemies at your Fire totem."
       end
     end,
     function(f)
@@ -251,47 +302,64 @@ ns.RegisterProfile({
         return "Several Lightning Bolts in melee range: as Enhancement, one bolt to pull is enough."
       end
     end,
-    function(f, s)
-      if s:known("Fire Nova") and n(f, "Fire Nova") > 0 and n(f, "Searing Totem") + n(f, "Magma Totem") == 0
-        and f.duration < 30 then
-        return "Fire Nova bursts from your Fire totem: drop one first, or the cast is wasted."
-      end
-    end,
   },
 
-  -- /coach macros builds these from the spells you know.
+  -- /coach macros builds these from the spells you know. A macro cannot check mana,
+  -- buffs, cooldowns or totems: each key does one kind of thing, the coach says which.
   macros = {
     { name = "CC Pull",
-      about = "Follows the coach's pull plan, one spell per press: a missing shield, the totems you need, then Lightning Bolt.",
+      about = "Follows the coach's pull plan, one spell per press: a missing shield, the totems worth it, then Lightning Bolt.",
       body = function(s, plan)
-        -- the pull part of the plan: buffs and totems, up to the first spell on the enemy
-        local part = {}
-        for _, st in ipairs(plan or {}) do
-          if st.filler then break end
-          part[#part + 1] = st
-          local m = st.key and SHAMAN_SPELLS[st.key]
-          if not (m and (m.totem or m.self)) then break end
-        end
-        local order = ns.Engine.sequence(part)
+        local order = ns.Engine.sequence(ns.Engine.pullPart({ spells = SHAMAN_SPELLS }, plan or {}))
         if #order == 0 then
           if not s:known("Lightning Bolt") then return nil end
           order = { s.spells["Lightning Bolt"].name }
         end
         return "#showtooltip\n" .. (#order == 1 and "/cast " or "/castsequence reset=target/combat ") .. table.concat(order, ", ")
       end },
-    { name = "CC Attack", about = "Keeps you swinging.",
-      body = function() return "/startattack" end },
     { name = "CC Strike", about = "Stormstrike, and it makes sure you are swinging.",
       body = function(s)
         if not s:known("Stormstrike") then return nil end
         return "#showtooltip\n/startattack\n/cast " .. s.spells["Stormstrike"].name
       end },
+    { name = "CC Shock", about = "Earth Shock; with Shift Flame Shock, with Ctrl Frost Shock. Press it when the coach shows a shock.",
+      body = function(s)
+        if not s:known("Earth Shock") then return nil end
+        local parts = {}
+        if s:known("Flame Shock") then parts[#parts + 1] = "[mod:shift] " .. s.spells["Flame Shock"].name end
+        if s:known("Frost Shock") then parts[#parts + 1] = "[mod:ctrl] " .. s.spells["Frost Shock"].name end
+        parts[#parts + 1] = s.spells["Earth Shock"].name
+        return "#showtooltip\n/startattack [harm,nodead]\n/cast " .. table.concat(parts, "; ")
+      end },
+    { name = "CC Interrupt", about = "Stops your own cast and interrupts the enemy's spell with Earth Shock.",
+      body = function(s)
+        if not s:known("Earth Shock") then return nil end
+        return "#showtooltip " .. s.spells["Earth Shock"].name .. "\n/stopcasting\n/cast " .. s.spells["Earth Shock"].name
+      end },
+    { name = "CC Totems", about = "Drops your totem set (Call of the Elements); with Shift takes them back (Totemic Recall, some mana back).",
+      body = function(s)
+        if not s:known("Call of the Elements") then return nil end
+        local recall = s:known("Totemic Recall") and ("[mod:shift] " .. s.spells["Totemic Recall"].name .. "; ") or ""
+        return "#showtooltip\n/cast " .. recall .. s.spells["Call of the Elements"].name
+      end },
+    { name = "CC Heal", about = "Heals you without dropping your target: Lesser Healing Wave, with Shift Healing Wave.",
+      body = function(s)
+        if not s:known("Healing Wave") then return nil end
+        local hw = s.spells["Healing Wave"].name
+        if not s:known("Lesser Healing Wave") then return "#showtooltip\n/cast [@player] " .. hw end
+        return "#showtooltip\n/cast [mod:shift,@player] " .. hw .. "; [@player] " .. s.spells["Lesser Healing Wave"].name
+      end },
+    { name = "CC Attack", about = "Keeps you swinging.",
+      body = function() return "/startattack" end },
   },
 
   trainer = TRAINER,
 
-  -- The smart key: every press also starts your auto attack, and it ends on Stormstrike once you have it.
-  smart = { attack = true, finish = "Stormstrike" },
+  -- The smart key: out of a fight it walks the pull plan (shield, totems, the pull),
+  -- in a fight it is Stormstrike, the one spell that is always right when it is ready.
+  -- Shocks, Fire Nova and totems in a fight depend on mana and on how many enemies:
+  -- the coach shows them, each on its own key.
+  smart = { attack = true, pull = true, combat = "Stormstrike" },
 
   -- /coach bar: three bars by purpose, the entries in the order they belong on the bar, best candidate first.
   -- An entry you cannot use yet takes no button (or leaves a gap, with the "fixed buttons" setting).
@@ -311,8 +379,9 @@ ns.RegisterProfile({
       { "Strength of Earth Totem", "Stoneskin Totem" },
     },
     react = {
-      { "Lesser Healing Wave", "Healing Wave" },
+      { "macro:CC Heal", "Lesser Healing Wave", "Healing Wave" },
       { "Healing Wave" },
+      { "macro:CC Interrupt" },
       { "Stoneclaw Totem" },
       { "Earthbind Totem" },
       { "book:Purge" },
@@ -322,18 +391,17 @@ ns.RegisterProfile({
       { "book:Cure Disease" },
       { "Healing Stream Totem" },
       { "Windfury Totem", "Mana Spring Totem" },
-      { "Chain Heal" },
     },
     prep = {
       { "Lightning Shield", "Water Shield" },
       { "Windfury Weapon", "Rockbiter Weapon" },
       { "Ghost Wolf" },
       { "Flametongue Weapon" },
-      { "Water Shield" },
+      { "macro:CC Totems", "Call of the Elements" },
+      { "Totemic Recall" },
       { "book:Ancestral Spirit" },
       { "book:Astral Recall" },
-      { "Call of the Elements" },
-      { "Totemic Recall" },
+      { "Chain Heal" },
       { "macro:CC Rest" },
       { "item:bandage" },
       { "item:hearth" },

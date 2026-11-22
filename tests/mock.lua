@@ -396,10 +396,28 @@ function M.press(b, click)
   if text then
     -- runs the macro text: a /castsequence casts its current entry (it moves on only when that succeeds)
     M.ranText = text
-    local sequence = text:match("/castsequence ([^\n]+)")
-    if sequence then
-      local e = M.sequenceEntry(sequence)
-      return "spell", e.names[e.index]
+    -- line by line, as the game does: [combat] / [nocombat] decide which line acts
+    local function passes(cond)
+      if not cond then return true end
+      for part in cond:gmatch("[^,]+") do
+        if part == "combat" and not P.combat then return false end
+        if part == "nocombat" and P.combat then return false end
+      end
+      return true
+    end
+    for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+      local cmd, rest = line:match("^/(%a+)%s+(.*)$")
+      if cmd == "castsequence" or cmd == "cast" then
+        local cond, body = rest:match("^%[([^%]]*)%]%s*(.*)$")
+        if not cond then body = rest end
+        if passes(cond) then
+          if cmd == "castsequence" then
+            local e = M.sequenceEntry(body)
+            return "spell", e.names[e.index]
+          end
+          return "spell", body
+        end
+      end
     end
     return "macrotext", text
   end

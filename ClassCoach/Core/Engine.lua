@@ -106,6 +106,13 @@ function State:totemUp(element)
   return self.tracker:totemUp(element, self.now)
 end
 
+-- Enemies you have cast at in this fight (0 outside a fight). Counted from your
+-- own casts: an enemy you only swing at is not counted.
+function State:enemies()
+  local fight = self.tracker and self.tracker.fight
+  return fight and fight.targets or 0
+end
+
 function State:sinceCast(key)
   return self.tracker:sinceCast(key, self.now)
 end
@@ -227,7 +234,7 @@ local function opening(profile, s)
     return open
   end
   local f = filler(profile, s)
-  if f.melee then f.why = "Walk in and attack." end
+  if f.melee then f.why = s.inGroup and "Let the tank pull, then run in and attack." or "Walk in and attack." end
   return f
 end
 
@@ -524,8 +531,62 @@ end
 -- Returns { entries = { { key, label, text } }, sequence, macrotext }, gate.
 Engine.SMART_LIMIT = 255     -- what one macro may hold
 Engine.SMART_RESET = "reset=target/combat"
+-- The pull part of a plan: its buffs and totems, up to and with the first step on the enemy.
+local function pullPart(profile, plan)
+  local part = {}
+  for _, st in ipairs(plan) do
+    if st.filler then break end
+    part[#part + 1] = st
+    local meta = profile.spells[st.key]
+    if not (meta and (meta.totem or meta.self)) then break end
+  end
+  return part
+end
+Engine.pullPart = pullPart
+
+-- `smart.pull` (a melee spec whose fight has more choices than one list can hold):
+-- out of a fight the key walks the pull plan (shield, totems, the pull spell);
+-- in a fight it only casts `smart.combat`, a spell that is always right to press
+-- when it is ready (Stormstrike), never a totem and never a step that could
+-- block the rest. The coach shows the other spells with their own keys.
+--   /startattack [@target,harm,nodead]
+--   /castsequence [nocombat] reset=target/combat Lightning Shield, Searing Totem, Lightning Bolt, Stormstrike
+--   /cast [combat] Stormstrike
+-- The sequence ends on the fight spell (or the pull spell again), so a second
+-- press while the bolt flies does not start over at the totems.
+local function pullSmartSteps(profile, s, has, smart)
+  local entries = {}
+  for _, st in ipairs(pullPart(profile, Engine.plan(profile, s))) do
+    if s.spells[st.key] and not st.melee and not (smart.skip and smart.skip[st.key]) then
+      entries[#entries + 1] = { key = st.key, label = st.label, text = st.label }
+    end
+  end
+  local combat = smart.combat and s.spells[smart.combat] and smart.combat
+  local tail = combat or (entries[#entries] and not (profile.spells[entries[#entries].key] or {}).totem
+    and not (profile.spells[entries[#entries].key] or {}).self and entries[#entries].key)
+  if tail and s.spells[tail] then
+    entries[#entries + 1] = { key = tail, label = s.spells[tail].name, text = s.spells[tail].name }
+  end
+  if #entries == 0 then return { entries = {} } end
+  local texts = {}
+  for i, e in ipairs(entries) do texts[i] = e.text end
+  local sequence = Engine.SMART_RESET .. " " .. table.concat(texts, ", ")
+  local lines = {}
+  if smart.attack then lines[#lines + 1] = "/startattack [@target,harm,nodead]" end
+  lines[#lines + 1] = "/castsequence [nocombat] " .. sequence
+  local fight
+  if combat then
+    fight = { key = combat, label = s.spells[combat].name, text = s.spells[combat].name }
+    lines[#lines + 1] = "/cast [combat] " .. fight.text
+  end
+  local macrotext = table.concat(lines, "\n")
+  if #macrotext > Engine.SMART_LIMIT then return { entries = {} } end
+  return { entries = entries, sequence = sequence, macrotext = macrotext, combat = fight }
+end
+
 function Engine.smartSteps(profile, s, has)
   local smart = profile.smart or {}
+  if smart.pull then return pullSmartSteps(profile, s, has, smart), nil end
   local entries, filler = {}, nil
   local function entry(key, label)
     local text = label

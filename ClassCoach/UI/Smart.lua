@@ -90,7 +90,7 @@ function Smart.load(built, gate)
     b:SetAttribute("cc-gate-macro", gate and gate.macro or nil)
   end)
   if not done then return false end
-  Smart.signature, Smart.steps, Smart.sequence = sig, built.entries or {}, built.sequence
+  Smart.signature, Smart.steps, Smart.sequence, Smart.combat = sig, built.entries or {}, built.sequence, built.combat
   return true
 end
 
@@ -117,7 +117,12 @@ function Smart.status()
   end
   local keys = keyCache
   local out = { ready = b ~= nil and steps ~= nil and #steps > 0 and Smart.sequence ~= nil, count = steps and #steps or 0, keys = keys }
-  if out.ready then
+  if out.ready and Smart.combat and inCombat() then
+    -- a key that walks the pull plan only out of a fight: in a fight it casts one spell
+    out.fightOnly = true
+    out.nextLabel, out.nextText = Smart.combat.label, Smart.combat.text
+    out.firstLabel = steps[1].label
+  elseif out.ready then
     -- the game's own record of the sequence: the step its next press casts
     local fine, index = pcall(QueryCastSequence, Smart.sequence)
     if fine and type(index) == "number" and steps[index] then
@@ -143,7 +148,9 @@ end
 function Smart.describe()
   local lines = {}
   for i, st in ipairs(Smart.steps or {}) do
-    lines[#lines + 1] = ("%d %s%s"):format(i, st.label, i == #Smart.steps and " (then it starts over)" or "")
+    local last = i == #Smart.steps
+    lines[#lines + 1] = ("%d %s%s"):format(i, st.label, last and (Smart.combat and " (before the fight)" or " (then it starts over)") or "")
   end
+  if Smart.combat then lines[#lines + 1] = "In a fight: " .. Smart.combat.label .. " when it is ready" end
   return lines
 end

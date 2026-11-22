@@ -185,18 +185,19 @@ if SCENARIO == "shaman" then
   check("chain label", f.chainLabel.text == "next", f.chainLabel.text)
   check("mana bar exact out of combat", f.bar.value == 300 and f.barText.text == "100%", f.barText.text)
   cast(8075); M.P.totems[2] = true; M.advance(1.5); f = tick(ns)
-  check("Earth totem down: the Fire totem", f.name.text == "Searing Totem" and nextText(f) == "Lightning Bolt > Earth Shock", f.name.text .. " / " .. nextText(f))
+  check("Earth totem down: the Fire totem", f.name.text == "Searing Totem" and nextText(f) == "Lightning Bolt > Flame Shock", f.name.text .. " / " .. nextText(f))
   cast(3599); M.P.totems[1] = true; M.advance(1.5); f = tick(ns)
   check("totems down: pull with Lightning Bolt", f.name.text == "Lightning Bolt", f.name.text)
   check("opener keybind", f.key.text == "1", f.key.text)
-  check("chain after the pull: Earth Shock, then melee", nextText(f) == "Earth Shock > Melee", nextText(f))
+  -- before level 20: one shock per enemy (Flame Shock on an enemy that lives long enough), then melee
+  check("chain after the pull: one shock, then melee", nextText(f) == "Flame Shock > Melee", nextText(f))
 
   -- Fight (the game already hides the enemy's name when combat starts)
   local beforePull = journey(ns)
   M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED")
   cast(529)
   M.advance(1.5); f = tick(ns)
-  check("in combat: Earth Shock next", f.name.text == "Earth Shock", f.name.text)
+  check("in combat: the one shock next", f.name.text == "Flame Shock", f.name.text)
   check("journey panel stays up in combat, as it was before the pull", journey(ns) ~= "(hidden)" and journey(ns) == beforePull, journey(ns))
   ClassCoachDB.journeyInCombat = false; tick(ns)
   check("unless you turn that off", journey(ns) == "(hidden)", journey(ns))
@@ -204,20 +205,16 @@ if SCENARIO == "shaman" then
   check("turned back on mid-fight it comes back", journey(ns) == beforePull, journey(ns))
   check("mana bar is handed the real hidden value", f.bar.value == M.SECRET)
   check("mana text written by the game", f.barText.secretText == true and f.barText.text == "%.0f%%", f.barText.text)
-  -- Earth Shock cast: during the global cooldown the game reads every spell "active"
-  -- with the times hidden. The shock must not come back as "ready" then (the ring jumped).
-  cast(8044); M.P.cooldowns[8044] = M.now + 6; M.P.cooldowns[8042] = M.now + 6
+  -- the shock cast, during the global cooldown (every spell reads "active", times hidden):
+  -- melee from here, and the ring holds still (before 20 one shock per enemy)
+  cast(8050); M.P.cooldowns[8050] = M.now + 6
   M.gcdUntil = M.now + 1.5
   M.advance(0.3); f = tick(ns)
-  check("right after the shock, in the global cooldown: melee, not the shock again", f.name.text == "Melee", f.name.text)
-  check("and the shock is planned back in about 6 seconds", nextText(f):find("^Earth Shock in [56]s") ~= nil, nextText(f))
-  M.advance(1.5); f = tick(ns)
-  check("after the global cooldown: still melee", f.name.text == "Melee", f.name.text)
+  check("right after the shock, in the global cooldown: melee", f.name.text == "Melee", f.name.text)
   local seen = {}
-  for _ = 1, 10 do M.advance(0.5); f = tick(ns); seen[#seen + 1] = f.name.text end
-  local changes = 0
-  for i = 2, #seen do if seen[i] ~= seen[i - 1] then changes = changes + 1 end end
-  check("the ring holds still while the shock cools down, then shows it once", seen[1] == "Melee" and seen[#seen] == "Earth Shock" and changes == 1, table.concat(seen, ","))
+  for _ = 1, 12 do M.advance(0.5); f = tick(ns); seen[#seen + 1] = f.name.text end
+  check("one shock per enemy before 20: melee for the rest of the fight, the ring holds still", table.concat(seen, ","):gsub("Melee,?", "") == "",
+    table.concat(seen, ","))
   M.gcdUntil = nil
   M.advance(6); cast(8044); M.advance(4); cast(8044); M.advance(2)
   f = tick(ns)
@@ -237,8 +234,8 @@ if SCENARIO == "shaman" then
   check("fight report made", r ~= nil)
   check("report headline without the hidden name", r and r.headline:find("^Fight: ") ~= nil, r and r.headline)
   local tips = r and table.concat(r.tips, " | ") or ""
-  check("Earth Shock tip", tips:find("Earth Shock") ~= nil, tips)
-  check("report casts line", r and r.casts and r.casts:find("Earth Shock ×3") ~= nil, r and r.casts)
+  check("too many shocks before 20: tip", tips:find("3 shocks on one enemy") ~= nil, tips)
+  check("report casts line", r and r.casts and r.casts:find("Earth Shock ×2") ~= nil, r and r.casts)
 
   M.fire("PLAYER_LEVEL_UP", 16)
   local flashed = ns.Panel.frame.msg.text
@@ -307,7 +304,7 @@ if SCENARIO == "shaman" then
   local bolts = 0
   for slot = 1, 12 do if M.P.actions[slot] == 529 then bolts = bolts + 1 end end
   check("fight bar: what is already on a bar is not doubled", bolts == 1, bolts)
-  check("react bar (Action Bar 2): the heal", M.P.actions[61] == 331, tostring(M.P.actions[61]))
+  check("react bar (Action Bar 2): the heal macro that keeps your target", type(M.P.actions[61]) == "table" and M.P.actions[61].macro == "CC Heal", barRow(61))
   check("prepare bar (Action Bar 3): shield first", M.P.actions[49] == 324, tostring(M.P.actions[49]))
   check("prepare bar: a spell already on a bar is not doubled, and leaves no gap either", barRow(49) == "324 CC Rest", barRow(49))
   M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(1); tick(ns)
@@ -320,7 +317,7 @@ if SCENARIO == "shaman" then
   SlashCmdList.CLASSCOACH("bar replace")
   check("bar replace: the pull macro takes button 1", type(M.P.actions[1]) == "table" and M.P.actions[1].macro == "CC Pull", tostring(M.P.actions[1]))
   check("bar replace: what you know, side by side in the layout's order", barRow(1) == "CC Pull 8044 8050 3599 529 8075" and barRow(49) == "324 8017 CC Rest"
-    and barRow(61) == "331", barRow(1) .. " / " .. barRow(49) .. " / " .. barRow(61))
+    and barRow(61) == "CC Heal 331 CC Interrupt", barRow(1) .. " / " .. barRow(49) .. " / " .. barRow(61))
   M.fire("ACTIONBAR_SLOT_CHANGED"); M.advance(1); tick(ns)
   -- Food, water, bandage and Hearthstone
   M.P.bag = {
@@ -482,7 +479,7 @@ if SCENARIO == "shaman" then
   M.fire("UNIT_AURA", "player")
   target({ name = "Rockjaw Trogg", level = 11, hostile = true, guid = "Creature-77" })
   M.advance(1); f = tick(ns)
-  check("no shield: the pull plan starts with Lightning Shield", f.name.text == "Lightning Shield" and nextText(f) == "Lightning Bolt > Earth Shock",
+  check("no shield: the pull plan starts with Lightning Shield", f.name.text == "Lightning Shield" and nextText(f) == "Lightning Bolt > Flame Shock",
     f.name.text .. " / " .. nextText(f))
   SlashCmdList.CLASSCOACH("macros")
   local pullMacro = M.macros[GetMacroIndexByName("CC Pull")]
@@ -506,6 +503,86 @@ if SCENARIO == "shaman" then
   ClassCoachCharDB.specChoice = "auto"; M.advance(1); tick(ns)
   target(nil)
   check("no errors after the shield and Restoration checks", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
+
+  ---------------------------------------------------------------------------
+  -- Enhancement at 25, mana as it really is (spells cost a share of a small bar):
+  -- Stormstrike and one Earth Shock after it, the steady loop the guides give;
+  -- the smart key walks the pull plan out of a fight and is Stormstrike in it.
+  M.player({
+    class = "SHAMAN", className = "Shaman", level = 25, mana = 900, maxMana = 900,
+    spells = {
+      [915] = { name = "Lightning Bolt", cost = 75 }, [8046] = { name = "Earth Shock", cost = 45 },
+      [8052] = { name = "Flame Shock", cost = 55 }, [8056] = { name = "Frost Shock", cost = 60 },
+      [905] = { name = "Lightning Shield", cost = 40 }, [8019] = { name = "Rockbiter Weapon", cost = 80 },
+      [6363] = { name = "Searing Totem", cost = 60 }, [8160] = { name = "Strength of Earth Totem", cost = 120 },
+      [408342] = { name = "Fire Nova", cost = 150 }, [17364] = { name = "Stormstrike", cost = 30 },
+      [939] = { name = "Healing Wave", cost = 110 }, [8004] = { name = "Lesser Healing Wave", cost = 100 },
+    },
+    book = { 915, 8046, 8052, 8056, 905, 8019, 6363, 8160, 408342, 17364, 939, 8004 },
+    actions = { [1] = 17364, [2] = 8046 },
+    bindings = { ACTIONBUTTON1 = "1", ACTIONBUTTON2 = "2" },
+    talents = { 0, 21, 0 },
+  })
+  M.P.buffs = { ["Lightning Shield"] = true, ["Well Fed"] = true }; M.P.mainHand = true; M.P.mainHandBuff = true
+  M.fire("PLAYER_LEVEL_UP", 25); M.fire("SPELLS_CHANGED"); M.fire("UNIT_AURA", "player"); M.advance(3)
+  ClassCoachCharDB.specChoice = "Enhancement"
+  target({ name = "Murloc", level = 24, hostile = true, guid = "Creature-250" })
+  M.advance(1); f = tick(ns)
+  check("25: the pull plan: totems, the bolt, then Stormstrike", f.name.text == "Strength of Earth Totem"
+    and nextText(f) == "Searing Totem > Lightning Bolt", f.name.text .. " / " .. nextText(f))
+  SlashCmdList.CLASSCOACH("smart")
+  local key = ns.Smart.button
+  local ktext = key and key:GetAttribute("cc-text") or ""
+  check("25: the smart key walks the pull only out of a fight, and is Stormstrike in one", ktext ==
+    "/startattack [@target,harm,nodead]\n/castsequence [nocombat] reset=target/combat Strength of Earth Totem, Searing Totem, Lightning Bolt, Stormstrike\n/cast [combat] Stormstrike", ktext)
+  local _, what = M.press(key)
+  check("25: first press out of a fight: the Earth totem", what == "Strength of Earth Totem", tostring(what))
+  cast(8160); M.P.totems[2] = true; _, what = M.press(key)
+  cast(6363); M.P.totems[1] = true; _, what = M.press(key)
+  check("25: then the bolt", what == "Lightning Bolt", tostring(what))
+  cast(915); _, what = M.press(key)
+  check("25: pressed again while the bolt flies: Stormstrike, not the totems over again", what == "Stormstrike", tostring(what))
+  M.P.combat = true; M.fire("PLAYER_REGEN_DISABLED"); M.advance(1.5); f = tick(ns)
+  check("25: in the fight: Stormstrike first", f.name.text == "Stormstrike", f.name.text)
+  check("25: the ring shows the smart key on Stormstrike", f.key.text ~= "" , f.key.text)
+  -- the steady loop, with the global cooldown hiding every spell's state right after a cast
+  local function press(id)
+    cast(id); M.P.cooldowns[id] = M.now + (id == 17364 and 8 or 6)
+    if id == 8046 or id == 8052 or id == 8056 then for _, sh in ipairs({ 8046, 8052, 8056 }) do M.P.cooldowns[sh] = M.now + 6 end end
+    M.gcdUntil = M.now + 1.5
+  end
+  local seen, pressed = {}, {}
+  for _ = 1, 48 do   -- 24 seconds, a tick every half second; press what the ring shows
+    M.advance(0.5); f = tick(ns)
+    seen[#seen + 1] = f.name.text
+    local id = ({ Stormstrike = 17364, ["Earth Shock"] = 8046 })[f.name.text]
+    if id and (not M.gcdUntil or M.now >= M.gcdUntil) and not (M.P.cooldowns[id] and M.now < M.P.cooldowns[id]) then
+      press(id); pressed[#pressed + 1] = f.name.text
+    end
+  end
+  local changes = 0
+  for i = 2, #seen do if seen[i] ~= seen[i - 1] then changes = changes + 1 end end
+  check("25: the loop is Stormstrike, Earth Shock, melee", table.concat(pressed, ","):find("^Stormstrike,Earth Shock,Stormstrike,Earth Shock,Stormstrike,Earth Shock") ~= nil,
+    table.concat(pressed, ","))
+  check("25: the ring changes only when a press changes the plan (no flicker in the global cooldown)", changes <= #pressed * 2 + 1,
+    changes .. " changes for " .. #pressed .. " presses: " .. table.concat(seen, ","))
+  check("25: Fire Nova not on one enemy", not table.concat(seen, ","):find("Fire Nova"), table.concat(seen, ","))
+  check("25: in the fight the key is Stormstrike, never a totem", select(2, M.press(key)) == "Stormstrike")
+  -- a second enemy in the fight: the key does not start over at the totems
+  target({ name = "Murloc", level = 24, hostile = true, guid = "Creature-251" })
+  check("25: an add: the key is still Stormstrike, no totems again", select(2, M.press(key)) == "Stormstrike")
+  cast(915)
+  M.P.cooldowns[17364] = M.now + 8; M.gcdUntil = nil; M.advance(1); f = tick(ns)
+  check("25: two enemies and a Fire totem up, spare mana: Fire Nova can come up", ns.C.lastState:enemies() >= 2, ns.C.lastState:enemies())
+  M.P.combat = false; M.fire("PLAYER_REGEN_ENABLED"); M.advance(1)
+  -- after the fight with half a bar: no 5-minute totems on the pull plan
+  M.P.totems = {}; M.P.mana = 400; M.percentReadable = true; M.fire("UNIT_POWER_UPDATE", "player"); M.advance(3); f = tick(ns)
+  local plan = f.name.text .. " > " .. nextText(f)
+  check("25: under half mana the pull plan drops no 5-minute totem", not plan:find("Strength of Earth"), plan)
+  M.percentReadable = false; M.P.mana = 900; M.gcdUntil = nil
+  target(nil); M.advance(1); tick(ns)
+  ClassCoachCharDB.specChoice = "auto"
+  check("25: no errors", errors() == 0 and ns.C.lastError == nil, (ClassCoachDB.log and table.concat(ClassCoachDB.log, " || ") or "") .. tostring(ns.C.lastError))
 
 elseif SCENARIO == "priest" then
   M.player({
@@ -1204,7 +1281,14 @@ elseif SCENARIO == "sweep" then
       local line = table.concat(names, " > ")
       if built.macrotext then
         check(tag .. ": it fits one macro", #built.macrotext <= 255, #built.macrotext .. " " .. built.macrotext)
-        check(tag .. ": the coach reads the same sequence the key runs", built.macrotext:find("/castsequence " .. built.sequence, 1, true) ~= nil, built.macrotext)
+        check(tag .. ": the coach reads the same sequence the key runs", built.macrotext:find("/castsequence " .. built.sequence, 1, true) ~= nil
+          or built.macrotext:find("/castsequence [nocombat] " .. built.sequence, 1, true) ~= nil, built.macrotext)
+        if built.combat then
+          -- a key that only walks the pull out of a fight: in a fight one spell, never a totem or a buff
+          local meta = profile.spells[built.combat.key]
+          check(tag .. ": in a fight the key casts one spell that is not a totem or a buff", not (meta and (meta.totem or meta.self))
+            and built.macrotext:find("/cast [combat] " .. built.combat.text, 1, true) ~= nil, built.macrotext)
+        end
       end
       local last = steps[#steps]
       if last and #steps > 1 then

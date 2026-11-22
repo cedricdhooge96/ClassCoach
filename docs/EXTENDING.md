@@ -141,11 +141,17 @@ After-fight tips also get `f.demon`, `f.precast` (you cast before combat started
 
 ```lua
 smart = {
-  open = "CC Open",                -- a macro for the first step (send the pet as well)
-  tail = "CC Strike",              -- a macro to stay on at the end, for melee classes
+  pet = true,                      -- every press also sends the pet in
+  attack = true,                   -- every press also starts your auto attack
+  finish = "Stormstrike",          -- the spell the sequence ends on, a few times
   gate = { when = "[pet:Voidwalker,nocombat]", macro = "CC Send" },  -- hold step one while this is true
   skip = { ["Power Word: Shield"] = true },                           -- steps with their own key
 },
+-- A spec whose fight has more choices than one fixed list (mana, number of enemies):
+smart = { attack = true, pull = true, combat = "Stormstrike" },
+--   out of a fight the key walks the pull plan (a shield, totems, the pull spell);
+--   in a fight it only casts `combat`, so it can never stall on a spell that cannot
+--   be cast or drop a totem on an add. The coach shows the other spells, each on its own key.
 ```
 
 The smart key's steps come from the same pull plan as the macros
