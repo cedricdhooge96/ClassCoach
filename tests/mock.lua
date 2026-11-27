@@ -692,7 +692,13 @@ function M.fire(event, ...)
 end
 
 M.timers = {}
-C_Timer = { After = function(sec, fn) M.timers[#M.timers + 1] = { at = M.now + sec, fn = fn } end }
+C_Timer = {
+  After = function(sec, fn) M.timers[#M.timers + 1] = { at = M.now + sec, fn = fn } end,
+  NewTicker = function(sec, fn) M.tickers = M.tickers or {}; M.tickers[#M.tickers + 1] = { every = sec, fn = fn } end,
+}
+-- milliseconds since the client started; a test can make a refresh look slow with M.profileStep
+M.clockMs = 0
+function debugprofilestop() M.clockMs = M.clockMs + (M.profileStep or 0.5); return M.clockMs end
 function M.advance(sec)
   M.now = M.now + sec
   local due, keep = {}, {}

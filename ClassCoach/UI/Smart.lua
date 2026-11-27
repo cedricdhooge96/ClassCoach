@@ -97,10 +97,7 @@ end
 -- The game starts the sequence over by itself (a new target, the end of a fight).
 function Smart.restart() return true end
 
-local function shortKey(key)
-  if type(key) ~= "string" or key == "" then return nil end
-  return (key:gsub("SHIFT%-", "S"):gsub("CTRL%-", "C"):gsub("ALT%-", "A"):gsub("NUMPAD", "N"):gsub("BUTTON", "M"))
-end
+local function shortKey(key) return ns.API.shortKey(key) end
 
 -- Where the key is right now: readable at any time, also in combat.
 -- { ready, count, step, nextLabel, firstLabel, keys = { next } }

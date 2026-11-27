@@ -1415,6 +1415,18 @@ elseif SCENARIO == "robust" then
   check("a broken profile is skipped and noted, not an error", #ns.Profiles.problems >= 3, #ns.Profiles.problems)
   check("the real profile still loads", ns.C.profile.spec == "Affliction", ns.C.profile.spec)
   local driver = ns.C.driver
+  -- slow refreshes slow the pace down, and quick ones bring it back (0.18.2 never came back)
+  M.profileStep = 30
+  for _ = 1, 10 do driver.scripts.OnUpdate(driver, 2) end
+  check("ten slow refreshes: four times less often", ns.C.refreshStretch == 4, tostring(ns.C.refreshStretch))
+  M.profileStep = 1
+  for _ = 1, 19 do driver.scripts.OnUpdate(driver, 2) end
+  check("...and not back after a few quick ones", ns.C.refreshStretch == 4, tostring(ns.C.refreshStretch))
+  for _ = 1, 21 do driver.scripts.OnUpdate(driver, 2) end
+  check("twenty quick ones in a row: twice as often again; forty: the normal pace", ns.C.refreshStretch == 1, tostring(ns.C.refreshStretch))
+  check("each change of pace is logged", table.concat(ClassCoachDB.log, " "):find("back to the normal pace", 1, true) ~= nil)
+  M.profileStep = nil
+  for i = #ClassCoachDB.log, 1, -1 do ClassCoachDB.log[i] = nil end   -- the error-log test below counts from zero
   local escaped = 0
   local function guarded(what, fn, ...)
     local ok, err = pcall(fn, ...)

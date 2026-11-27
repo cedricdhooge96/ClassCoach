@@ -184,7 +184,10 @@ local NEEDS = {
   "C_Spell.GetSpellCooldown", "C_Spell.GetSpellDescription", "C_Spell.GetSpellName", "C_Spell.GetSpellIDForSpellIdentifier", "QueryCastSequence", "C_Spell.GetSpellPowerCost",
   "C_Spell.GetSpellTexture", "C_Spell.IsAutoRepeatSpell", "C_Spell.IsSpellUsable", "C_Spell.PickupSpell",
   "C_SpellBook.GetNumSpellBookSkillLines", "C_SpellBook.GetSpellBookItemInfo", "C_SpellBook.GetSpellBookItemTexture",
-  "C_SpellBook.GetSpellBookSkillLineInfo", "C_SpellBook.IsSpellKnown", "C_Timer.After",
+  "C_SpellBook.GetSpellBookSkillLineInfo", "C_SpellBook.IsSpellKnown", "C_Timer.After", "C_Timer.NewTicker", "debugprofilestop",
+  "Settings.RegisterVerticalLayoutCategory", "Settings.RegisterAddOnSetting", "Settings.RegisterAddOnCategory",
+  "Settings.CreateCheckbox", "Settings.CreateSlider", "Settings.CreateSliderOptions", "Settings.CreateDropdown", "Settings.CreateControlTextContainer",
+  "CreateSettingsButtonInitializer", "CreateSettingsListSectionHeaderInitializer",
   "C_Traits.GetConfigInfo", "C_Traits.GetDefinitionInfo", "C_Traits.GetEntryInfo", "C_Traits.GetNodeInfo",
   "C_Traits.GetTreeCurrencyInfo", "C_Traits.GetTreeNodes",
   "C_UnitAuras.GetAuraDataByIndex",
@@ -984,12 +987,14 @@ local function bindingForSlot(slot)
   if slot >= 169 and slot <= 180 then return "MULTIACTIONBAR7BUTTON" .. i end
 end
 
+-- A key as short as a bar button shows it: SHIFT-1 is S1, the mouse wheel WU and WD.
 local function shortKey(key)
-  if not key then return nil end
+  if type(key) ~= "string" or key == "" then return nil end
   key = key:gsub("SHIFT%-", "S"):gsub("CTRL%-", "C"):gsub("ALT%-", "A")
   key = key:gsub("NUMPAD", "N"):gsub("MOUSEWHEELUP", "WU"):gsub("MOUSEWHEELDOWN", "WD"):gsub("BUTTON", "M")
   return key
 end
+API.shortKey = shortKey
 
 -- name -> key text, for every spell placed on a bound action button
 function API.scanKeys()

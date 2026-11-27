@@ -449,7 +449,7 @@ local function closeButton(f)
   local function tint(c) for _, l in ipairs(b.lines) do l:SetColorTexture(c[1], c[2], c[3], 1) end end
   b:SetScript("OnEnter", function() tint(C.ink) end)
   b:SetScript("OnLeave", function() tint(C.muted) end)
-  b:SetScript("OnClick", function() Window.close() end)
+  b:SetScript("OnClick", S.guard(function() Window.close() end))
   return b
 end
 
@@ -525,7 +525,7 @@ local function create()
   f.pages = {}
   f:SetScript("OnHide", function() Window.current = nil end)
   -- Esc closes it, out of combat. In a fight the window leaves the keyboard alone.
-  f:SetScript("OnKeyDown", function(self, key)
+  f:SetScript("OnKeyDown", S.guard(function(self, key)
     if InCombatLockdown() then return end
     if key == "ESCAPE" then
       pcall(self.SetPropagateKeyboardInput, self, false)
@@ -533,7 +533,7 @@ local function create()
     else
       pcall(self.SetPropagateKeyboardInput, self, true)
     end
-  end)
+  end))
   f:Hide()
   Window.frame = f
   return f

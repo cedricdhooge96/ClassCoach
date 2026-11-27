@@ -949,7 +949,7 @@ end
 --     itself to one try every five seconds until it works again
 --   * a refresh that takes long makes the addon refresh less often
 --   * nothing here can raise an error into the game
-local elapsed, failures, slowRuns, stretch = 0, 0, 0, 1
+local elapsed, failures, slowRuns, fastRuns, stretch = 0, 0, 0, 0, 1
 local clock = debugprofilestop
 local function onUpdate(_, dt)
   if type(dt) ~= "number" then return end
@@ -974,19 +974,26 @@ local function onUpdate(_, dt)
       pcall(ns.Panel.render, { status = C.trouble, statusKind = "warn", chain = {} })
     end
   end
-  -- more than 20 ms for one refresh is too much: halve the pace, up to four times slower
+  -- more than 20 ms for one refresh is too much: halve the pace, up to four times slower.
+  -- Twenty quick ones in a row (under 5 ms) double it again, back to the normal pace.
   if began and clock then
     local took = clock() - began
     if took > 20 then
-      slowRuns = slowRuns + 1
+      slowRuns, fastRuns = slowRuns + 1, 0
       if slowRuns >= 5 and stretch < 4 then
         stretch, slowRuns = stretch * 2, 0
         log("a refresh took %d ms: refreshing %dx less often", took, stretch)
       end
-    elseif took < 5 and slowRuns > 0 then
-      slowRuns = slowRuns - 1
+    elseif took < 5 then
+      if slowRuns > 0 then slowRuns = slowRuns - 1 end
+      fastRuns = fastRuns + 1
+      if fastRuns >= 20 and stretch > 1 then
+        stretch, fastRuns = stretch / 2, 0
+        log(stretch > 1 and "refreshes are quick again: %dx less often" or "refreshes are quick again: back to the normal pace", stretch)
+      end
     end
   end
+  C.refreshStretch = stretch
 end
 
 ---------------------------------------------------------------------------
@@ -1300,9 +1307,7 @@ local function start()
       who = ("%s %s level %s"):format(C.profile and C.profile.spec or "?", C.class or "?", tostring(C.level)) })
   end)
   C_Timer.After(10, function() if ns.Trace.recording() and C.check then safely("trace", C.check, true) end end)
-  if C_Timer.NewTicker then
-    C_Timer.NewTicker(60, function() if ns.Trace.recording() then safely("trace", C.noteLayout, "on screen") end end)
-  end
+  C_Timer.NewTicker(60, function() if ns.Trace.recording() then safely("trace", C.noteLayout, "on screen") end end)
   -- The first time: the setup page of the settings window, once, out of combat.
   if not db.welcomed then
     C_Timer.After(6, function()

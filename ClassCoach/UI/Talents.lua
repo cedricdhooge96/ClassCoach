@@ -480,7 +480,7 @@ local function makeToast()
     if result == "learned" then f:Hide() end
   end))
   f:EnableMouse(true)
-  f:SetScript("OnMouseUp", function(self) self:Hide() end)   -- a click anywhere else on it puts it away
+  f:SetScript("OnMouseUp", S.guard(function(self) self:Hide() end))   -- a click anywhere else on it puts it away
   f:SetScript("OnUpdate", S.guard(function(self)
     local left = (self.untilT or 0) - GetTime()
     if self:IsMouseOver() then self.untilT = GetTime() + 2 return end   -- reading it: keep it

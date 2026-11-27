@@ -92,8 +92,8 @@ Forever hides mana from addons in combat, and on Cedric's client out of combat t
 1. Make the change, add or update a test, run the whole suite.
 2. Bump `## Version:` in `ClassCoach/ClassCoach.toc`.
 3. Commit and push to `main` (remote: `github.com/cedricdhooge96/ClassCoach`, MIT license).
-4. Install to `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\ClassCoach`.
-5. **Read the installed files back and compare them with the repo.** An install has reported success while writing an old copy of a file before.
+4. Install with `tools/install.sh`: it copies to `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\ClassCoach` (rsync, deleting files the repo no longer has).
+5. **The script reads the installed files back and compares them with the repo**, and fails if they differ. An install has reported success while writing an old copy of a file before. It also names new files (they need a restart).
 6. Tell Cedric to `/reload` (a full restart only when a file was added).
 
 No tool outside the game draws its fonts (Blizzard ships none; community emulators such as WoWBench, wowless and Mechanic's sandbox run the Lua but measure no text), so text layout is checked in the game itself: `Style.layoutCheck` (`/coach layout`, and after every settings page is shown) asks the client which ClassCoach texts are cut short (`IsTruncated`), measure nothing, or overlap another text of the same frame, and logs them (saved log and trace). Lay out from measured heights, measured in the font the text will be drawn in (a text created after the typefaces went on wears its own at once; a settings page laid out before a typeface change is rebuilt).
