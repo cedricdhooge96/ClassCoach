@@ -60,10 +60,19 @@ local function sameFile(a, b)
   return type(a) == "string" and type(b) == "string" and a:lower():gsub("/", "\\") == b:lower():gsub("/", "\\")
 end
 
+-- A text that holds words and measures nothing. A text the game keeps secret
+-- (seen in game: comparing it raised an error) is unknown, never "nothing".
+local function plainText(fs)
+  local ok, text = pcall(fs.GetText, fs)
+  if not ok or (issecretvalue and issecretvalue(text)) or type(text) ~= "string" then return nil end
+  return text
+end
 local function drawsNothing(fs)
-  local text = fs.GetText and fs:GetText()
+  local text = fs.GetText and plainText(fs)
+  if not text or text == "" then return false end
   local w = fs.GetStringWidth and fs:GetStringWidth()
-  return type(text) == "string" and text ~= "" and type(w) == "number" and w <= 0
+  if issecretvalue and issecretvalue(w) then return false end
+  return type(w) == "number" and w <= 0
 end
 
 local function backToGameFont(fs, k)
@@ -81,6 +90,11 @@ function Style.font(fs)
   local took = ok and set ~= false and sameFile(select(2, pcall(fs.GetFont, fs)), file) and not drawsNothing(fs)
   if took then
     k.own = true
+    -- Seen in game (journey list): a text that already held its words when the
+    -- typeface changed kept its old layout and drew nothing, and setting the same
+    -- words again does not lay it out anew. Clearing and setting them does.
+    local text = plainText(fs)
+    if text and text ~= "" then fs:SetText(""); fs:SetText(text) end
   else
     Style.fontMissing = FACES[k.face]
     backToGameFont(fs, k)
@@ -118,7 +132,10 @@ function Style.dress(on)
       if k.own then backToGameFont(fs, k) end
       k.tries, k.healed = 0, nil
     elseif not k.own and not k.healed and (k.tries or 0) < MAX_TRIES then
-      if not Style.font(fs) and k.tries < MAX_TRIES then Style.pending = true end
+      -- one text that fails must not leave the rest half dressed
+      local ok, took = pcall(Style.font, fs)
+      if not ok then k.tries = MAX_TRIES; backToGameFont(fs, k)
+      elseif not took and k.tries < MAX_TRIES then Style.pending = true end
     end
     if k.own then dressed = dressed + 1 else plain = plain + 1 end
   end

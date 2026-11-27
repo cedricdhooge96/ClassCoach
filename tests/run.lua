@@ -2459,6 +2459,25 @@ elseif SCENARIO == "focus" then
   M.refuseFonts = false
   ClassCoachDB.ownFonts = false; tick(ns); ClassCoachDB.ownFonts = true; f = tick(ns)
   check("switching the setting off and on tries again", f.name.font ~= nil and S.plain == 0, tostring(S.plain))
+  -- seen in game (0.18.2): one text the game keeps secret raised an error in the middle of
+  -- the pass, and the journey rows, which already held their words, drew nothing
+  ClassCoachDB.ownFonts = false; tick(ns)
+  local secretText = S.text(UIParent, "body", 12)
+  secretText.GetText = function() error("attempt to compare local 'text' (a secret string value)") end
+  local row = ns.Journey.frame.rows[1].label
+  local history = {}
+  local realSetText = row.SetText
+  row.SetText = function(self, t) history[#history + 1] = t; return realSetText(self, t) end
+  ClassCoachDB.ownFonts = true; M.advance(2.1); f = tick(ns)
+  check("a text that cannot be read does not stop the others from taking their typeface", f.name.font ~= nil and row.font ~= nil
+    and S.plain == 0, tostring(S.plain))
+  local relaid = false
+  for i = 2, #history - 1 do
+    if history[i] == "" and history[i - 1] == history[i + 1] and history[i + 1] ~= "" then relaid = true end
+  end
+  check("a text that held its words is laid out again in its new typeface", relaid and history[#history] == row.text, table.concat(history, "|"))
+  row.SetText = nil
+  secretText.GetText = function() return "" end
   -- what the first test in the game showed: a typeface that is set and still draws nothing
   f.why.GetStringWidth = function(self) return rawget(self, "font") and 0 or 40 end
   M.advance(1); f = tick(ns)
