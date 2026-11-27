@@ -35,6 +35,8 @@ local function layout()
       tip = "Your real mana, drawn by the game. It turns amber, then red, as the coach's advice changes." },
     { key = "readyAlpha", kind = "slider", name = "Coach opacity when you are ready", default = 50, min = 20, max = 100, step = 5, unit = "%",
       tip = "With nothing targeted and nothing to prepare, the coach steps back to this. Anything to do before a pull brings it back to full." },
+    { key = "lantern", kind = "check", name = "Soft light under the coach", default = true,
+      tip = "A faint glow on the ground under the ring: your class colour, amber when something needs doing before a pull, orange in a fight." },
     { key = "cue", kind = "check", name = "Pulse the ring when a new key is needed", default = true,
       tip = "Most of a fight is one steady key. When something else comes up, or a spell was resisted, the ring pulses." },
     { key = "cueSound", kind = "choice", fixed = true, name = "Sound with the pulse", default = "click",

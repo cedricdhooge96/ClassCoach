@@ -25,9 +25,23 @@ local function row(parent)
   label:SetWidth(WIDTH - 2 * PAD - ICON_SIZE - 9)
   label:SetWordWrap(false)
   r.label = label
+  -- the row to do now carries a gold stripe on its left; any row lights up under the mouse
+  local stripe = r:CreateTexture(nil, "ARTWORK")
+  stripe:SetColorTexture(S.COLORS.accent[1], S.COLORS.accent[2], S.COLORS.accent[3], 1)
+  stripe:SetPoint("TOPRIGHT", r, "TOPLEFT", -4, 0)
+  stripe:SetPoint("BOTTOMRIGHT", r, "BOTTOMLEFT", -4, 0)
+  stripe:SetWidth(2)
+  stripe:Hide()
+  r.stripe = stripe
+  local lit = r:CreateTexture(nil, "BACKGROUND")
+  lit:SetColorTexture(1, 1, 1, 0.06)
+  lit:SetPoint("TOPLEFT", -4, 3)
+  lit:SetPoint("BOTTOMRIGHT", 4, -3)
+  lit:Hide()
+  r.lit = lit
   r:EnableMouse(true)
-  r:SetScript("OnEnter", S.guard(S.tooltip))
-  r:SetScript("OnLeave", S.guard(S.hideTooltip))
+  r:SetScript("OnEnter", S.guard(function(self) self.lit:Show(); S.tooltip(self) end))
+  r:SetScript("OnLeave", S.guard(function(self) self.lit:Hide(); S.hideTooltip(self) end))
   -- dragging a row drags the panel
   r:RegisterForDrag("LeftButton")
   r:SetScript("OnDragStart", S.guard(function() local s = parent:GetScript("OnDragStart"); if s then s(parent) end end))
@@ -74,6 +88,13 @@ function Journey.create(charDB, db)
   local bg = bar:CreateTexture(nil, "BACKGROUND")
   bg:SetAllPoints()
   bg:SetColorTexture(C.dark[1], C.dark[2], C.dark[3], 0.9)
+  -- rested XP: a lighter band from where you are, as far as the rest bonus reaches (as the game's own XP bar shows it)
+  local rested = bar:CreateTexture(nil, "BORDER")
+  rested:SetColorTexture(C.rested[1], C.rested[2], C.rested[3], 0.55)
+  rested:SetPoint("TOP")
+  rested:SetPoint("BOTTOM")
+  rested:Hide()
+  f.restedBand = rested
   local barText = S.text(f, "body", 11, C.muted)
   barText:SetPoint("TOPRIGHT", -PAD, -14)
   barText:SetJustifyH("RIGHT")
@@ -138,8 +159,20 @@ function Journey.render(view)
   local y = -30
   if view.xp then
     f.bar:Show()
-    f.bar:SetValue(view.xp.pct)
+    -- the bar slides to its new value where the client can (Forever's documentation lists it), else it jumps
+    local smooth = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
+    if not (smooth and pcall(f.bar.SetValue, f.bar, view.xp.pct, smooth)) then f.bar:SetValue(view.xp.pct) end
     local rested = view.xp.restedPct or 0
+    local from = math.max(0, math.min(100, view.xp.pct))
+    local reach = math.min(100 - from, math.max(0, rested))
+    if reach > 0.5 then
+      local width = WIDTH - 2 * PAD
+      f.restedBand:SetPoint("LEFT", f.bar, "LEFT", width * from / 100, 0)
+      f.restedBand:SetWidth(width * reach / 100)
+      f.restedBand:Show()
+    else
+      f.restedBand:Hide()
+    end
     f.barText:SetText(rested > 0
       and ("%d%% · rested %d%%"):format(math.floor(view.xp.pct), math.floor(rested + 0.5))
       or ("%d%% · not rested"):format(math.floor(view.xp.pct)))
@@ -173,7 +206,10 @@ function Journey.render(view)
       local now = item.kind == "do"
       local c = now and C.ink or C.muted
       r.icon:SetTexture(item.icon or QUESTION)
-      r.icon:SetDesaturated(not now)
+      -- what comes later is quieter, not grey: grey reads as "you cannot do this"
+      r.icon:SetDesaturated(false)
+      r.icon:SetAlpha(now and 1 or 0.6)
+      r.stripe:SetShown(now and i == 1)
       r.label:SetTextColor(c[1], c[2], c[3])
       ns.Style.set(r.label, item.text)
       r.title, r.hint = item.text, item.hint

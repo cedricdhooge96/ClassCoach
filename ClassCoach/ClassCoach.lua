@@ -1313,6 +1313,7 @@ local function start()
   local mana, max = API.mana()
   C.lastMana, C.manaMax = mana, max
   C.fontsFrom = GetTime() + 3   -- ClassCoach's typefaces go on a few seconds after login, never while the addon loads
+  ns.Panel.classTint = { API.classColor() }   -- the lantern light under the coach takes your class colour
   ns.Panel.create(ClassCoachCharDB, ClassCoachDB)
   ns.Journey.create(ClassCoachCharDB, ClassCoachDB)
   C.optionsReady = ns.Options.build(ClassCoachDB, ClassCoachCharDB, {

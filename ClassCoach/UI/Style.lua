@@ -19,7 +19,7 @@ Style.COLORS = {
   ink = { 0.937, 0.914, 0.863 }, muted = { 0.722, 0.698, 0.639 }, dark = { 0.039, 0.043, 0.051 },
   line = { 0.204, 0.220, 0.251 }, accent = { 0.941, 0.761, 0.294 }, mana = { 0.357, 0.608, 0.918 },
   warn = { 0.941, 0.643, 0.357 }, danger = { 1.00, 0.35, 0.30 }, ok = { 0.541, 0.827, 0.604 },
-  xp = { 0.545, 0.420, 0.820 },
+  xp = { 0.545, 0.420, 0.820 }, rested = { 0.310, 0.639, 0.780 }, ember = { 0.910, 0.455, 0.231 },
 }
 
 -- Text.
@@ -283,13 +283,14 @@ end
 -- Cuts a square spell icon into a circle. If the game refuses the mask, the
 -- icon stays square with its border cropped: plainer, never broken.
 function Style.round(owner, icon)
+  -- spell art has a bevelled border built in: cut it off first, or it shows on the circle's edge
+  pcall(icon.SetTexCoord, icon, 0.07, 0.93, 0.07, 0.93)
   local ok = pcall(function()
     local mask = owner:CreateMaskTexture()
     mask:SetTexture(ROUND_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
     mask:SetAllPoints(icon)
     icon:AddMaskTexture(mask)
   end)
-  if not ok then pcall(icon.SetTexCoord, icon, 0.07, 0.93, 0.07, 0.93) end
   return ok
 end
 
@@ -394,11 +395,36 @@ function Style.guard(fn)
   end
 end
 
--- The dark plate behind a panel's text.
+-- The dark plate behind a panel's text ("Lantern"): a rounded plate drawn in
+-- nine slices so its corners stay round at any size, a soft shadow that spills
+-- out around it, and a faint light line along its top. A client that cannot
+-- slice a texture gets the flat plate of before: plainer, never broken.
+local PLATE_SLICE, SHADOW_SLICE, SHADOW_REACH = 16, 40, 12
+local function sliced(tex, file, margin)
+  tex:SetTexture(MEDIA .. file)
+  return pcall(tex.SetTextureSliceMargins, tex, margin, margin, margin, margin) and true or false
+end
 function Style.skin(f)
-  local bg = f:CreateTexture(nil, "BACKGROUND")
+  local shadow = f:CreateTexture(nil, "BACKGROUND", nil, -8)
+  shadow:SetPoint("TOPLEFT", -SHADOW_REACH, SHADOW_REACH - 2)
+  shadow:SetPoint("BOTTOMRIGHT", SHADOW_REACH, -SHADOW_REACH - 2)
+  local bg = f:CreateTexture(nil, "BACKGROUND", nil, -7)
   bg:SetAllPoints()
   f.skinBg = bg
+  if type(bg.SetTextureSliceMargins) == "function" and sliced(bg, "plate", PLATE_SLICE) and sliced(shadow, "plate_shadow", SHADOW_SLICE) then
+    f.skinSliced = true
+    shadow:SetVertexColor(0, 0, 0, 0.45)
+    f.skinShadow = shadow
+    local rim = f:CreateTexture(nil, "BACKGROUND", nil, -6)   -- the light catching the top edge
+    rim:SetColorTexture(1, 1, 1, 0.06)
+    rim:SetPoint("TOPLEFT", 8, -1)
+    rim:SetPoint("TOPRIGHT", -8, -1)
+    rim:SetHeight(1)
+    f.skinRim = rim
+  else
+    shadow:Hide()
+    bg:SetTexture(nil)
+  end
 end
 
 -- Pins a panel by the edge that faces the middle of the screen. A panel in
@@ -429,7 +455,12 @@ function Style.apply(f, db, scale)
   if f.skinAlpha ~= alpha then
     f.skinAlpha = alpha
     local c = Style.COLORS.dark
-    f.skinBg:SetColorTexture(c[1], c[2], c[3], alpha)
+    if f.skinSliced then
+      f.skinBg:SetVertexColor(c[1], c[2], c[3], alpha)
+      if f.skinShadow then f.skinShadow:SetAlpha(math.min(1, alpha * 0.75)) end
+    else
+      f.skinBg:SetColorTexture(c[1], c[2], c[3], alpha)
+    end
   end
   scale = scale or 1
   if f.skinScale ~= scale then

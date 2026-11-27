@@ -140,6 +140,11 @@ if SCENARIO == "shaman" then
   check("with its key, when it is on your bar", keyOn(slot1) == (ns.C.keys["Lightning Shield"] or ""), keyOn(slot1))
   check("weapon buff: the best one you know", slot2.spell == "Rockbiter Weapon", tostring(slot2.spell))
   check("one line explains the first", f.status.text == "Cast Lightning Shield before the pull.", f.status.text)
+  local C = ns.Style.COLORS
+  check("the lantern light under the coach turns amber with something to do before the pull", f.wash.color and f.wash.color[1] == C.warn[1]
+    and f.wash.alpha and f.wash.alpha > 0 and f.wash.alpha <= 0.35, tostring(f.wash.alpha))
+  local firstRow = ns.Journey.frame.rows[1]
+  check("the first thing to do now carries the gold stripe, the others not", firstRow.stripe.shown == true and ns.Journey.frame.rows[2].stripe.shown ~= true)
   check("no missing list in words", not f.status.text:find("No shield"), f.status.text)
   check("food is a journey to-do, not a pull blocker", journey(ns):find("No food buff") ~= nil and not f.status.text:find("food"), journey(ns))
   check("journey: xp and rested", journey(ns):find("0%% · not rested") ~= nil and journey(ns):find("No rested XP") ~= nil, journey(ns))
@@ -151,6 +156,9 @@ if SCENARIO == "shaman" then
   M.P.buffs["Well Fed XP Boost"] = true; M.fire("UNIT_AURA", "player")
   M.advance(3); f = tick(ns)
   check("journey: rested amount", journey(ns):find("43%% · rested 18%%") ~= nil, journey(ns))
+  local band = ns.Journey.frame.restedBand
+  check("rested XP shows as a band on the XP bar, from where you are", band.shown and math.abs((rawget(band, "width") or 0) - 224 * 0.18) < 1,
+    tostring(rawget(band, "width")))
   check("journey: talent point with the suggested talent", journey(ns):find("1 talent point to spend") ~= nil and journey(ns):find("Thundering Strikes") ~= nil, journey(ns))
   check("journey: repair and bags", journey(ns):find("Gear at 12%% durability") ~= nil and journey(ns):find("Bags nearly full %(1 free%)") ~= nil, journey(ns))
   check("journey: any Well Fed buff counts", not journey(ns):find("No food buff"), journey(ns))
@@ -415,7 +423,7 @@ if SCENARIO == "shaman" then
   check("settings page registered with the game", S.category ~= nil and S.category.name == "ClassCoach")
   local count = 0
   for _ in pairs(S.list) do count = count + 1 end
-  check("every option made it onto the page", count == 46 and #ns.Options.registered == 46 and #ns.Options.keys() == 46, count)
+  check("every option made it onto the page", count == 47 and #ns.Options.registered == 47 and #ns.Options.keys() == 47, count)
   check("sections and action buttons", #S.headers == 7 and #S.buttons == 5, #S.headers .. "/" .. #S.buttons)
   check("options write to the saved settings", S.list.compact.tbl == ClassCoachDB and S.list.specChoice.tbl == ClassCoachCharDB)
   check("slider shows its unit", S.list.opacity.opts.format(60) == "60%" and S.list.scale.opts.format(1.1) == "1.10x")

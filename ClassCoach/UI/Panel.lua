@@ -22,6 +22,7 @@ local DEFAULT_ABOVE_BOTTOM = 240     -- how far the ring's middle starts above t
 local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
 local DOT, DOT_GAP, MAX_DOTS = 26, 6, 6  -- the debuff icons above the ring
 local MANA_BY_LEVEL = { high = "mana", medium = "warn", low = "danger" }
+local WASH_W, WASH_H, WASH_ALPHA = 260, 130, 0.22   -- the lantern light under the coach
 
 -- Where the k-th step from the middle sits: further out and a little higher each time.
 local function spot(k)
@@ -156,6 +157,20 @@ function Panel.create(charDB, db)
     if type(x) == "number" and type(y) == "number" then charDB.focusPos = { point, relPoint, x, y } end
   end))
 
+  -- "Lantern": a soft light on the ground under the coach (your class colour; amber
+  -- when something needs doing before the pull; ember in a fight), and a dark pool
+  -- behind the ring that lifts it off the world. Neither takes clicks.
+  f.wash = f:CreateTexture(nil, "BACKGROUND", nil, -8)
+  f.wash:SetTexture(S.MEDIA .. "wash")
+  f.wash:SetSize(WASH_W, WASH_H)
+  f.wash:SetPoint("CENTER", f, "CENTER", 0, -14)
+  f.wash:SetAlpha(0)
+  local pool = CreateFrame("Frame", nil, f)
+  pool:SetPoint("CENTER")
+  pool:SetSize(RING * 1.6, RING * 1.6)
+  f.shadow = S.shape(pool, "ring_shadow", "BACKGROUND", -7)
+  S.tint(f.shadow, { 0, 0, 0 }, 0.55)
+
   -- The current step
   f.disc = S.shape(f, "disc", "BACKGROUND")
   S.tint(f.disc, C.dark, 0.92)
@@ -165,7 +180,7 @@ function Panel.create(charDB, db)
   S.round(f, f.icon)
   local top = CreateFrame("Frame", nil, f)
   top:SetAllPoints(f)
-  f.ring = S.shape(top, "ring", "ARTWORK")
+  f.ring = S.shape(top, "ring_bevel", "ARTWORK")   -- light along the top, a dark line inside
   S.tint(f.ring, C.accent)
   f.keyBadge = S.badge(top, 22)
   f.keyBadge:SetPoint("TOPLEFT", f, "CENTER", 22, -22)
@@ -360,6 +375,17 @@ function Panel.render(view)
     f.icon:SetDesaturated(true)
     S.setBadge(f.keyBadge, nil)
     f.ring:SetAlpha(0.25)
+  end
+
+  -- The lantern light: ember in a fight, amber with something to do before the
+  -- pull, your class colour otherwise. Only touched when the mood changes.
+  local state = view.inCombat and "fight" or ((view.missing and #view.missing > 0) and "prepare" or "calm")
+  local mood = state .. (db.lantern == false and " off" or "")
+  if Panel.mood ~= mood then
+    Panel.mood = mood
+    local c = state == "fight" and C.ember or state == "prepare" and C.warn or Panel.classTint or C.accent
+    f.wash:SetVertexColor(c[1], c[2], c[3])
+    f.wash:SetAlpha(db.lantern == false and 0 or WASH_ALPHA)
   end
 
   -- The cue. Most of a fight is one steady key (wand, attack). When something
