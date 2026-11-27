@@ -176,7 +176,7 @@ local NEEDS = {
   "C_Traits.ConfigHasStagedChanges", "C_Traits.RollbackConfig",
   "C_Container.GetContainerItemInfo", "C_Container.GetContainerNumFreeSlots", "C_Container.GetContainerNumSlots",
   "C_Item.GetItemCount", "C_Item.GetItemInfo", "C_Item.GetItemInfoInstant", "C_Item.GetItemSpell", "C_Item.GetWeaponEnchantInfo",
-  "C_Item.PickupItem", "C_NamePlate.GetNamePlates", "C_Secrets.ShouldAurasBeSecret",
+  "C_Item.PickupItem", "C_NamePlate.GetNamePlates", "C_Secrets.ShouldAurasBeSecret", "C_Secrets.HasSecretRestrictions", "C_Secrets.GetPowerTypeSecrecy",
   "C_Spell.GetSpellCooldown", "C_Spell.GetSpellDescription", "C_Spell.GetSpellName", "C_Spell.GetSpellIDForSpellIdentifier", "QueryCastSequence", "C_Spell.GetSpellPowerCost",
   "C_Spell.GetSpellTexture", "C_Spell.IsAutoRepeatSpell", "C_Spell.IsSpellUsable", "C_Spell.PickupSpell",
   "C_SpellBook.GetNumSpellBookSkillLines", "C_SpellBook.GetSpellBookItemInfo", "C_SpellBook.GetSpellBookItemTexture",
@@ -503,6 +503,15 @@ end
 ---------------------------------------------------------------------------
 -- Buffs, weapon buffs, totems, items (reliable out of combat only)
 ---------------------------------------------------------------------------
+
+-- What the game says about hiding mana, for /coach check: whether this client
+-- hides values at all, and its secrecy level for mana (a number from the game's
+-- SecrecyLevel list). Diagnostics only: the ledger keeps going by what each read
+-- returns (a hidden value reads as unknown), since these answers are documented
+-- for Forever but not yet seen in game.
+function API.manaSecrecy()
+  return plain(try(C_Secrets.HasSecretRestrictions)), plain(try(C_Secrets.GetPowerTypeSecrecy, 0))
+end
 
 function API.aurasReadable(inCombat)
   if inCombat then return false end

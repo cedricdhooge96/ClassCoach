@@ -1407,6 +1407,8 @@ local function check(quiet)
   for _, p in ipairs(API.professions() or {}) do profs[#profs + 1] = ("%s %s/%s"):format(p.name, tostring(p.skill), tostring(p.max)) end
   add("professions: %s", #profs > 0 and table.concat(profs, ", ") or "none read")
   add("mana now %s / %s (combat %s)", describe(API.try(UnitPower, "player", 0)), describe(API.try(UnitPowerMax, "player", 0)), tostring(API.inCombat()))
+  local restricted, secrecy = API.manaSecrecy()
+  add("the game hides values: %s; mana secrecy level %s", tostring(restricted), tostring(secrecy))
   local names = {}
   for key, sp in pairs(C.spells) do
     local usable, short = API.usable(sp.id)

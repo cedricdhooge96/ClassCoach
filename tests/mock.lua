@@ -266,7 +266,11 @@ C_Spell = {
 }
 M.names = {}
 C_NamePlate = { GetNamePlates = function() return {} end }
-C_Secrets = { ShouldAurasBeSecret = function() return P.combat end }
+C_Secrets = {
+  ShouldAurasBeSecret = function() return P.combat end,
+  HasSecretRestrictions = function() return true end,
+  GetPowerTypeSecrecy = function() return 1 end,   -- the level's number; its meaning is not yet seen in game
+}
 C_UnitAuras = {
   GetAuraDataByIndex = function(_, i)
     local list = {}

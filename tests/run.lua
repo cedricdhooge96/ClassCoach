@@ -463,7 +463,9 @@ if SCENARIO == "shaman" then
   ClassCoachCharDB.specChoice = "auto"; tick(ns)
   target(nil)
 
+  M.printed = {}
   SlashCmdList.CLASSCOACH("check")
+  check("/coach check says what the game says about hiding mana", table.concat(M.printed, " "):find("the game hides values: true; mana secrecy level 1", 1, true) ~= nil)
   SlashCmdList.CLASSCOACH("spec")
   SlashCmdList.CLASSCOACH("last")
   check("no errors logged", errors() == 0, ClassCoachDB.log and table.concat(ClassCoachDB.log, " || "))
