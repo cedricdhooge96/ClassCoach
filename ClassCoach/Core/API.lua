@@ -67,9 +67,10 @@ end
 API.try = try
 
 -- Reads one field of a table the game returned.
+local function index(t, k) return t[k] end   -- one function for every read, not a new one each time
 local function field(t, k)
   if type(t) ~= "table" then return nil end
-  local ok, v = pcall(function() return t[k] end)
+  local ok, v = pcall(index, t, k)
   if ok then return plain(v) end
   return nil
 end

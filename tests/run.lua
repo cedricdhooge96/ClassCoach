@@ -1809,6 +1809,20 @@ elseif SCENARIO == "talents" then
   local ns = load()
   check("the old switch becomes 'no steps before'", ClassCoachDB.stepsBefore == 0 and ClassCoachDB.showDone == nil and ClassCoachDB.stepsAfter == 2,
     tostring(ClassCoachDB.stepsBefore))
+  check("saved settings remember how far they were upgraded", ClassCoachDB.schema == #ns.C.UPGRADES and ClassCoachCharDB.schema == #ns.C.CHAR_UPGRADES,
+    tostring(ClassCoachDB.schema))
+  -- a later login does not run an upgrade again: a player's own choice after it stays
+  local ran = 0
+  local first = ns.C.UPGRADES[1]
+  ns.C.UPGRADES[1] = function(...) ran = ran + 1; return first(...) end
+  ClassCoachDB.showDone = false; ClassCoachDB.stepsBefore = 1
+  ns.C.upgrade(ClassCoachDB, ns.C.UPGRADES, "test")
+  check("an upgrade runs once, not at every login", ran == 0 and ClassCoachDB.stepsBefore == 1, ran)
+  local old = { showDone = false, hidden = true, opacity = 75 }
+  ns.C.upgrade(old, ns.C.UPGRADES, "test")
+  check("settings saved before the numbering get every step", ran == 1 and old.stepsBefore == 0 and old.showCoach == false and old.opacity == 60
+    and old.hidden == nil and old.schema == #ns.C.UPGRADES, ran)
+  ns.C.UPGRADES[1] = first; ClassCoachDB.showDone = nil
   ClassCoachDB.stepsBefore = 2
   local function state() return ns.C.refreshTalents() end
   local function marks()

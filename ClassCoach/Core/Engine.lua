@@ -365,6 +365,13 @@ function Sim:ready(key)
   return now
 end
 
+-- One metatable for every simulation (a refresh builds a few): own methods first, then the real state.
+local SIM_META = { __index = function(sim, k)
+  local own = Sim[k]
+  if own ~= nil then return own end
+  return rawget(sim, "base")[k]
+end }
+
 local function simulate(profile, s)
   local sim = { base = s, profile = profile, virtual = {}, virtualAt = {}, virtualTotems = {}, virtualCd = {},
     now = s.now, inCombat = true, fightTime = s.inCombat and (s.fightTime or 0) or 0, manaLevel = s.manaLevel, manaPct = s.manaPct }
@@ -372,11 +379,7 @@ local function simulate(profile, s)
     sim.manaMax = s.manaMax
     sim.mana = s.manaPct / 100 * s.manaMax
   end
-  return setmetatable(sim, { __index = function(_, k)
-    local own = Sim[k]
-    if own ~= nil then return own end
-    return s[k]
-  end })
+  return setmetatable(sim, SIM_META)
 end
 
 -- When the filler is all that is left: the next moment something better
@@ -420,10 +423,11 @@ end
 -- filler, each spell that comes back as it runs out, then the filler again.
 -- Only when the filler repeats by itself (a wand: one press, it keeps firing).
 -- A filler spell you cast again and again cannot be one step of a fixed key.
-function Engine.chain(profile, s, max, fight)
+-- `known` is Engine.next(profile, s) when the caller already has it (it is not worked out twice).
+function Engine.chain(profile, s, max, fight, known)
   max = max or 3
   local steps = {}
-  local first = Engine.next(profile, s) or opening(profile, s)
+  local first = known or Engine.next(profile, s) or opening(profile, s)
   local sim = simulate(profile, s)
   local current = first
   local opening = not s.inCombat

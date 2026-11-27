@@ -563,6 +563,8 @@ end
 -- Mana
 ---------------------------------------------------------------------------
 
+local RANK = { low = 1, medium = 2, high = 3 }   -- mana levels in order
+
 -- Exact when the game lets us read it; otherwise ClassCoach's own count (Core/Mana.lua).
 -- Returns a percentage (or nil) and whether it is exact.
 local DRINKS = { ["Drink"] = true, ["Refreshment"] = true, ["Food & Drink"] = true }
@@ -639,7 +641,6 @@ local function buildState(now)
   -- In a fight the estimate only goes down: the ledger adds regen between casts,
   -- and a level climbing back over a line made a dropped spell come back (the
   -- ring went back and forth). An exact reading from the game still counts.
-  local RANK = { low = 1, medium = 2, high = 3 }
   local fight = C.tracker.fight
   if fight ~= C.fightManaFor then C.fightMana, C.fightManaFor = nil, fight end   -- a new fight starts afresh
   if inCombat and not exact then
@@ -731,7 +732,7 @@ local function tick()
   end
   view.next = Engine.next(profile, s)
   local before, after = ns.Panel.steps(ClassCoachDB)
-  view.chain = Engine.chain(profile, s, 1 + after)
+  view.chain = Engine.chain(profile, s, 1 + after, nil, view.next)
   view.planning = view.next == nil
   -- The smart key: while you use it, the coach shows the key's own steps
   -- (Engine.followKey), so the two never disagree; it only takes over, with
@@ -1255,26 +1256,49 @@ for _, e in ipairs({ "PLAYER_TALENT_UPDATE", "CHARACTER_POINTS_CHANGED", "ACTIVE
   handlers[e] = talentsChanged
 end
 
+-- Saved settings of older versions, brought up to date in order. Each table
+-- remembers how far it got (`schema`), so a step runs once. A change to the
+-- saved settings adds a step at the end; a step is never changed or removed.
+local UPGRADES = {   -- ClassCoachDB, for every character
+  function(db)   -- before 0.19: the steps that start() used to run every login
+    if db.hidden ~= nil then db.showCoach = not db.hidden; db.hidden = nil end
+    if not db.ringLook then   -- the ring replaced the wide panel: its plate is lighter, and it has no border or colour line
+      if db.opacity == 75 then db.opacity = 60 end
+      db.border, db.accent = nil, nil
+    end
+    db.ringLook = nil
+    if db.showDone ~= nil then   -- "show what you already cast" became a number of steps
+      if db.showDone == false and db.stepsBefore == nil then db.stepsBefore = 0 end
+      db.showDone = nil
+    end
+    db.gameFont = nil   -- 0.13.0's setting; the game's font is now the default
+  end,
+}
+local CHAR_UPGRADES = {   -- ClassCoachCharDB, for this character
+  function(char)   -- before 0.19
+    -- Kill times learned before 0.15.3 counted a fight against three enemies as three
+    -- quick kills (and kept them in a running average): far too short, so the coach
+    -- dropped Immolate from the pull. Start over.
+    if type(char.kill) == "table" and char.kill.v ~= 2 then char.kill = nil end
+    if char.spec ~= nil then char.specChoice = char.spec; char.spec = nil end
+  end,
+}
+local function upgrade(saved, steps, what)
+  local from = tonumber(saved.schema) or 0
+  for i = from + 1, #steps do
+    local ok, err = pcall(steps[i], saved)
+    if not ok then log("upgrading %s to %d: %s", what, i, tostring(err)) end
+  end
+  saved.schema = #steps
+end
+C.UPGRADES, C.CHAR_UPGRADES, C.upgrade = UPGRADES, CHAR_UPGRADES, upgrade
+
 local function start()
-  ClassCoachDB = ClassCoachDB or {}
-  ClassCoachCharDB = ClassCoachCharDB or {}
-  -- Kill times learned before 0.15.3 counted a fight against three enemies as three
-  -- quick kills (and kept them in a running average): far too short, so the coach
-  -- dropped Immolate from the pull. Start over.
-  if type(ClassCoachCharDB.kill) == "table" and ClassCoachCharDB.kill.v ~= 2 then ClassCoachCharDB.kill = nil end
+  ClassCoachDB = type(ClassCoachDB) == "table" and ClassCoachDB or {}
+  ClassCoachCharDB = type(ClassCoachCharDB) == "table" and ClassCoachCharDB or {}
   local db = ClassCoachDB
-  -- settings saved by older versions
-  if db.hidden ~= nil then db.showCoach = not db.hidden; db.hidden = nil end
-  if not db.ringLook then      -- the ring replaced the wide panel: its plate is lighter, and it has no border or colour line
-    db.ringLook = true
-    if db.opacity == 75 then db.opacity = 60 end
-    db.border, db.accent = nil, nil
-  end
-  if db.showDone ~= nil then   -- "show what you already cast" became a number of steps
-    if db.showDone == false and db.stepsBefore == nil then db.stepsBefore = 0 end
-    db.showDone = nil
-  end
-  if ClassCoachCharDB.spec ~= nil then ClassCoachCharDB.specChoice = ClassCoachCharDB.spec; ClassCoachCharDB.spec = nil end
+  upgrade(db, UPGRADES, "the settings")
+  upgrade(ClassCoachCharDB, CHAR_UPGRADES, "this character's settings")
   if ClassCoachCharDB.specChoice == nil then ClassCoachCharDB.specChoice = "auto" end
   for k, v in pairs(ns.Options.defaults()) do if db[k] == nil then db[k] = v end end
   ns.Options.sanitize(db, ClassCoachCharDB)
@@ -1288,15 +1312,14 @@ local function start()
   if not ok then log("first scan error: %s", tostring(err)) end
   local mana, max = API.mana()
   C.lastMana, C.manaMax = mana, max
-  ClassCoachDB.gameFont = nil   -- 0.13.0's setting; the game's font is now the default
   C.fontsFrom = GetTime() + 3   -- ClassCoach's typefaces go on a few seconds after login, never while the addon loads
   ns.Panel.create(ClassCoachCharDB, ClassCoachDB)
   ns.Journey.create(ClassCoachCharDB, ClassCoachDB)
   C.optionsReady = ns.Options.build(ClassCoachDB, ClassCoachCharDB, {
-    macros = function() SlashCmdList.CLASSCOACH("macros") end,
-    reset = function() SlashCmdList.CLASSCOACH("reset") end,
-    bar = function() SlashCmdList.CLASSCOACH("bar") end,
-    barReset = function() SlashCmdList.CLASSCOACH("bar reset") end,
+    macros = function() C.run("macros") end,
+    reset = function() C.run("reset") end,
+    bar = function() C.run("bar") end,
+    barReset = function() C.run("bar reset") end,
     window = function() safely("settings window", ns.Window.show, "Coach") end,
   })
   -- The debug trace: asks once, then records on this computer if you said yes (UI/Trace.lua).
@@ -1724,9 +1747,12 @@ local function command(msg)
   end
 end
 
--- A command can never raise an error into the game either.
-SlashCmdList.CLASSCOACH = function(msg)
+-- A command can never raise an error into the game either. The settings window's
+-- buttons run the same commands through C.run, so a button and its /coach command
+-- can never do two different things.
+function C.run(msg)
   if not API.forever then print(API.NOT_FOREVER) return end
   local ok = safely("command /coach " .. tostring(msg), command, msg)
   if not ok then say("That command hit a problem. Type /coach errors to see it.") end
 end
+SlashCmdList.CLASSCOACH = C.run

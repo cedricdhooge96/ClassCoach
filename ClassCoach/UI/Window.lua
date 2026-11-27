@@ -32,7 +32,7 @@ Window.PAGES = {
 local S, C = ns.Style, ns.Style.COLORS
 local function db() return ClassCoachDB or {} end
 local function charDB() return ClassCoachCharDB or {} end
-local function run(cmd) return function() SlashCmdList.CLASSCOACH(cmd) end end
+local function run(cmd) return function() ns.C.run(cmd) end end
 
 local function color(fs, c) fs:SetTextColor(c[1], c[2], c[3]) end
 
