@@ -51,7 +51,9 @@ local SHAMAN_SPELLS = {
   ["Healing Wave"]     = { self = true, ids = { 331, 332, 547, 913, 939, 959, 8005, 10395, 10396, 25357 } },
   ["Lesser Healing Wave"] = { self = true, ids = { 8004, 8008, 8010, 10466, 10467, 10468 } },
   ["Chain Heal"]       = { self = true, ids = { 1064, 10622, 10623 } },
-  ["Riptide"]          = { self = true, ids = { 408521, 1239242, 1239243 }, cd = true, cdTime = 6 },
+  -- 12 second cooldown since Blizzard's pre-launch notes of 2 November 2026 (was 6). Only
+  -- Warcraft Tavern's summary of those notes was read, not Blizzard's post itself.
+  ["Riptide"]          = { self = true, ids = { 408521, 1239242, 1239243 }, cd = true, cdTime = 12 },
   ["Nature's Swiftness"] = { self = true, ids = { 16188 }, cd = true },
   ["Ghost Wolf"]       = { self = true, ids = { 2645 } },
   ["Reincarnation"]    = { self = true, ids = { 20608 } },
@@ -165,7 +167,8 @@ local MILESTONES = {
   { level = 4, text = "Earth totem quest", hint = "Your trainer starts it. Without the totem you cannot drop Earth totems." },
   { level = 10, text = "Fire totem quest", hint = "Your trainer starts it; it continues outside your starting zone. Bring a friend for the last part." },
   { level = 20, text = "Water totem quest and Ghost Wolf", hint = "A long quest chain, but healing totems need it. Ghost Wolf makes the running faster." },
-  { level = 20, text = "Shamanistic Focus and Call of the Elements", hint = "Shocks get cheap: from now one Earth Shock after each strike. Set your totem bar once, then one key drops them all." },
+  { level = 16, text = "Weapon first, then Strength", hint = "A slow two-handed weapon (speed 3.3 or slower) matters most. Then pick Strength over Intellect: 1 Strength gives 2 attack power, 1 Intellect only 1." },
+  { level = 20, text = "Shamanistic Focus", hint = "Shocks get cheap: from now one Earth Shock after each strike. Drop totems one by one on the way in: Call of the Elements takes 3 seconds to cast." },
   { level = 25, text = "Stormstrike talent", hint = "Your main attack from here on. Put it on an easy key." },
   { level = 30, text = "Air totem quest and Windfury Weapon", hint = "Windfury replaces Rockbiter on your weapon." },
   { level = 32, text = "Windfury Totem", hint = "Your Air totem from here on, in groups and alone." },
@@ -210,9 +213,9 @@ ns.RegisterProfile({
   freeDamage = "your melee swings",
   mana = { low = 25, medium = 55 },
   spells = spells({
-    -- Forever: 8 second cooldown since the 11 November 2026 hotfix
+    -- Forever: 8 second cooldown and 100% weapon damage since Blizzard's hotfix of 10 November 2026
     ["Stormstrike"] = { ids = { 17364 }, core = true, cd = true, cdTime = 8 },
-    -- optional Forever talent (not in the Icy Veins build). Its cooldown is not in any
+    -- optional Forever talent (not in the Icy Veins leveling build; both of its level-60 builds take it). Its cooldown is not in any
     -- source; cdTime only counts while the game says nothing (the global cooldown),
     -- a clear "ready" or "not ready" from the game always wins.
     ["Rage of the Farseer"] = { ids = { 425336 }, cd = true, cdTime = 60 },
@@ -337,7 +340,7 @@ ns.RegisterProfile({
         if not s:known("Earth Shock") then return nil end
         return "#showtooltip " .. s.spells["Earth Shock"].name .. "\n/stopcasting\n/cast " .. s.spells["Earth Shock"].name
       end },
-    { name = "CC Totems", about = "Drops your totem set (Call of the Elements); with Shift takes them back (Totemic Recall, some mana back).",
+    { name = "CC Totems", about = "Drops all four totems (Call of the Elements, a 3-second cast: for a long fight); with Shift takes them back (Totemic Recall, some mana back).",
       body = function(s)
         if not s:known("Call of the Elements") then return nil end
         local recall = s:known("Totemic Recall") and ("[mod:shift] " .. s.spells["Totemic Recall"].name .. "; ") or ""
@@ -421,8 +424,11 @@ ns.RegisterProfile({
   builds = {
     { name = "Icy Veins: Enhancement leveling", first = true,
       link = "https://www.icy-veins.com/wow-forever/shaman-talent-calculator#tc-hhhhhkkkiionnnisllrrvvtzzzzzAAAuuwCCG11111222556rrr~70888-a4ca5259" },
+    -- the level-60 builds as Icy Veins' talent page shows them after the 10 November rework (read 27 November 2026)
     { name = "Icy Veins: Solo and Dungeon Level 60 Build (Enhancement)",
-      link = "https://www.icy-veins.com/wow-forever/shaman-talent-calculator#tc-hhhhhiiikkknnnosrrvvuutzzzzzAAA11111222555633388llw~70959-a8fe1dab" },
+      link = "https://www.icy-veins.com/wow-forever/shaman-talent-calculator#tc-hhhhhiikkkonnnillsrrrrrvvuutwwxzzzzzAAA000005552226~70959-a8fe1dab" },
+    { name = "Icy Veins: Standard Endgame PvE Build (Enhancement)",
+      link = "https://www.icy-veins.com/wow-forever/shaman-talent-calculator#tc-hhhhhkkkiiinnnorrrrrsvvuutllwwwwwx11111555222336388~70755-d1899b7d" },
   },
   talents = {
     { 10, 14, "Thundering Strikes" }, { 15, 17, "Mental Dexterity" }, { 18, 19, "Ancestral Knowledge" },
