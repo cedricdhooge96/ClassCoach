@@ -1180,7 +1180,7 @@ function Engine.journey(profile, s, options)
     out.xp = { pct = (xp.cur or 0) / xp.max * 100, resting = xp.resting == true }
     local rested = xp.rested or 0
     out.xp.restedPct = rested / xp.max * 100
-    if not restedOn then
+    if not restedOn then  -- luacheck: ignore 542
       -- the bar still shows it; just no reminders
     elseif xp.resting then
       add("info", "In a rest area", "Log out here: rested XP builds while you are away, and doubles XP from kills.", ICON.rest)

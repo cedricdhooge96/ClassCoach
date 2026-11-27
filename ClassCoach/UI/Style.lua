@@ -387,16 +387,6 @@ function Style.button(parent, label, width)
   return b
 end
 
--- Greys a Style.button out (on = false) or brings it back; a greyed button ignores clicks.
-function Style.enable(b, on)
-  b.off = not on
-  b:EnableMouse(on and true or false)
-  local c = on and Style.COLORS.accent or Style.COLORS.muted
-  b.label:SetTextColor(c[1], c[2], c[3])
-  for _, e in ipairs(b.edges) do e:SetColorTexture(c[1], c[2], c[3], on and 1 or 0.5) end
-  b.shade(b, 0.16)
-end
-
 function Style.guard(fn)
   return function(...)
     local ok, err = pcall(fn, ...)

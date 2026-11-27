@@ -75,11 +75,6 @@ local function field(t, k)
 end
 API.field = field
 
-local C_Spell = C_Spell or {}
-local C_SpellBook = C_SpellBook or {}
-local C_UnitAuras = C_UnitAuras or {}
-local C_Item = C_Item or {}
-
 API.log = function() end   -- replaced by ClassCoach.lua once saved variables exist
 
 ---------------------------------------------------------------------------
@@ -190,7 +185,7 @@ local NEEDS = {
   "CreateSettingsButtonInitializer", "CreateSettingsListSectionHeaderInitializer",
   "C_Traits.GetConfigInfo", "C_Traits.GetDefinitionInfo", "C_Traits.GetEntryInfo", "C_Traits.GetNodeInfo",
   "C_Traits.GetTreeCurrencyInfo", "C_Traits.GetTreeNodes",
-  "C_UnitAuras.GetAuraDataByIndex",
+  "C_UnitAuras.GetAuraDataByIndex", "PlayerUtil.GetCurrentSpecID",
 }
 function API.missing()
   local out = {}

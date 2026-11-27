@@ -48,14 +48,14 @@ Cedric's action bars have vanished in fights more than once and no cause was fou
 ## Tests
 
 ```
-pip install lupa
-python3 tests/run.py            # everything
-python3 tests/run.py forever    # one scenario
+tests/run.sh                    # everything: each scenario in its own Lua 5.1, in parallel, with a time limit
+tests/run.sh forever            # one scenario
+luacheck .                      # the lint; a game function missing from NEEDS shows as "undefined variable"
 ```
 
 Scenarios: `shaman`, `priest`, `warlock`, `template`, `warrior`, `robust` (event storms, combat lockdown, chaos fuzzing), `forever` (no call to a function Forever lacks, off on other versions), `talents` (build following, talent window marks, link import, professions), `focus` (the ring: fonts, cue, bar highlight, click to cast, demo), `ui` (the glow, spellbook light, quiet coach, settings window, sharing, the mana ledger and mana-aware plans), `bars` (bar reset and undo, gapless and fixed layouts, potions, the bar watcher, hands off the game's frames), `wand` (the next step while the wand fires, the global cooldown, spells in macros on your bars), `trace` (the debug trace: consent, privacy, limits, export), `sweep` (every level 1 to 60 per class, including the smart key's steps and the bar layout).
 
-`tests/mock.lua` offers only functions the Forever client has. Keep it that way: a test that needs a function from another version is testing the wrong thing. Run each scenario with a timeout; a hang is a finding, not a slow machine.
+`tests/mock.lua` offers only functions the Forever client has. Keep it that way: a test that needs a function from another version is testing the wrong thing. `tests/run.sh` gives each scenario a time limit (`LIMIT`, 300 s) and reports a hang as HUNG; a hang is a finding, not a slow machine. The tests run on PUC-Rio Lua 5.1 (`apt install lua5.1`; on Cedric's machine it is in `~/.local/bin`), the game's Lua; LuaJIT accepts things the game does not (`goto`). GitHub Actions runs the tests and luacheck on every push (`.github/workflows/test.yml`).
 
 The tests run offline. Nothing is proven in the real game until Cedric has tried it, so say "passes the offline tests, not yet tried in game" until he confirms.
 

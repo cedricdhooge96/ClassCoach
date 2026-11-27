@@ -56,9 +56,9 @@ The tables that turn an Icy Veins or Warcraft Tavern talent calculator link into
 ## Tests
 
 ```
-pip install lupa
-python3 tests/run.py            # everything
-python3 tests/run.py robust     # one scenario
+tests/run.sh                    # everything (needs Lua 5.1: apt install lua5.1)
+tests/run.sh robust             # one scenario
+luacheck .                      # the lint
 ```
 
 The `robust` scenario is the safety net: event storms, combat lockdown, a refresh that keeps failing, damaged saved settings, broken profiles, and 6000 steps in which every game function randomly returns nothing, a hidden value, rubbish or an error. It fails if anything escapes into the game, if a loop runs away, or if the addon leaves a stray global name behind.

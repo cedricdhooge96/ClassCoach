@@ -75,12 +75,6 @@ local function pullWith(key, alone)
   end
 end
 
-local function names(s, keys)
-  local out = {}
-  for _, k in ipairs(keys) do if s.spells[k] then out[#out + 1] = s.spells[k].name end end
-  return out
-end
-
 ---------------------------------------------------------------------------
 -- Affliction: damage over time, a demon at your side, Life Tap instead of drinking
 --   1-3   Shadow Bolt, Immolate, finish in melee (no wand yet)

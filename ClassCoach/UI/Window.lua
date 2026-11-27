@@ -69,7 +69,7 @@ local function switch(parent, o, changed)
     b.knob:SetPoint(on and "RIGHT" or "LEFT", on and -2 or 2, 0)
     b.on = on
   end
-  b:SetScript("OnClick", S.guard(function() write(o, not (value(o) == true), changed); b.refresh() end))
+  b:SetScript("OnClick", S.guard(function() write(o, value(o) ~= true, changed); b.refresh() end))
   b.refresh()
   return b
 end
@@ -330,8 +330,7 @@ local function startPage(content)
   button(page, "Reset my bars", 30, y, run("bar reset"), 150)
   button(page, "Undo", 192, y, run("bar undo"), 80)
   y = y - 24 - 22
-  local smartBody
-  y, _, smartBody = stepCard(page, 2, y, "Bind the smart key",
+  y = stepCard(page, 2, y, "Bind the smart key",
     "One key that walks the coach's plan. Bind it under Options, Keybindings, AddOns, ClassCoach.")
   page.smartLine = S.text(page, "body", 11, C.ok)
   page.smartLine:SetPoint("TOPLEFT", 30, y + 4)

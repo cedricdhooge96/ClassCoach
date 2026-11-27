@@ -1,8 +1,9 @@
 ## Interface: 16001
+## AllowLoadGameType: camelot
 ## Title: ClassCoach
 ## Notes: For WoW Forever. A beginner's coach for any class: mana coach, pre-fight checklist, next-ability hint, fight summary and level-up tips. It never presses anything for you.
 ## Author: Cedric
-## Version: 0.18.4
+## Version: 0.18.5
 ## Category: Combat
 ## IconTexture: Interface\Icons\INV_Misc_Book_09
 ## AddonCompartmentFunc: ClassCoach_OnAddonCompartmentClick

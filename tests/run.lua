@@ -1,5 +1,5 @@
 -- Loads ClassCoach into the fake client and plays through a few sessions.
--- Run with: python3 tests/run.py   (uses LuaJIT, the same Lua 5.1 dialect as WoW)
+-- Run with: tests/run.sh   (Lua 5.1, the same Lua as WoW)
 local ROOT = ROOT or "."
 local M = dofile(ROOT .. "/tests/mock.lua")
 
@@ -1662,6 +1662,8 @@ elseif SCENARIO == "forever" then
   end
   check("no call to a function Forever lacks", #bad == 0, table.concat(bad, "; "))
   check("the TOC names Forever's interface only", toc:match("## Interface:%s*([^\n]+)") == "16001", toc:match("## Interface:%s*([^\n]+)"))
+  -- Blizzard's own Forever TOCs (Gethe forever branch, e.g. Blizzard_Menu.toc) call Forever's game type "camelot"
+  check("the TOC lets only Forever load it", toc:match("## AllowLoadGameType:%s*([^\r\n]+)") == "camelot", toc:match("## AllowLoadGameType:%s*([^\r\n]+)"))
   local extra = {}
   for _, f in ipairs({ "ClassCoach_Vanilla.toc", "ClassCoach_Classic.toc", "ClassCoach_Mainline.toc", "ClassCoach_TBC.toc", "ClassCoach_Wrath.toc",
     "ClassCoach_Cata.toc", "ClassCoach_Mists.toc" }) do
